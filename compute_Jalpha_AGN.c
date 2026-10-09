@@ -84,9 +84,8 @@ static double NU_LL_SPECIES = 0.0;
 
 /* ---- Lyman series / numerical parameters -------------------------------- */
 #define N_MAX      30     /* max Lyman series index (converged by n=23)  */
-#define N_SHELLS   400    /* log-spaced radial shells (plus one inner shell)
-                           * -- more than the stellar 200 because the AGN
-                           * field is very sparse (bright point sources) */
+#define N_SHELLS   200    /* log-spaced radial shells (plus one inner shell),
+                           * same as the stellar codes */
 #ifndef N_SNAPS
 #define N_SNAPS    709    /* total THESAN-XL snapshots                   */
 #endif
