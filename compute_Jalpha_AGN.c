@@ -16,13 +16,22 @@
  *
  * IMPORTANT (normalization):
  *   The SED file MUST span the full bolometric range (IR to X-ray), because
- *   L_bol is computed internally as Int L_nu dnu over the file's range, and
+ *   L_bol is computed internally as Int L_nu dnu (up to E_BOL_MAX_EV), and
  *   LuminosityAGN is a *bolometric* luminosity. A band-truncated SED
  *   (e.g. only the Lyman window, renormalized to L_bol=1) silently inflates
  *   eps_agn by 1/f_band -- this was the ~27x (H) / ~110x (He) over-estimate.
  *   A guard in load_agn_sed() now aborts on a suspiciously narrow SED.
  *   Use ONE full-range SED file for both H and He; the species argument
  *   selects the right frequencies via NU_LL_SPECIES in nu_emitted().
+ *
+ * IMPORTANT (interpolation):
+ *   The Shen+2020 table has no nodes between 20.66 eV (600 A) and 248 eV
+ *   (50 A), which contains the He II Lyman band (40.8-54.4 eV). Between
+ *   nodes the SED is taken as a power law (log-log interpolation), both in
+ *   eps_b() and in the L_bol integral, so the two are consistent. Linear
+ *   interpolation across that gap overestimated eps_agn at 40.8-54.4 eV by
+ *   2.4-4.5x, and the trapezoid L_bol was 1.85x too large (eps_agn too low
+ *   by that factor in the H band).
  *
  * Key difference from stellar code:
  *   - No age integration (SED is instantaneous, not integrated over lifetime)
@@ -75,6 +84,8 @@
 #define NU_LL_He   1.31594e16     /* Hz, He II Lyman limit */
 static double NU_LL_SPECIES = 0.0;
 #define PLANCK     6.62607e-27    /* erg.s                 */
+#define EV_CGS     1.602e-12      /* erg per eV            */
+#define E_BOL_MAX_EV 5.0e5        /* L_bol upper limit (Shen+2020: 30 um - 500 keV) */
 #define M_PI_      3.14159265358979323846
 
 /* ---- THESAN-XL cosmology (Planck 2015) ---------------------------------- */
@@ -164,15 +175,32 @@ static double nu_emitted(double z_emit, double z_obs, int n) {
  * ========================================================================= */
 typedef struct { double *freq; double *N_nu; int Nfreq; } SpecTable;
 
+/* Power law between table nodes (linear in log nu - log N_nu), which is how
+ * the SED is defined across its 20.66-248 eV gap. Outside the table the
+ * edge value is held. A segment with a zero endpoint falls back to linear. */
 static double eps_b(const SpecTable *st, double nu) {
-    int lo = 0, hi = st->Nfreq-1;
+    int Nf = st->Nfreq;
+    if (nu <= st->freq[0])    return st->N_nu[0];
+    if (nu >= st->freq[Nf-1]) return st->N_nu[Nf-1];
+    int lo = 0, hi = Nf-1;
     while (hi-lo > 1) {
         int mid = (lo+hi)/2;
         if (st->freq[mid] < nu) lo = mid; else hi = mid;
     }
-    if (lo >= st->Nfreq-1) return st->N_nu[st->Nfreq-1];
+    double a = st->N_nu[lo], b = st->N_nu[hi];
+    if (a > 0.0 && b > 0.0)
+        return a * pow(b/a, log(nu/st->freq[lo]) / log(st->freq[hi]/st->freq[lo]));
     double w = (nu-st->freq[lo])/(st->freq[hi]-st->freq[lo]);
-    return st->N_nu[lo]*(1.0-w) + st->N_nu[hi]*w;
+    return a*(1.0-w) + b*w;
+}
+
+/* Exact integral of L_nu over [nu1, nu2] for the power law through
+ * (nu1, L1) and (nu2, L2); trapezoid if an endpoint is zero. */
+static double powerlaw_segment(double nu1, double nu2, double L1, double L2) {
+    if (!(L1 > 0.0 && L2 > 0.0)) return 0.5*(L1 + L2)*(nu2 - nu1);
+    double r = nu2/nu1, s = log(L2/L1)/log(r);
+    if (fabs(s + 1.0) < 1e-8) return L1*nu1*log(r);
+    return L1*nu1/(s + 1.0)*(pow(r, s + 1.0) - 1.0);
 }
 
 /* =========================================================================
@@ -456,7 +484,8 @@ static void smooth_shell(const float *sfr_in, float *sfr_out,
  *
  * Loads freq [Hz] and L_nu [erg/s/Hz], then builds:
  *   eps_agn[i] = (L_nu[i] / L_bol) / (PLANCK * freq[i])   [ph/Hz/erg]
- * with L_bol = Int L_nu dnu over the FULL file range (trapezoidal).
+ * with L_bol = Int L_nu dnu up to E_BOL_MAX_EV, integrating the same power
+ * law between nodes that eps_b() interpolates (exact per segment).
  *
  * The absolute normalisation of L_nu cancels; only the RANGE matters.
  * The SED MUST span the full bolometric range -- a band-truncated file
@@ -488,10 +517,23 @@ static void load_agn_sed(const char *sed_file, SpecTable *st, int rank) {
     H5Dclose(did_l);
     H5Fclose(fid);
 
-    /* L_bol = Int L_nu dnu  (trapezoidal, freq must be increasing) */
+    /* L_bol = Int L_nu dnu up to E_BOL_MAX_EV, power law between nodes
+     * (freq must be increasing). The segment containing the cut is
+     * integrated up to the cut only. */
+    double nu_bol_max = E_BOL_MAX_EV * EV_CGS / PLANCK;
     double L_bol = 0.0;
-    for (hsize_t i = 0; i < nfreq-1; i++)
-        L_bol += 0.5*(lnu_d[i]+lnu_d[i+1]) * (freq_d[i+1]-freq_d[i]);
+    for (hsize_t i = 0; i < nfreq-1; i++) {
+        double nu1 = freq_d[i], nu2 = freq_d[i+1];
+        if (nu1 >= nu_bol_max) break;
+        double L2 = lnu_d[i+1];
+        if (nu2 > nu_bol_max) {
+            L2  = (lnu_d[i] > 0.0 && lnu_d[i+1] > 0.0)
+                ? lnu_d[i]*pow(lnu_d[i+1]/lnu_d[i], log(nu_bol_max/nu1)/log(nu2/nu1))
+                : lnu_d[i] + (lnu_d[i+1]-lnu_d[i])*(nu_bol_max-nu1)/(nu2-nu1);
+            nu2 = nu_bol_max;
+        }
+        L_bol += powerlaw_segment(nu1, nu2, lnu_d[i], L2);
+    }
 
     if (L_bol <= 0.0) {
         fprintf(stderr, "ERROR: AGN SED gives L_bol <= 0. "
@@ -527,7 +569,8 @@ static void load_agn_sed(const char *sed_file, SpecTable *st, int rank) {
     if (rank == 0) {
         printf("  AGN SED: Nfreq=%llu  freq=[%.3e, %.3e] Hz  (%.2f decades)\n",
                (unsigned long long)nfreq, freq_d[0], freq_d[nfreq-1], decades);
-        printf("  L_bol (full-range normalisation) = %.4e erg/s\n", L_bol);
+        printf("  L_bol (power law between nodes, E <= %.0f keV) = %.4e erg/s\n",
+               E_BOL_MAX_EV/1e3, L_bol);
         if (freq_d[0] > nu_lya)
             printf("  WARNING: SED lower edge %.3e Hz is above Ly-alpha %.3e Hz -- "
                    "n=2 shells near z_obs will use boundary eps_agn value\n",
