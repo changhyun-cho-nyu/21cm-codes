@@ -84,10 +84,12 @@ static double NU_LL_SPECIES = 0.0;
 
 /* ---- Lyman series / numerical parameters -------------------------------- */
 #define N_MAX      30     /* max Lyman series index (converged by n=23)  */
-#define N_SHELLS   400    /* log-spaced radial shells -- increased vs stellar
-                           * because AGN field is very sparse (bright point
-                           * sources), so finer shells reduce Gibbs ringing */
+#define N_SHELLS   400    /* log-spaced radial shells (plus one inner shell)
+                           * -- more than the stellar 200 because the AGN
+                           * field is very sparse (bright point sources) */
+#ifndef N_SNAPS
 #define N_SNAPS    709    /* total THESAN-XL snapshots                   */
+#endif
 #define N_OMP      4      /* OpenMP threads per MPI rank                 */
 
 /* ---- Globals set by load_snap_metadata ---------------------------------- */
@@ -366,49 +368,88 @@ static float *cache_get(SnapCache *c, double z_prime, int rank) {
 }
 
 /* =========================================================================
- * FFT top-hat smoothing.
+ * FFT spherical-shell averaging
+ *
+ * At fixed z_obs, the emission redshift z' maps to one comoving distance
+ * R(z_obs, z'), so a slice [z'_lo, z'_hi] of the J_alpha integral collects
+ * the emissivity on the spherical SHELL R_lo < r < R_hi, not inside the
+ * full sphere of radius R. Averaging over the full sphere would weight
+ * nearby sources 3/2 too heavily for the 1/(4 pi r^2) kernel.
+ *
+ * Shell window (volume-weighted average over R_lo < r < R_hi):
+ *   W(k) = [R_hi^3 W_TH(k R_hi) - R_lo^3 W_TH(k R_lo)] / (R_hi^3 - R_lo^3)
+ * Inner shell (R_lo = 0): the radial weight is constant per unit r, so the
+ * exact window of the 1/(4 pi r^2) kernel is used instead:
+ *   W(k) = Si(k R_hi) / (k R_hi)
+ * Both have W(0) = 1, so the mean is preserved. Shell windows ring in real
+ * space; individual shells may go negative and are NOT clipped here, since
+ * clipping each shell biases the mean. Only the final J is clipped.
  * ========================================================================= */
-static void smooth_tophat(const float *sfr_in, float *sfr_out,
-                           int N, double box_mpc, double R_mpc,
-                           fftwf_plan plan_r2c, fftwf_plan plan_c2r,
-                           fftwf_complex *work_k, float *work_r) {
-    long N3 = (long)N*N*N;
-    int  Nk = N/2+1;
-    double dx = box_mpc / N;
 
-    if (R_mpc <= sqrt(3.0)/2.0*dx) {
-        memcpy(sfr_out, sfr_in, N3*sizeof(float));
-        return;
+/* Top-hat sphere window 3 j1(x)/x */
+static double W_tophat(double x) {
+    if (x < 1e-3) return 1.0 - x*x/10.0;
+    return 3.0*(sin(x) - x*cos(x))/(x*x*x);
+}
+
+/* Si(x)/x by its power series. Used only for the inner shell, where
+ * x <= sqrt(3)*pi*R_hi/dx <= 5.5; the series is accurate to ~1e-13 there. */
+static double Si_over_x(double x) {
+    double x2 = x*x, u = 1.0, s = 1.0;   /* u_n = (-1)^n x^2n / (2n+1)! */
+    for (int n = 1; n < 60; n++) {
+        u *= -x2 / ((2.0*n) * (2.0*n + 1.0));
+        double t = u / (2.0*n + 1.0);
+        s += t;
+        if (fabs(t) < 1e-17*fabs(s)) break;
+    }
+    return s;
+}
+
+static void smooth_shell(const float *sfr_in, float *sfr_out,
+                         int N, double box_mpc, double R_lo, double R_hi,
+                         fftwf_plan plan_r2c, fftwf_plan plan_c2r,
+                         fftwf_complex *work_k, float *work_r) {
+    long   N3 = (long)N*N*N;
+    int    Nk = N/2+1;
+    double R3_lo = R_lo*R_lo*R_lo, R3_hi = R_hi*R_hi*R_hi;
+    double k0 = 2.0*M_PI_/box_mpc;
+    double norm = 1.0/(double)N3;
+
+    /* W depends only on |k|^2 = k0^2 (fx^2+fy^2+fz^2): tabulate it once
+     * over the integer m = fx^2+fy^2+fz^2 instead of per Fourier mode. */
+    int    Nm  = 3*(N/2)*(N/2) + 1;
+    float *Wm  = malloc(Nm * sizeof(float));
+    if (!Wm) {
+        fprintf(stderr, "ERROR: shell window table malloc failed\n");
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+    #pragma omp parallel for num_threads(N_OMP)
+    for (int m = 0; m < Nm; m++) {
+        double k = k0*sqrt((double)m);
+        double W = (R_lo <= 0.0)
+                 ? Si_over_x(k*R_hi)
+                 : (R3_hi*W_tophat(k*R_hi) - R3_lo*W_tophat(k*R_lo)) / (R3_hi - R3_lo);
+        Wm[m] = (float)(W*norm);
     }
 
     memcpy(work_r, sfr_in, N3*sizeof(float));
     fftwf_execute(plan_r2c);
 
-    float  norm = 1.0f / (float)N3;
-    double k0   = 2.0*M_PI_ / box_mpc;
-
     #pragma omp parallel for collapse(3) num_threads(N_OMP)
-    for (int ix = 0; ix < N;  ix++)
-    for (int iy = 0; iy < N;  iy++)
-    for (int iz = 0; iz < Nk; iz++) {
-        int    fx = (ix <= N/2) ? ix : ix-N;
-        int    fy = (iy <= N/2) ? iy : iy-N;
-        double k  = k0 * sqrt((double)(fx*fx + fy*fy + iz*iz));
-        double kR = k * R_mpc;
-        double W  = (kR < 1e-6) ? 1.0
-                   : 3.0*(sin(kR) - kR*cos(kR)) / (kR*kR*kR);
-        long idx = ((long)ix*N + iy)*Nk + iz;
-        work_k[idx][0] *= (float)(W * norm);
-        work_k[idx][1] *= (float)(W * norm);
+    for (int ix=0; ix<N; ix++)
+    for (int iy=0; iy<N; iy++)
+    for (int iz=0; iz<Nk; iz++) {
+        int fx = (ix<=N/2) ? ix : ix-N;
+        int fy = (iy<=N/2) ? iy : iy-N;
+        float W  = Wm[fx*fx + fy*fy + iz*iz];
+        long idx = ((long)ix*N+iy)*Nk+iz;
+        work_k[idx][0] *= W;
+        work_k[idx][1] *= W;
     }
+    free(Wm);
 
     fftwf_execute(plan_c2r);
-
-    /* Floor negatives from Gibbs ringing
-     * (more significant for AGN than stars due to higher field sparsity) */
-    #pragma omp parallel for num_threads(N_OMP)
-    for (long i = 0; i < N3; i++)
-        sfr_out[i] = (work_r[i] > 0.0f) ? work_r[i] : 0.0f;
+    memcpy(sfr_out, work_r, N3*sizeof(float));
 }
 
 /* =========================================================================
@@ -695,8 +736,7 @@ int main(int argc, char **argv) {
 
         double z_max = z_max_lyman(z_obs, n);
         double R_max = comoving_Mpc(z_obs, z_max, 0);
-        double R_min = box_mpc / N;              /* 1 cell = minimum shell */
-        if (R_max <= R_min) continue;
+        double R_min = box_mpc / N;              /* 1 cell = first log shell */
 
         /* Lyman-n photon frequency window at z_obs:
          * nu_lo = nu_n (photon emitted at z_obs itself)
@@ -714,18 +754,24 @@ int main(int argc, char **argv) {
                nu_lo, nu_hi, E_lo, E_hi);
         fflush(stdout);
 
+        /* Shells: an inner shell [0, R_in] covering the cell itself, then
+         * N_SHELLS log-spaced shells from R_min to R_max. A line whose
+         * R_max is below one cell gets only the inner shell [0, R_max]. */
+        double R_in     = (R_max < R_min) ? R_max : R_min;
+        int    n_log    = (R_max > R_min) ? N_SHELLS : 0;
         double log_Rmin = log(R_min);
-        double log_Rmax = log(R_max);
-        double dlogR    = (log_Rmax - log_Rmin) / N_SHELLS;
+        double dlogR    = (n_log > 0) ? (log(R_max) - log_Rmin) / n_log : 0.0;
 
-        for (int is = 0; is < N_SHELLS; is++) {
-            double R_lo  = exp(log_Rmin +  is      * dlogR);
-            double R_hi  = exp(log_Rmin + (is+1.0) * dlogR);
+        for (int is = -1; is < n_log; is++) {
+            double R_lo  = (is < 0) ? 0.0  : exp(log_Rmin +  is      * dlogR);
+            double R_hi  = (is < 0) ? R_in : exp(log_Rmin + (is+1.0) * dlogR);
             double R_mid = 0.5*(R_lo + R_hi);
 
             double z_prime = R_to_z(z_obs, z_max, R_mid);
-            double dz      = R_to_z(z_obs, z_max, R_hi)
-                           - R_to_z(z_obs, z_max, R_lo);
+            /* Shell dz (the outermost shell ends exactly at z_max) */
+            double z_r_lo  = (is < 0)          ? z_obs : R_to_z(z_obs, z_max, R_lo);
+            double z_r_hi  = (is == n_log - 1) ? z_max : R_to_z(z_obs, z_max, R_hi);
+            double dz      = z_r_hi - z_r_lo;
 
             double nu_p = nu_emitted(z_prime, z_obs, n);
             double eb   = eps_b(&st, nu_p);          /* [ph/Hz/erg]  */
@@ -749,11 +795,11 @@ int main(int argc, char **argv) {
                             * LUM_UNIT
                             * dz;
 
-            /* Interpolate AGN box at z_prime, smooth over sphere of R_mid */
+            /* Interpolate AGN box at z_prime, average over the shell R_lo < r < R_hi */
             float *agn_z = cache_get(&cache, z_prime, rank);
-            smooth_tophat(agn_z, agn_smooth,
-                          N, box_mpc, R_mid,
-                          plan_r2c, plan_c2r, work_k, work_r);
+            smooth_shell(agn_z, agn_smooth,
+                         N, box_mpc, R_lo, R_hi,
+                         plan_r2c, plan_c2r, work_k, work_r);
 
             #pragma omp parallel for num_threads(N_OMP)
             for (long i = 0; i < N3; i++)
@@ -761,8 +807,8 @@ int main(int argc, char **argv) {
 
             n_shells_done++;
 
-            /* Progress: first shell + every N_SHELLS/4 thereafter */
-            if (is == 0 || (is+1) % (N_SHELLS/4) == 0) {
+            /* Progress: inner shell, first log shell, then every N_SHELLS/4 */
+            if (is <= 0 || (is+1) % (N_SHELLS/4) == 0) {
                 printf("    [rank %d n=%2d] shell %3d/%d"
                        "  R_mid=%8.2f Mpc  z'=%.4f"
                        "  eps_agn=%.3e [ph/Hz/erg]"
@@ -797,6 +843,22 @@ int main(int argc, char **argv) {
 
     /* ---- Step 7: rank 0 -- stats and scalar sanity check ---- */
     if (rank == 0) {
+        /* Shell windows ring, so the sum can dip slightly below zero right
+         * next to bright sources. Clip only here, once, and report it. */
+        long   n_neg = 0;
+        double J_min = 0.0, neg_sum = 0.0, J_raw = 0.0;
+        for (long i = 0; i < N3; i++) {
+            J_raw += J_total[i];
+            if (J_total[i] < 0.0f) {
+                n_neg++;  neg_sum += J_total[i];
+                if (J_total[i] < J_min) J_min = J_total[i];
+                J_total[i] = 0.0f;
+            }
+        }
+        printf("  clipped %ld negative voxels (%.3e of box), min J = %.3e, "
+               "mean shift = %.3e of J_mean\n",
+               n_neg, (double)n_neg/N3, J_min, (J_raw != 0.0) ? -neg_sum/J_raw : 0.0);
+
         double J_sum = 0.0, J_sq = 0.0, J_max = 0.0, J_min_nz = 1e30;
         long   n_pos = 0;
         for (long i = 0; i < N3; i++) {
