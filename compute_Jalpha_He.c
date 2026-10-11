@@ -88,12 +88,11 @@
 #endif
 #define N_MAX        30      /* max Lyman series index                     */
 #define N_SHELLS     200     /* radial shells per Lyman-n line             */
-/* Stellar metallicity history Z(z) (replaces the fixed METALLICITY).
- * Two columns "redshift  Z"; make it from Z_above4p75.csv + Z_below4p75.csv.
- * EDIT this path. */
-#ifndef Z_HISTORY_FILE
-#define Z_HISTORY_FILE \
-    "/orcd/data/mvogelsb/004/chcho/cell_by_cell/helium/Z_history.txt"
+/* Young-star metallicity weights w_j(z) per BPASS metallicity, written by
+ * make_Z_snapshots.py (Z_weights.txt). EDIT this path. */
+#ifndef Z_WEIGHTS_FILE
+#define Z_WEIGHTS_FILE \
+    "/orcd/data/mvogelsb/004/chcho/cell_by_cell/helium/Z_weights.txt"
 #endif
 #define N_OMP        4       /* OpenMP threads per MPI rank (= cpus-per-task) */
 
@@ -517,14 +516,130 @@ static SpecTable load_spectrum(int rank) {
     return st;
 }
 
+/* =========================================================================
+ * Young-star metallicity distribution w_j(z)  (BPASS yield averaged over the
+ * metallicities of the stars forming at z, no single "mean" metallicity)
+ *
+ * Text file from make_Z_snapshots.py, rows "redshift  w_00 ... w_{N-1}":
+ * the fraction of the initial mass of young stars at each BPASS metallicity
+ * grid point (lines starting with # are ignored, except that a
+ * "# Z_grid = ..." line is checked against the BPASS table). The yield is
+ *     eps(nu, z) = sum_j w_j(z) eps_b(nu, Z_j),
+ * i.e. the young-star average of eps_b. A metallicity Z, which make_Z_snapshots.py
+ * splits between its two neighbouring grid points with log-Z weights, gives
+ * exactly the old single-Z eps_b(nu, Z). w_j is interpolated linearly in z
+ * between rows and held at the end rows.
+ * ========================================================================= */
+
+#define NMET_MAX 64
+
+static int     NZW  = 0;
+static double *zw_z = NULL;   /* ascending redshift   [NZW]          */
+static double *zw_w = NULL;   /* weights, row-major   [NZW * N_met]  */
+
+static void load_Z_weights(const SpecTable *st, int rank) {
+    int Nz = st->N_met;
+    if (Nz > NMET_MAX) {
+        fprintf(stderr, "ERROR: BPASS table has %d metallicities (max %d)\n", Nz, NMET_MAX);
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+    FILE *fp = fopen(Z_WEIGHTS_FILE, "r");
+    if (!fp) {
+        fprintf(stderr, "ERROR: cannot open Z weights file %s\n", Z_WEIGHTS_FILE);
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+    int  cap = 64, grid_checked = 0;
+    zw_z = malloc(cap * sizeof(double));
+    zw_w = malloc((long)cap * Nz * sizeof(double));
+    char line[8192];
+    while (fgets(line, sizeof line, fp)) {
+        if (line[0] == '#') {
+            char *p = strstr(line, "Z_grid =");
+            if (p) {
+                p += strlen("Z_grid =");
+                for (int j = 0; j < Nz; j++) {
+                    char *q;
+                    double Zf = strtod(p, &q);
+                    if (q == p || !(Zf > 0.0) ||
+                        fabs(log10(Zf) - st->logZ[j]) > 1e-3 * (fabs(st->logZ[j]) + 1.0)) {
+                        fprintf(stderr, "ERROR: %s: Z_grid entry %d does not match the BPASS "
+                                "metallicity %.4g\n", Z_WEIGHTS_FILE, j, pow(10.0, st->logZ[j]));
+                        MPI_Abort(MPI_COMM_WORLD, 1);
+                    }
+                    p = q;
+                }
+                grid_checked = 1;
+            }
+            continue;
+        }
+        char *p = line, *q;
+        double z = strtod(p, &q);
+        if (q == p) continue;                       /* blank line */
+        p = q;
+        if (NZW == cap) {
+            cap *= 2;
+            zw_z = realloc(zw_z, cap * sizeof(double));
+            zw_w = realloc(zw_w, (long)cap * Nz * sizeof(double));
+        }
+        double *w = zw_w + (long)NZW * Nz, sum = 0.0;
+        for (int j = 0; j < Nz; j++) {
+            w[j] = strtod(p, &q);
+            if (q == p || !(w[j] >= 0.0)) {
+                fprintf(stderr, "ERROR: %s: row at z = %g needs %d non-negative weights\n",
+                        Z_WEIGHTS_FILE, z, Nz);
+                MPI_Abort(MPI_COMM_WORLD, 1);
+            }
+            sum += w[j];  p = q;
+        }
+        if (!(sum > 0.0)) continue;                 /* no young stars: skip */
+        for (int j = 0; j < Nz; j++) w[j] /= sum;   /* guard against rounding */
+        zw_z[NZW++] = z;
+    }
+    fclose(fp);
+    if (NZW < 1) {
+        fprintf(stderr, "ERROR: %s has no usable rows\n", Z_WEIGHTS_FILE);
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+    for (int a = 1; a < NZW; a++) {                 /* sort rows by redshift */
+        double tz = zw_z[a], tw[NMET_MAX];
+        memcpy(tw, zw_w + (long)a*Nz, Nz*sizeof(double));
+        int b = a-1;
+        while (b >= 0 && zw_z[b] > tz) {
+            zw_z[b+1] = zw_z[b];
+            memcpy(zw_w + (long)(b+1)*Nz, zw_w + (long)b*Nz, Nz*sizeof(double));
+            b--;
+        }
+        zw_z[b+1] = tz;
+        memcpy(zw_w + (long)(b+1)*Nz, tw, Nz*sizeof(double));
+    }
+    if (rank == 0)
+        printf("  Z weights: %d rows from %s, z = %.3f .. %.3f, %d metallicities (%s)\n",
+               NZW, Z_WEIGHTS_FILE, zw_z[0], zw_z[NZW-1], Nz,
+               grid_checked ? "Z_grid matches BPASS" : "WARNING: no Z_grid line to check");
+}
+
+/* Weights at redshift z: linear in z between rows, end rows held outside. */
+static void Z_weights_at(const SpecTable *st, double z, double *w) {
+    int Nz = st->N_met;
+    if (NZW == 1 || z <= zw_z[0]) { memcpy(w, zw_w, Nz*sizeof(double)); return; }
+    if (z >= zw_z[NZW-1]) { memcpy(w, zw_w + (long)(NZW-1)*Nz, Nz*sizeof(double)); return; }
+    int lo = 0, hi = NZW-1;
+    while (hi-lo > 1) {
+        int mid = (lo+hi)/2;
+        if (zw_z[mid] <= z) lo = mid; else hi = mid;
+    }
+    double t = (z - zw_z[lo]) / (zw_z[hi] - zw_z[lo]);
+    const double *a = zw_w + (long)lo*Nz, *b = zw_w + (long)hi*Nz;
+    for (int j = 0; j < Nz; j++) w[j] = (1.0-t)*a[j] + t*b[j];
+}
+
 /*
- * eps_b: photon yield at frequency nu and metallicity Z.
- * Linear in nu, linear in log Z (bilinear). Outside the tables the edge value
- * is used: Z < Z_min -> Z_min, Z > Z_max -> Z_max, and likewise in nu.
- * Same scheme as N_nu_at() in the Python notebook.
+ * eps_mix: photon yield [photons/Hz/baryon] at frequency nu for the young
+ * stars forming at redshift z: sum_j w_j(z) N_nu(nu, Z_j). Linear in nu,
+ * edge value outside the frequency table.
  */
-static double eps_b(const SpecTable *st, double nu, double Z) {
-    int    Nf = st->Nfreq;
+static double eps_mix(const SpecTable *st, double nu, double z) {
+    int    Nf = st->Nfreq, Nz = st->N_met;
     int    lo = 0, hi = Nf-1;
     double wf;
     if      (nu <= st->freq[0])    { hi = 0;    wf = 0.0; }
@@ -536,86 +651,14 @@ static double eps_b(const SpecTable *st, double nu, double Z) {
         }
         wf = (nu-st->freq[lo])/(st->freq[hi]-st->freq[lo]);
     }
-
-    int    Nz = st->N_met;
-    double lz = (Z > 0.0) ? log10(Z) : st->logZ[0];
-    if (lz < st->logZ[0])    lz = st->logZ[0];
-    if (lz > st->logZ[Nz-1]) lz = st->logZ[Nz-1];
-    int j = 0;
-    while (j < Nz-2 && lz > st->logZ[j+1]) j++;
-    double wz = (Nz > 1) ? (lz - st->logZ[j]) / (st->logZ[j+1] - st->logZ[j]) : 0.0;
-
-    const double *a = st->N_nu + (long)j*Nf;
-    const double *b = (Nz > 1) ? a + Nf : a;
-    double va = a[lo]*(1.0-wf) + a[hi]*wf;
-    double vb = b[lo]*(1.0-wf) + b[hi]*wf;
-    return (1.0-wz)*va + wz*vb;
-}
-
-/* =========================================================================
- * Stellar metallicity history Z(z)
- * Text file, two columns "redshift  Z" (lines starting with # ignored).
- * Z is clamped to the BPASS grid, then interpolated linearly in log Z;
- * outside the tabulated redshift range the end value is held.
- * Same as Z_of_z() in the Python notebook.
- * ========================================================================= */
-
-static int     NZH     = 0;
-static double *zh_z    = NULL;   /* ascending redshift */
-static double *zh_logZ = NULL;
-
-static void load_Z_history(const SpecTable *st, int rank) {
-    FILE *fp = fopen(Z_HISTORY_FILE, "r");
-    if (!fp) {
-        fprintf(stderr, "ERROR: cannot open Z history file %s\n", Z_HISTORY_FILE);
-        MPI_Abort(MPI_COMM_WORLD, 1);
+    double w[NMET_MAX], s = 0.0;
+    Z_weights_at(st, z, w);
+    for (int j = 0; j < Nz; j++) {
+        if (w[j] == 0.0) continue;
+        const double *row = st->N_nu + (long)j*Nf;
+        s += w[j] * (row[lo]*(1.0-wf) + row[hi]*wf);
     }
-    int    cap  = 256;
-    double Zmin = pow(10.0, st->logZ[0]);
-    double Zmax = pow(10.0, st->logZ[st->N_met-1]);
-    zh_z    = malloc(cap * sizeof(double));
-    zh_logZ = malloc(cap * sizeof(double));
-    char line[1024];
-    while (fgets(line, sizeof line, fp)) {
-        if (line[0] == '#') continue;
-        double z, Z;
-        if (sscanf(line, "%lf %lf", &z, &Z) != 2) continue;
-        if (NZH == cap) {
-            cap *= 2;
-            zh_z    = realloc(zh_z,    cap * sizeof(double));
-            zh_logZ = realloc(zh_logZ, cap * sizeof(double));
-        }
-        if (!(Z > Zmin)) Z = Zmin;          /* also catches Z = 0 and NaN */
-        if (Z > Zmax)    Z = Zmax;
-        zh_z[NZH] = z;  zh_logZ[NZH] = log10(Z);  NZH++;
-    }
-    fclose(fp);
-    if (NZH < 2) {
-        fprintf(stderr, "ERROR: %s has %d usable rows (need >= 2)\n", Z_HISTORY_FILE, NZH);
-        MPI_Abort(MPI_COMM_WORLD, 1);
-    }
-    for (int a = 1; a < NZH; a++) {                    /* sort by redshift */
-        double tz = zh_z[a], tl = zh_logZ[a];
-        int b = a-1;
-        while (b >= 0 && zh_z[b] > tz) { zh_z[b+1] = zh_z[b]; zh_logZ[b+1] = zh_logZ[b]; b--; }
-        zh_z[b+1] = tz;  zh_logZ[b+1] = tl;
-    }
-    if (rank == 0)
-        printf("  Z(z): %d rows from %s, z = %.3f .. %.3f, Z = %.3e .. %.3e (after clamping)\n",
-               NZH, Z_HISTORY_FILE, zh_z[0], zh_z[NZH-1],
-               pow(10.0, zh_logZ[NZH-1]), pow(10.0, zh_logZ[0]));
-}
-
-static double Z_of_z(double z) {
-    if (z <= zh_z[0])     return pow(10.0, zh_logZ[0]);
-    if (z >= zh_z[NZH-1]) return pow(10.0, zh_logZ[NZH-1]);
-    int lo = 0, hi = NZH-1;
-    while (hi-lo > 1) {
-        int mid = (lo+hi)/2;
-        if (zh_z[mid] <= z) lo = mid; else hi = mid;
-    }
-    double w = (z - zh_z[lo]) / (zh_z[hi] - zh_z[lo]);
-    return pow(10.0, (1.0-w)*zh_logZ[lo] + w*zh_logZ[hi]);
+    return s;
 }
 
 /* =========================================================================
@@ -711,13 +754,15 @@ static void smooth_shell(const float *sfr_in, float *sfr_out,
 
 static void write_output(const char *outfile, const float *J,
                           int N, double z_obs, double box_mpc,
-                          double J_mean, double J_scalar) {
+                          double J_mean, double J_scalar,
+                          const SpecTable *st) {
     hid_t fid = H5Fcreate(outfile, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
     hsize_t dims[3] = {(hsize_t)N,(hsize_t)N,(hsize_t)N};
     hid_t sid = H5Screate_simple(3,dims,NULL);
 
     hid_t pid = H5Pcreate(H5P_DATASET_CREATE);
-    hsize_t chunk[3]={64,64,64};
+    hsize_t c64 = (N < 64) ? (hsize_t)N : 64;          /* chunk must not exceed the grid */
+    hsize_t chunk[3]={c64,c64,c64};
     H5Pset_chunk(pid,3,chunk);
     H5Pset_deflate(pid,4);
 
@@ -734,9 +779,21 @@ static void write_output(const char *outfile, const float *J,
     WA("BoxSize_cMpc",box_mpc)
     WA("J_mean",      J_mean)
     WA("J_scalar",    J_scalar)
-    WA("Z_star_obs",  Z_of_z(z_obs))
     WA("NU_LL_HeII",  1.31583e16)
     #undef WA
+
+    {
+        double w[NMET_MAX], Zg[NMET_MAX];
+        hsize_t nz = (hsize_t)st->N_met;
+        Z_weights_at(st, z_obs, w);
+        for (int j = 0; j < st->N_met; j++) Zg[j] = pow(10.0, st->logZ[j]);
+        hid_t vs = H5Screate_simple(1, &nz, NULL);
+        hid_t aw = H5Acreate(did, "Z_weights_obs", H5T_NATIVE_DOUBLE, vs, H5P_DEFAULT, H5P_DEFAULT);
+        H5Awrite(aw, H5T_NATIVE_DOUBLE, w);  H5Aclose(aw);
+        hid_t ag = H5Acreate(did, "Z_grid", H5T_NATIVE_DOUBLE, vs, H5P_DEFAULT, H5P_DEFAULT);
+        H5Awrite(ag, H5T_NATIVE_DOUBLE, Zg); H5Aclose(ag);
+        H5Sclose(vs);
+    }
 
     hid_t str_t = H5Tcopy(H5T_C_S1);
     H5Tset_size(str_t,64);
@@ -803,8 +860,14 @@ int main(int argc, char **argv) {
 
     if (rank==0) printf("\nLoading BPASS spectrum...\n");
     SpecTable st = load_spectrum(rank);
-    load_Z_history(&st, rank);
-    if (rank==0) printf("  Z(z_obs=%.3f) = %.4e\n", z_obs, Z_of_z(z_obs));
+    load_Z_weights(&st, rank);
+    if (rank==0) {
+        double w[NMET_MAX];
+        Z_weights_at(&st, z_obs, w);
+        printf("  young-star Z weights at z_obs=%.3f:", z_obs);
+        for (int j = 0; j < st.N_met; j++) printf(" %.2g:%.3f", pow(10.0, st.logZ[j]), w[j]);
+        printf("\n");
+    }
     MPI_Barrier(MPI_COMM_WORLD);
 
     fftwf_init_threads();
@@ -878,7 +941,7 @@ int main(int argc, char **argv) {
 
             /* nu_emitted now uses He II NU_LL = 1.31583e16 Hz */
             double nu_p  = nu_emitted(z_prime, z_obs, n);
-            double eb    = eps_b(&st, nu_p, Z_of_z(z_prime));   /* Z at the EMISSION redshift */
+            double eb    = eps_mix(&st, nu_p, z_prime);   /* young stars at the EMISSION redshift */
             double c_H   = C_CGS / H_cgm(z_prime);
             double prefac = (1.0+z_obs)*(1.0+z_obs) / (4.0*M_PI_)
                             * frec * eb * c_H / MP_CGS * SFR_UNIT * dz;
@@ -975,7 +1038,7 @@ int main(int argc, char **argv) {
                 double nu_p = nu_emitted(zm, z_obs, n);
                 double c_H  = C_CGS / H_cgm(zm);
                 J_scalar += (1.0+z_obs)*(1.0+z_obs)/(4.0*M_PI_)
-                             * frec * eps_b(&st,nu_p,Z_of_z(zm)) * c_H
+                             * frec * eps_mix(&st,nu_p,zm) * c_H
                              * sfr_mean * SFR_UNIT / MP_CGS * dz2;
             }
         }
@@ -988,7 +1051,7 @@ int main(int argc, char **argv) {
                (J_scalar>0) ? J_mean/J_scalar : 0.0);
 
         printf("\nWriting %s...\n", outfile);
-        write_output(outfile, J_total, N, z_obs, box_mpc, J_mean, J_scalar);
+        write_output(outfile, J_total, N, z_obs, box_mpc, J_mean, J_scalar, &st);
 
         fftwf_free(J_total);
         time_t t1 = time(NULL);
@@ -1004,7 +1067,7 @@ int main(int argc, char **argv) {
     fftwf_destroy_plan(plan_c2r);
     fftwf_cleanup_threads();
     free(st.freq); free(st.N_nu); free(st.logZ);
-    free(zh_z); free(zh_logZ);
+    free(zw_z); free(zw_w);
 
     MPI_Finalize();
     return 0;
