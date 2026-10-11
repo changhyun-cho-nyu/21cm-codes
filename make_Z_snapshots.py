@@ -39,10 +39,12 @@ Outputs
                     N_wind, Z_min, Z_max, Z_mean, Z_mean_mw, Z_young_10/20/50/100,
                     N_young_<W>, aform_ok, w_00..w_12, and with --bpass also
                     NH_L1, NH_L2, ratio_H, NHe_L1, NHe_L2, ratio_He
-  Z_history.txt   : "redshift  Z" for compute_Jalpha.c / compute_Jalpha_He.c
-                    (Z_HISTORY_FILE), from --column (default Z_young_20).
-  Z_weights.txt   : "redshift  w_00 ... w_12" (for a Level-2 version of the C
-                    codes; not read by the current C codes).
+  Z_weights.txt   : "redshift  w_00 ... w_12", read by compute_Jalpha.c and
+                    compute_Jalpha_He.c (Z_WEIGHTS_FILE): the yield is the
+                    young-star average sum_j w_j eps_b(nu, Z_j).
+  Z_history.txt   : "redshift  Z" from --column (default Z_young_20): the single
+                    young-star metallicity, for plots and for the paper; the C
+                    codes no longer read it.
   Snapshots with no star in the window are left out of both text files.
 
 Usage
