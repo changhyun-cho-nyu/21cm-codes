@@ -335,6 +335,15 @@ typedef struct {
     const char *prefix, *dataset;
 } SnapCache;
 
+/* Highest render redshift (snap 0 normally). Emission before the first
+ * render is set to zero, as in the stellar codes, by ending the z' integral
+ * there instead of holding the first box. */
+static double snap_z_max(void) {
+    for (int i = 0; i < N_SNAPS; i++)
+        if (snap_redshifts[i] >= 0.0) return snap_redshifts[i];
+    return -1.0;
+}
+
 static void find_bracket(double z_prime, int *slo, int *shi) {
     if (z_prime >= snap_redshifts[0])
         { *slo = 0; *shi = 0; return; }
@@ -626,6 +635,19 @@ static void write_output(const char *path, const float *J,
     hid_t did = H5Dcreate(fid, dset_name, H5T_NATIVE_FLOAT, sid,
                            H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
     H5Dwrite(did, H5T_NATIVE_FLOAT, H5S_ALL, H5S_ALL, H5P_DEFAULT, J);
+    {   /* same attributes on the dataset, as in the stellar codes */
+        const char *nm[5] = {"Redshift", "BoxSize_cMpc", "J_mean", "J_scalar", "NU_LL_species"};
+        double      va[5] = {z_obs, box_mpc, J_mean, J_scalar, NU_LL_SPECIES};
+        for (int k = 0; k < 5; k++) {
+            hid_t s1 = H5Screate(H5S_SCALAR);
+            hid_t a1 = H5Acreate(did, nm[k], H5T_NATIVE_DOUBLE, s1, H5P_DEFAULT, H5P_DEFAULT);
+            H5Awrite(a1, H5T_NATIVE_DOUBLE, &va[k]); H5Aclose(a1); H5Sclose(s1);
+        }
+        hid_t st = H5Tcopy(H5T_C_S1); H5Tset_size(st, 64);
+        hid_t s1 = H5Screate(H5S_SCALAR);
+        hid_t a1 = H5Acreate(did, "Units", st, s1, H5P_DEFAULT, H5P_DEFAULT);
+        { char u[64] = "photons s^-1 cm^-2 Hz^-1 sr^-1"; H5Awrite(a1, st, u); } H5Aclose(a1); H5Sclose(s1); H5Tclose(st);
+    }
     H5Dclose(did); H5Sclose(sid);
 
     hid_t gid = H5Gcreate(fid, "Header",
@@ -782,6 +804,8 @@ int main(int argc, char **argv) {
         if (frec == 0.0) continue;               /* n=3: skip (f_rec=0) */
 
         double z_max = z_max_lyman(z_obs, n);
+        if (z_max > snap_z_max()) z_max = snap_z_max();
+        if (z_max <= z_obs)       continue;
         double R_max = comoving_Mpc(z_obs, z_max, 0);
         double R_min = box_mpc / N;              /* 1 cell = first log shell */
 
@@ -930,6 +954,8 @@ int main(int argc, char **argv) {
             double frec = f_rec(n);
             if (frec == 0.0) continue;
             double z_max = z_max_lyman(z_obs, n);
+            if (z_max > snap_z_max()) z_max = snap_z_max();
+            if (z_max <= z_obs) continue;
 
             double z_pts[N_SNAPS+2]; int np2 = 0;
             z_pts[np2++] = z_obs;
