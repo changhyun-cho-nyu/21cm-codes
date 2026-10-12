@@ -110,6 +110,15 @@ def at_Z(Z, logZ_grid, values):
 def bpass_band_yields(path):
     """Metallicity grid and lifetime photon yield per baryon in each band,
     N_band[j] = Int_band N_nu(nu, Z_j) dnu, built as in load_spectrum()."""
+    Zg, tau_lo, tau_hi, rates = bpass_band_rates(path)
+    dt = (tau_hi - tau_lo) * MYR_S
+    return Zg, {band: (r * dt[None, :]).sum(axis=1) for band, r in rates.items()}
+
+def bpass_band_rates(path):
+    """Age-resolved band photon rates, built as in load_spectrum():
+    returns Zg, tau_lo, tau_hi [Myr] (age-bin edges; bins centred in log age,
+    the first from t = 0) and rates[band] of shape (N_Z, N_age) in
+    photons / s / baryon, constant within each age bin."""
     with h5py.File(path, "r") as f:
         nf, na, nz = (int(f[k][()]) for k in ("Number_of_freq", "N_age", "N_metallicity"))
         freq = f["freq"][()]
@@ -120,15 +129,13 @@ def bpass_band_yields(path):
     dlog = log_age[na // 2] - log_age[na // 2 - 1] if na > 1 else 0.1
     hi, lo = 10**(log_age + 0.5 * dlog), 10**(log_age - 0.5 * dlog)
     lo[0] = 0.0                                               # first bin from t = 0
-    dt = (hi - lo) * GYR2SEC
-    yields = {}
+    rates = {}
     for band, (nu_lo, nu_hi) in BANDS.items():
         m = (freq >= nu_lo) & (freq <= nu_hi)
         if m.sum() < 2:
             raise ValueError(f"BPASS table has {m.sum()} points in the {band} band")
-        rate = np.trapezoid(Lnu[:, :, m] / (PLANCK * freq[m]) * (MP_CGS / MSOL2GRAM), freq[m], axis=2)
-        yields[band] = (rate * dt[None, :]).sum(axis=1)       # photons / baryon, per Z
-    return Zg, yields
+        rates[band] = np.trapezoid(Lnu[:, :, m] / (PLANCK * freq[m]) * (MP_CGS / MSOL2GRAM), freq[m], axis=2)
+    return Zg, lo * GYR2SEC / MYR_S, hi * GYR2SEC / MYR_S, rates
 
 def snapshot_row(run, snapdir, snap, logZ_grid, window):
     with h5py.File(os.path.join(snapdir, f"snap_{snap:03d}.hdf5"), "r") as f:
