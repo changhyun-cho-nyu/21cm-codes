@@ -20,7 +20,7 @@
 OUT=/orcd/data/mvogelsb/004/chcho/SFR_eff
 WEIGHTS=/orcd/data/mvogelsb/004/chcho/cell_by_cell/hydrogen/Z_weights.txt
 PLANES=32
-MIN_FREE_GB=1500     # refuse to start with less free space than this on $OUT (worst case ~1.4 TB)
+MIN_FREE_GB=600      # refuse to start with less free space than this on $OUT (expected ~0.2-0.4 TB)
 
 source ~/.bashrc
 conda activate jupyter_env
