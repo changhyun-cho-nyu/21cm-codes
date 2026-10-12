@@ -20,6 +20,7 @@
 OUT=/orcd/data/mvogelsb/004/chcho/SFR_eff
 WEIGHTS=/orcd/data/mvogelsb/004/chcho/cell_by_cell/hydrogen/Z_weights.txt
 PLANES=32
+MIN_FREE_GB=600      # refuse to start with less free space than this on $OUT (expected ~0.2-0.4 TB)
 
 source ~/.bashrc
 conda activate jupyter_env
@@ -34,6 +35,10 @@ python -c "import h5py, hdf5plugin" || { echo "h5py/hdf5plugin not importable"; 
 mkdir -p "$OUT"
 echo "host $(hostname), start $(date), commit $(git rev-parse --short HEAD 2>/dev/null || echo n/a)"
 df -h "$OUT" | tail -1
+FREE_GB=$(df --output=avail -BG "$OUT" | tail -1 | tr -dc '0-9')
+if [ "$FREE_GB" -lt "$MIN_FREE_GB" ]; then
+    echo "ERROR: only ${FREE_GB} GB free on $OUT (MIN_FREE_GB = $MIN_FREE_GB); not starting"; exit 1
+fi
 
 python -u make_SFR_eff.py --out "$OUT" --weights "$WEIGHTS" --planes "$PLANES"
 
