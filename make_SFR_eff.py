@@ -45,6 +45,14 @@ so the C codes need no change; attributes 'content', 'band', 'tau_max_Myr'):
 Usage
 -----
   python make_SFR_eff.py --out /path/to/SFR_eff --weights Z_weights.txt [--planes 32]
+
+Convergence test of the linear-in-time interpolation (compare_SFR_eff.py):
+  --stride S            keep every S-th snapshot (in time order), starting from the first
+  --plane-range I0 I1   process only planes I0 <= i < I1 (the rest of each box stays zero)
+e.g. on the same 64 planes:
+  python make_SFR_eff.py --out test/s1 --weights W --plane-range 0 64
+  python make_SFR_eff.py --out test/s2 --weights W --plane-range 0 64 --stride 2
+  python compare_SFR_eff.py test/s1 test/s2
 """
 import argparse
 import os
@@ -158,7 +166,7 @@ def build_W(t, z_snap, rates, tau_lo, tau_hi, wz, ww, tau_max):
     return W
 
 # ---------------------------------------------------------------- boxes
-def create_outputs(snaps, out_root, bands, N, in_attrs):
+def create_outputs(snaps, out_root, bands, N, in_attrs, stride, plane_range):
     for band in bands:
         for (s, path, z) in snaps:
             p = os.path.join(out_root, OUT_PATTERN[band].format(s))
@@ -174,6 +182,8 @@ def create_outputs(snaps, out_root, bands, N, in_attrs):
                                       "BPASS band photon rate at each age, normalised by the lifetime yield")
                 d.attrs["band"] = band
                 d.attrs["tau_max_Myr"] = TAU_MAX_MYR[band]
+                d.attrs["stride"] = stride
+                d.attrs["plane_range"] = plane_range
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -186,11 +196,18 @@ def main():
     p.add_argument("--n-snaps", type=int, default=N_SNAPS)
     p.add_argument("--tau-max-H", type=float, default=TAU_MAX_MYR["H"])
     p.add_argument("--tau-max-He", type=float, default=TAU_MAX_MYR["He"])
+    p.add_argument("--stride", type=int, default=1, help="keep every S-th snapshot (convergence test)")
+    p.add_argument("--plane-range", type=int, nargs=2, metavar=("I0", "I1"), help="process planes I0..I1-1 only")
     args = p.parse_args()
     TAU_MAX_MYR.update({"H": args.tau_max_H, "He": args.tau_max_He})
+    if args.stride < 1:
+        sys.exit("ERROR: --stride must be >= 1")
 
     print("finding snapshots ...")
     snaps = find_snapshots(args.dirs, args.n_snaps)
+    if args.stride > 1:
+        snaps = snaps[::args.stride]
+        print(f"  --stride {args.stride}: keeping every {args.stride}th snapshot, {len(snaps)} left")
     z = np.array([r[2] for r in snaps]); t = t_of_z(z)
     dt = np.diff(t)
     print(f"  {len(snaps)} snapshots, z = {z[0]:.3f} .. {z[-1]:.3f}, t = {t[0]:.1f} .. {t[-1]:.1f} Myr, "
@@ -225,12 +242,17 @@ def main():
     print(f"  boxes: {N}^3, input chunks {chunks}, slab = {args.planes} planes; "
           f"peak window {int((last_use - np.arange(n)).max()) + 1} slabs "
           f"~ {((last_use - np.arange(n)).max() + 1) * args.planes * N * N * 4 / 1e9:.1f} GB")
-    create_outputs(snaps, args.out, args.bands, N, in_attrs)
+    p0, p1 = args.plane_range if args.plane_range else (0, N)
+    if not 0 <= p0 < p1 <= N:
+        sys.exit(f"ERROR: --plane-range must satisfy 0 <= I0 < I1 <= {N}")
+    if (p0, p1) != (0, N):
+        print(f"  --plane-range: planes {p0}..{p1 - 1} only")
+    create_outputs(snaps, args.out, args.bands, N, in_attrs, args.stride, np.array([p0, p1], np.int32))
 
     sum_sfr = np.zeros(n); sum_eff = {b: np.zeros(n) for b in args.bands}
     t_start = time.time()
-    for i0 in range(0, N, args.planes):
-        i1 = min(N, i0 + args.planes)
+    for i0 in range(p0, p1, args.planes):
+        i1 = min(p1, i0 + args.planes)
         buf = {}
         for k, (s, path, _) in enumerate(snaps):
             with h5py.File(path, "r") as f:
@@ -257,7 +279,7 @@ def main():
                 del buf[m]
         el = time.time() - t_start
         print(f"  planes {i0:4d}-{i1 - 1:4d} done, {el / 60:.1f} min elapsed, "
-              f"~{el / i1 * (N - i1) / 60:.1f} min left", flush=True)
+              f"~{el / (i1 - p0) * (p1 - i1) / 60:.1f} min left", flush=True)
 
     csv = os.path.join(args.out, "SFR_eff_summary.csv")
     with open(csv, "w") as f:
@@ -267,7 +289,7 @@ def main():
             for b in args.bands:
                 r = sum_eff[b][k] / sum_sfr[k] if sum_sfr[k] > 0 else float("nan")
                 cols += [str(int((Wb[b][k] != 0).sum())), f"{r:.6g}"]
-            f.write(f"{s},{zk:.6f},{t[k]:.4f}," + ",".join(cols) + f",{sum_sfr[k] / N**3:.6e}\n")
+            f.write(f"{s},{zk:.6f},{t[k]:.4f}," + ",".join(cols) + f",{sum_sfr[k] / ((p1 - p0) * N * N):.6e}\n")
     print(f"wrote {csv}")
     print("box-mean SFR_eff / SFR (compare with the R(z) of the global age test):")
     for zc in (20, 15, 12, 10, 8, 6, 5, 4, 3):
