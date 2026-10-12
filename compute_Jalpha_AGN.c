@@ -3,7 +3,12 @@
  *
  * Spatially resolved Lyman-alpha background from AGN bolometric luminosity.
  *
- * Source field : AGN bolometric luminosity  [code units / voxel]
+ * Source field : LuminosityAGN render [code units / voxel] = f_esc(L) x L_bol
+ *                per black hole, L_bol = eps_r (1 - eps_f) Mdot c^2 and
+ *                f_esc = 0.3 (L_bol / 1e46 erg/s)^0.07 as in LUMINA's RT
+ *                (check_agn_luminosity.py: render / sum L_bol = 0.1949 =
+ *                luminosity-weighted f_esc at z = 8.90). No further escape or
+ *                obscuration factor is applied here, in either band.
  * Spectral weight:
  *   eps_agn(nu) = (L_nu(nu) / L_bol) / (h*nu)   [ph / Hz / erg]
  *
@@ -12,12 +17,12 @@
  *              Int dz'/H(z')  eps_agn(nu'_n)  rho_L(x',z')
  *
  * where rho_L = box[i] * LUM_UNIT   [erg/s/cm^3]
- *       LUM_UNIT = 6.4478e36 / cell_cm^3   [erg/s/cm^3 per code unit]
+ *       LUM_UNIT = 6.4459e36 / cell_cm^3   [erg/s/cm^3 per code unit]
  *
  * IMPORTANT (normalization):
  *   The SED file MUST span the full bolometric range (IR to X-ray), because
  *   L_bol is computed internally as Int L_nu dnu (up to E_BOL_MAX_EV), and
- *   LuminosityAGN is a *bolometric* luminosity. A band-truncated SED
+ *   LuminosityAGN is a (escape-corrected) bolometric luminosity. A band-truncated SED
  *   (e.g. only the Lyman window, renormalized to L_bol=1) silently inflates
  *   eps_agn by 1/f_band -- this was the ~27x (H) / ~110x (He) over-estimate.
  *   A guard in load_agn_sed() now aborts on a suspiciously narrow SED.
@@ -36,7 +41,7 @@
  * Key difference from stellar code:
  *   - No age integration (SED is instantaneous, not integrated over lifetime)
  *   - No /MP_CGS  (luminosity is already in erg/s; no mass->baryon conversion)
- *   - LUM_UNIT = 6.4478e36/cell_cm^3   (vs SFR_UNIT = Msun/yr -> g/s per cell)
+ *   - LUM_UNIT = 6.4459e36/cell_cm^3   (vs SFR_UNIT = Msun/yr -> g/s per cell)
  *
  * Dimensional check:
  *   [sr^-1] x [ph/Hz/erg] x [cm/s / s^-1] x [erg/s/cm^3] = [ph/s/Hz/cm^2/sr] OK
@@ -106,7 +111,7 @@ static double NU_LL_SPECIES = 0.0;
 static int    N_PIX    = 640;
 static double BOX_CMPC = 500.0;
 static double LUM_UNIT = 0.0;   /* erg/s/cm^3 per code unit
-                                  * = 6.4478e36 / cell_cm^3
+                                  * = 6.4459e36 / cell_cm^3
                                   * converts box[i] [code/vox] -> [erg/s/cm^3]
                                   * stored as double -- no float underflow risk */
 
@@ -223,7 +228,7 @@ static int read_attr_int(hid_t gid, const char *name) {
 
 /* =========================================================================
  * Snapshot metadata.
- * LUM_UNIT = 6.4478e36/cell_cm^3  (code unit -> erg/s, then per comoving cm^3).
+ * LUM_UNIT = 6.4459e36/cell_cm^3  (code unit -> erg/s, then per comoving cm^3).
  * cell_cm is COMOVING (boxsize * unitlen / hubble / N_PIX).
  * ========================================================================= */
 static void build_snap_path(const char *dir, const char *prefix,
@@ -260,11 +265,11 @@ static void load_snap_metadata(const char *agn_dir, const char *agn_dir2,
             double box_cm  = boxsize * unitlen / hubble;   /* comoving cm */
             double cell_cm = box_cm / N_PIX;               /* comoving cm */
             /*
-             * LUM_UNIT = 6.4478e36 / cell_cm^3
-             * box[i] is in code units; x6.4478e36 -> erg/s; /cell_cm^3 -> erg/s/cm^3.
+             * LUM_UNIT = 6.4459e36 / cell_cm^3
+             * box[i] is in code units; x6.4459e36 -> erg/s; /cell_cm^3 -> erg/s/cm^3.
              * Kept as double -- no float underflow.
              */
-            LUM_UNIT = 6.4478e36 / (cell_cm * cell_cm * cell_cm);
+            LUM_UNIT = 6.4459e36 / (cell_cm * cell_cm * cell_cm);
             geometry_read = 1;
             if (rank == 0)
                 printf("  Box=%.1f cMpc  N=%d  cell_cm=%.4e  LUM_UNIT=%.4e erg/s/cm^3/codeunit\n",

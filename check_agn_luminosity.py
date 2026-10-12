@@ -44,7 +44,7 @@ except ImportError:
     pass
 
 C_KMS = 2.99792458e5
-LUM_UNIT_C = 6.4478e36          # erg/s per code unit, as in compute_Jalpha_AGN.c
+LUM_UNIT_C = 6.4459e36          # erg/s per code unit, as in compute_Jalpha_AGN.c
 PARAM_KEYS = {"eps_r": ["BlackHoleRadiativeEfficiency"],
               "eps_f": ["BlackHoleFeedbackFactor", "QuasarFeedbackFactor"]}
 
