@@ -40,6 +40,8 @@
  *   output_hdf5 : full path for output file (e.g. /path/Jalpha_He_177.hdf5)
  *
  * BPASS spectrum file is hardcoded below — edit SPECTRUM_FILE.
+ * The stellar emissivity includes the host escape fraction F_ESC_STAR_HE
+ * (default 0.18, LUMINA's value at all z); -DF_ESC_STAR_HE=1.0 for no host absorption.
  *
  * Compile
  * -------
@@ -95,6 +97,13 @@
     "/orcd/data/mvogelsb/004/chcho/cell_by_cell/helium/Z_weights.txt"
 #endif
 #define N_OMP        4       /* OpenMP threads per MPI rank (= cpus-per-task) */
+/* Escape fraction of stellar He II Lyman-band photons (40.8-54.4 eV) from the
+ * host galaxy: the frequency-independent f_esc of LUMINA's radiative transfer,
+ * so stars are treated like the AGN, whose rendered luminosity already carries
+ * LUMINA's f_esc(L). -DF_ESC_STAR_HE=1.0 gives the no-host-absorption upper limit. */
+#ifndef F_ESC_STAR_HE
+#define F_ESC_STAR_HE 0.18
+#endif
 
 /* =========================================================================
  * Physical constants (CGS)
@@ -268,6 +277,59 @@ static void report_snapshots(int rank, const char *dir1, const char *dir2) {
     }
 }
 
+/* Is the input the raw SFR render or the effective SFR of make_SFR_eff.py?
+ * make_SFR_eff.py marks its boxes with dataset attributes "band" and
+ * "tau_max_Myr". Every file is checked: a mix of raw and effective boxes
+ * (e.g. a missing SFR_eff file replaced by the raw render from the fallback
+ * directory) or an effective box made for the other band aborts the run. */
+#define SFR_BAND "He"
+static int    n_eff = 0, n_raw = 0;
+static double sfr_tau_max = 0.0;
+
+static void read_str_attr(hid_t obj, const char *name, char *buf, size_t len) {
+    buf[0] = '\0';
+    hid_t a  = H5Aopen(obj, name, H5P_DEFAULT);
+    hid_t ft = H5Aget_type(a);
+    hid_t mt = H5Tcopy(H5T_C_S1);
+    if (H5Tis_variable_str(ft) > 0) {
+        char *v = NULL;
+        H5Tset_size(mt, H5T_VARIABLE);
+        H5Tset_cset(mt, H5Tget_cset(ft));
+        if (H5Aread(a, mt, &v) >= 0 && v) snprintf(buf, len, "%s", v);
+        if (v) H5free_memory(v);
+    } else {
+        size_t n = H5Tget_size(ft);
+        char *v = calloc(n + 1, 1);
+        H5Tset_size(mt, n);
+        if (v && H5Aread(a, mt, v) >= 0) snprintf(buf, len, "%s", v);
+        free(v);
+    }
+    H5Tclose(mt); H5Tclose(ft); H5Aclose(a);
+}
+
+static void check_sfr_input(hid_t fid, int snap, const char *path) {
+    hid_t did = H5Dopen(fid, "StarFormationRate", H5P_DEFAULT);
+    if (did < 0) {
+        fprintf(stderr, "ERROR: %s has no StarFormationRate dataset\n", path);
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+    if (H5Aexists(did, "band") > 0) {
+        char b[32];
+        read_str_attr(did, "band", b, sizeof b);
+        if (strcmp(b, SFR_BAND) != 0) {
+            fprintf(stderr, "ERROR: %s is an effective SFR for band '%s', this code needs '%s'\n",
+                    path, b, SFR_BAND);
+            MPI_Abort(MPI_COMM_WORLD, 1);
+        }
+        if (H5Aexists(did, "tau_max_Myr") > 0) sfr_tau_max = read_attr_double(did, "tau_max_Myr");
+        n_eff++;
+    } else {
+        n_raw++;
+    }
+    (void)snap;
+    H5Dclose(did);
+}
+
 static void load_snap_metadata(int rank) {
     char path[2048];
     for (int i = 0; i < N_SNAPS; i++) {
@@ -301,7 +363,22 @@ static void load_snap_metadata(int rank) {
                        BOX_CMPC, N_PIX, SFR_UNIT);
         }
         H5Gclose(gid);
+        check_sfr_input(fid, i, path);
         H5Fclose(fid);
+    }
+    if (n_eff > 0 && n_raw > 0) {
+        if (rank == 0)
+            fprintf(stderr, "ERROR: %d effective-SFR and %d raw-SFR snapshots mixed; point both "
+                    "directories at the make_SFR_eff.py output\n", n_eff, n_raw);
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+    if (rank == 0) {
+        if (n_eff > 0)
+            printf("  Input: effective SFR (make_SFR_eff.py), band %s, tau_max = %g Myr, %d snapshots\n",
+                   SFR_BAND, sfr_tau_max, n_eff);
+        else
+            printf("  Input: raw SFR renders (instantaneous emission: SFR x lifetime yield), %d snapshots\n",
+                   n_raw);
     }
     report_snapshots(rank, SFR_DIR_OLD, SFR_DIR_NEW);
 }
@@ -634,9 +711,9 @@ static void Z_weights_at(const SpecTable *st, double z, double *w) {
 }
 
 /*
- * eps_mix: photon yield [photons/Hz/baryon] at frequency nu for the young
- * stars forming at redshift z: sum_j w_j(z) N_nu(nu, Z_j). Linear in nu,
- * edge value outside the frequency table.
+ * eps_mix: escaping photon yield [photons/Hz/baryon] at frequency nu for the
+ * young stars forming at redshift z: F_ESC_STAR_HE x sum_j w_j(z) N_nu(nu, Z_j).
+ * Linear in nu, edge value outside the frequency table.
  */
 static double eps_mix(const SpecTable *st, double nu, double z) {
     int    Nf = st->Nfreq, Nz = st->N_met;
@@ -658,7 +735,7 @@ static double eps_mix(const SpecTable *st, double nu, double z) {
         const double *row = st->N_nu + (long)j*Nf;
         s += w[j] * (row[lo]*(1.0-wf) + row[hi]*wf);
     }
-    return s;
+    return F_ESC_STAR_HE * s;
 }
 
 /* =========================================================================
@@ -780,6 +857,7 @@ static void write_output(const char *outfile, const float *J,
     WA("J_mean",      J_mean)
     WA("J_scalar",    J_scalar)
     WA("NU_LL_HeII",  1.31583e16)
+    WA("f_esc_star",  F_ESC_STAR_HE)
     #undef WA
 
     {
@@ -798,8 +876,19 @@ static void write_output(const char *outfile, const float *J,
     hid_t str_t = H5Tcopy(H5T_C_S1);
     H5Tset_size(str_t,64);
     hid_t a = H5Acreate(did,"Units",str_t,sc,H5P_DEFAULT,H5P_DEFAULT);
-    H5Awrite(a,str_t,"photons s^-1 cm^-2 Hz^-1 sr^-1");
+    { char u[64] = "photons s^-1 cm^-2 Hz^-1 sr^-1"; H5Awrite(a,str_t,u); }   /* 64-byte buffer, as the type says */
     H5Aclose(a);
+    {
+        char src[64];
+        snprintf(src, sizeof src, "%s", n_eff > 0 ? "effective SFR (make_SFR_eff.py)" : "raw SFR (instantaneous)");
+        a = H5Acreate(did,"SFR_input",str_t,sc,H5P_DEFAULT,H5P_DEFAULT);
+        H5Awrite(a,str_t,src); H5Aclose(a);
+        double v = sfr_tau_max, ns = N_SHELLS;
+        a = H5Acreate(did,"tau_max_Myr",H5T_NATIVE_DOUBLE,sc,H5P_DEFAULT,H5P_DEFAULT);
+        H5Awrite(a,H5T_NATIVE_DOUBLE,&v); H5Aclose(a);
+        a = H5Acreate(did,"N_shells",H5T_NATIVE_DOUBLE,sc,H5P_DEFAULT,H5P_DEFAULT);
+        H5Awrite(a,H5T_NATIVE_DOUBLE,&ns); H5Aclose(a);
+    }
 
     H5Sclose(sc); H5Tclose(str_t);
     H5Pclose(pid); H5Dclose(did);
@@ -834,6 +923,7 @@ int main(int argc, char **argv) {
         printf("He II Lyman limit: NU_LL = %.6e Hz  (4 x H Lyman limit)\n", (double)NU_LL);
         printf("SFR dir (primary) : %s\n", SFR_DIR_OLD);
         printf("SFR dir (fallback): %s\n", SFR_DIR_NEW);
+        printf("Stellar escape fraction (He II band): f_esc = %.3f\n", (double)F_ESC_STAR_HE);
         printf("Output  : %s\n", outfile);
     }
 

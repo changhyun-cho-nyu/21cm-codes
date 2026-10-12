@@ -22,12 +22,17 @@ not change the box total.
 Usage
 -----
   python check_agn_luminosity.py --render .../LuminosityAGN_NNN.hdf5 \
-         --snap ".../snapdir_MMM/snap_MMM.*.hdf5" [--eps-r 0.2 --eps-f 0.1]
+         --snap .../snapshots/snap_MMM.hdf5 [--eps-r 0.2 --eps-f 0.1]
 Pick a render NNN and snapshot MMM at the same redshift (both are printed).
+The black holes are read from PartType5 inside the snapshot file(s) or, for
+the LUMINA layout (as make_Z_snapshots.py reads PartType4), from
+<snapshots>/PartType5/PartType5_MMM.hdf5 next to it.
 eps_r and eps_f are read from the snapshot's Parameters group when present.
 """
 import argparse
 import glob
+import os
+import re
 import sys
 
 import h5py
@@ -39,7 +44,7 @@ except ImportError:
     pass
 
 C_KMS = 2.99792458e5
-LUM_UNIT_C = 6.4478e36          # erg/s per code unit, as in compute_Jalpha_AGN.c
+LUM_UNIT_C = 6.4459e36          # erg/s per code unit, as in compute_Jalpha_AGN.c
 PARAM_KEYS = {"eps_r": ["BlackHoleRadiativeEfficiency"],
               "eps_f": ["BlackHoleFeedbackFactor", "QuasarFeedbackFactor"]}
 
@@ -86,11 +91,18 @@ def main():
                             units[k] = float(f[grp].attrs[k])
             if "PartType5" in f and "BH_Mdot" in f["PartType5"]:
                 mdot.append(f["PartType5/BH_Mdot"][()].astype(np.float64))
+                continue
+        m = re.search(r"snap_(\d+)\.hdf5$", fn)
+        side = os.path.join(os.path.dirname(fn), "PartType5", f"PartType5_{m.group(1)}.hdf5") if m else None
+        if side and os.path.exists(side):
+            with h5py.File(side, "r") as g:
+                mdot.append((g["BH_Mdot"] if "BH_Mdot" in g else g["PartType5/BH_Mdot"])[()].astype(np.float64))
+            print(f"  black holes from {side}")
     if eps_r is None or eps_f is None:
         sys.exit("ERROR: eps_r / eps_f not found in the snapshot; pass --eps-r and --eps-f")
     mdot = np.concatenate(mdot) if mdot else np.zeros(0)
     if mdot.size == 0:
-        sys.exit("ERROR: no PartType5/BH_Mdot in the snapshot files")
+        sys.exit("ERROR: no BH_Mdot found (PartType5 in the snapshot, or PartType5/PartType5_MMM.hdf5 next to it)")
 
     lum_unit = LUM_UNIT_C
     if len(units) == 3:
