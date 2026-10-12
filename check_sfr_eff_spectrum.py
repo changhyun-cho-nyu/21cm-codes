@@ -15,7 +15,9 @@ For one metallicity and a few SFR histories, this script compares
     approx : SFR_eff x N_nu,  SFR_eff = Int SFR(t0 - tau) P_band(tau) dtau / N_band
 (P = BPASS photon rate per Hz per baryon, constant within its age bins, as in
 load_spectrum() and make_SFR_eff.py) and reports approx/exact
-  * at the Lyman-n frequencies, and
+  * at the middle of a few Lyman-n windows (nu_n + nu_n+1)/2 (the line
+    frequencies themselves sit in stellar absorption lines, whose depth
+    changes strongly with age, so single points there are misleading), and
   * weighted as J_alpha weights the band: sum_n f_rec(n) Int_{nu_n}^{nu_n+1} eps dnu
     (ignores the slow change of c/H and of the SFR across one Lyman window).
 
@@ -79,7 +81,7 @@ def main():
             N_nu = (P * dt_s[:, None]).sum(0)                                 # lifetime spectrum
             N_band = (P_band * dt_s).sum()
             print(f"  Z = {Zg[j]:g}")
-            print(f"    {'history':22s} {'J-weighted':>10s}   approx/exact at Ly-n:"
+            print(f"    {'history':22s} {'J-weighted':>10s}   approx/exact mid-window:"
                   + "".join(f"  n={n:<4d}" for n in (2, 4, 6, 10)))
             for name, h in HISTORIES.items():
                 S = np.bincount(ib, weights=h(tau) * dtau * MYR_S, minlength=hi.size)   # per age bin
@@ -96,8 +98,8 @@ def main():
                         continue
                     num += F_REC[n] * np.trapezoid(approx[w], nu[w])
                     den += F_REC[n] * np.trapezoid(exact[w], nu[w])
-                at = [np.interp(nu_LL * (1 - n**-2.0), nu, approx) / np.interp(nu_LL * (1 - n**-2.0), nu, exact)
-                      for n in (2, 4, 6, 10)]
+                mid = [0.5 * nu_LL * ((1 - n**-2.0) + (1 - (n + 1)**-2.0)) for n in (2, 4, 6, 10)]
+                at = [np.interp(v, nu, approx) / np.interp(v, nu, exact) for v in mid]
                 print(f"    {name:22s} {num / den:10.4f}   " + "".join(f"  {x:6.3f}" for x in at))
     print("\nJ-weighted = 1 means SFR_eff x N_nu reproduces the J_alpha-weighted emissivity exactly.")
 
