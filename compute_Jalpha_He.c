@@ -40,6 +40,8 @@
  *   output_hdf5 : full path for output file (e.g. /path/Jalpha_He_177.hdf5)
  *
  * BPASS spectrum file is hardcoded below — edit SPECTRUM_FILE.
+ * The stellar emissivity includes the host escape fraction F_ESC_STAR_HE
+ * (default 0.18, LUMINA's value at all z); -DF_ESC_STAR_HE=1.0 for no host absorption.
  *
  * Compile
  * -------
@@ -95,6 +97,13 @@
     "/orcd/data/mvogelsb/004/chcho/cell_by_cell/helium/Z_weights.txt"
 #endif
 #define N_OMP        4       /* OpenMP threads per MPI rank (= cpus-per-task) */
+/* Escape fraction of stellar He II Lyman-band photons (40.8-54.4 eV) from the
+ * host galaxy: the frequency-independent f_esc of LUMINA's radiative transfer,
+ * so stars are treated like the AGN, whose rendered luminosity already carries
+ * LUMINA's f_esc(L). -DF_ESC_STAR_HE=1.0 gives the no-host-absorption upper limit. */
+#ifndef F_ESC_STAR_HE
+#define F_ESC_STAR_HE 0.18
+#endif
 
 /* =========================================================================
  * Physical constants (CGS)
@@ -634,9 +643,9 @@ static void Z_weights_at(const SpecTable *st, double z, double *w) {
 }
 
 /*
- * eps_mix: photon yield [photons/Hz/baryon] at frequency nu for the young
- * stars forming at redshift z: sum_j w_j(z) N_nu(nu, Z_j). Linear in nu,
- * edge value outside the frequency table.
+ * eps_mix: escaping photon yield [photons/Hz/baryon] at frequency nu for the
+ * young stars forming at redshift z: F_ESC_STAR_HE x sum_j w_j(z) N_nu(nu, Z_j).
+ * Linear in nu, edge value outside the frequency table.
  */
 static double eps_mix(const SpecTable *st, double nu, double z) {
     int    Nf = st->Nfreq, Nz = st->N_met;
@@ -658,7 +667,7 @@ static double eps_mix(const SpecTable *st, double nu, double z) {
         const double *row = st->N_nu + (long)j*Nf;
         s += w[j] * (row[lo]*(1.0-wf) + row[hi]*wf);
     }
-    return s;
+    return F_ESC_STAR_HE * s;
 }
 
 /* =========================================================================
@@ -780,6 +789,7 @@ static void write_output(const char *outfile, const float *J,
     WA("J_mean",      J_mean)
     WA("J_scalar",    J_scalar)
     WA("NU_LL_HeII",  1.31583e16)
+    WA("f_esc_star",  F_ESC_STAR_HE)
     #undef WA
 
     {
@@ -834,6 +844,7 @@ int main(int argc, char **argv) {
         printf("He II Lyman limit: NU_LL = %.6e Hz  (4 x H Lyman limit)\n", (double)NU_LL);
         printf("SFR dir (primary) : %s\n", SFR_DIR_OLD);
         printf("SFR dir (fallback): %s\n", SFR_DIR_NEW);
+        printf("Stellar escape fraction (He II band): f_esc = %.3f\n", (double)F_ESC_STAR_HE);
         printf("Output  : %s\n", outfile);
     }
 
