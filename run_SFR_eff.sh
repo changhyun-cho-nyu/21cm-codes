@@ -21,9 +21,9 @@ OUT=/orcd/data/mvogelsb/004/chcho/SFR_eff
 WEIGHTS=/orcd/data/mvogelsb/004/chcho/cell_by_cell/hydrogen/Z_weights.txt
 PLANES=32
 
-set -euo pipefail
 source ~/.bashrc
 conda activate jupyter_env
+set -eo pipefail
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 
 cd "$SLURM_SUBMIT_DIR"
