@@ -12,13 +12,19 @@
  *
  * Calling convention (matches your SLURM script)
  * -----------------------------------------------
- * mpirun -np 16 ./compute_Jalpha_H  <snap>  <sfr_dir>  <output_hdf5>
+ * mpirun -np 16 ./compute_Jalpha_H  <snap>  <sfr_dir>  <sfr_dir2>  <output_hdf5>
  *
  *   snap        : integer snapshot number (e.g. 177)
- *   sfr_dir     : directory containing StarFormationRate_NNN.hdf5 files
+ *   sfr_dir     : directory containing All/All_NNN.hdf5 (dataset
+ *                 "StarFormationRate"), tried first for every snapshot
+ *   sfr_dir2    : second directory with the same layout, tried when a file
+ *                 is missing from sfr_dir (e.g. the renders below z = 4.75).
+ *                 For SFR_eff boxes (make_SFR_eff.py) pass <out>/H for both,
+ *                 so a missing file fails instead of falling back to the raw SFR.
  *   output_hdf5 : full path for output file (e.g. /path/Jalpha_H_177.hdf5)
  *
- * BPASS spectrum file is hardcoded below — edit SPECTRUM_FILE.
+ * BPASS spectrum and metallicity-weight files are set below (SPECTRUM_FILE,
+ * Z_WEIGHTS_FILE); edit them or override with -DSPECTRUM_FILE='"..."'.
  *
  * Compile
  * -------
