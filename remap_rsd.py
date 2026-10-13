@@ -12,13 +12,15 @@ remapped with their (mass-weighted) mean velocity, so the result is first
 validated against the render's own remapped fields:
     remap(Density)                         vs  SpectralDensity
     remap(0.76 Density (1 - HII_Fraction)) vs  SpectralDensityHI
+(the same SpectralDensityHI is also compared with the shortcut
+0.76 x_HI(real) x SpectralDensity, the construction this replaces)
 The velocity unit convention of the Velocities render is not assumed: the
 script tries v (peculiar km/s), v sqrt(a) and v / sqrt(a) and reports the
 power ratio and cross-correlation r(k) for each.
 
 Usage
 -----
-  python remap_rsd.py --dir <render_dir> --snap 220 --validate
+  python remap_rsd.py --dir <render_dir> --snap 220 --validate [--write-hi hi_220.hdf5]
   python remap_rsd.py --dir <render_dir> --snap 220 --out <dir> [--conv km_s|sqrt_a|inv_sqrt_a]
 The second form writes <dir>/SpectralDensityHeII/SpectralDensityHeII_NNN.hdf5:
 dataset SpectralDensityHeII = remap(Density x HeII_Fraction), in Density units
@@ -84,7 +86,8 @@ def compare(name, test, ref, box):
     sel = np.flatnonzero((cnt > 0) & (P[0] > 0))
     pick = sorted({int(sel[np.argmin(abs(kc[sel] - q))]) for q in (0.05, 0.1, 0.3, 1.0, 3.0)})
     rows = "  ".join(f"k={kc[i]:.2f}: {P[1][i] / P[0][i]:.3f}/{r[i]:.3f}" for i in pick)
-    print(f"    {name:40s} P_remap/P_render / r(k):  {rows}")
+    cell = np.sqrt(((test - ref)**2).mean(dtype=np.float64)) / np.sqrt(((ref - ref.mean(dtype=np.float64))**2).mean(dtype=np.float64))
+    print(f"    {name:44s} P_test/P_render / r(k):  {rows}   cell rms err {cell:.3f}")
     return float(r[sel[np.argmin(abs(kc[sel] - 1.0))]])          # r near k = 1
 
 
@@ -94,6 +97,7 @@ def main():
     p.add_argument("--snap", type=int, required=True)
     p.add_argument("--validate", action="store_true")
     p.add_argument("--out", help="write SpectralDensityHeII here")
+    p.add_argument("--write-hi", metavar="FILE", help="also save the reproduced SpectralDensityHI (best convention) here")
     p.add_argument("--conv", choices=list(CONVS), default=None,
                    help="velocity convention (default: the best one from the validation)")
     a = p.parse_args()
@@ -110,14 +114,24 @@ def main():
         hi = 0.76 * rho * (1.0 - load(d, "HII_Fraction", s, 1))
         hi_s = load(d, "SpectralDensityHI", s, 1)
         score = {}
+        print("  reproducing SpectralDensityHI (all in Density units x 0.76; same k bins):")
+        compare("H I: shortcut 0.76 x_HI(real) x SpectralDensity", 0.76 * (1.0 - load(d, "HII_Fraction", s, 1)) * rho_s, hi_s, box)
         for conv in CONVS:
             dz = vz_cells(d, s, z, box, h, n, conv)
             print(f"  convention {conv}: rms shift {np.sqrt((dz**2).mean()):.2f} cells, max {np.abs(dz).max():.1f}")
             score[conv] = compare("gas:  remap(Density) vs SpectralDensity", remap(rho, dz), rho_s, box)
-            compare("H I:  remap(H I) vs SpectralDensityHI", remap(hi, dz), hi_s, box)
+            compare("H I: remap(0.76 Density x_HI) vs SpectralDensityHI", remap(hi, dz), hi_s, box)
             del dz
         best = best or max(score, key=lambda c: score[c])
         print(f"  best convention (highest r near k = 1 for the gas): {best}")
+        if a.write_hi:
+            hi_r = remap(hi, vz_cells(d, s, z, box, h, n, best))
+            with h5py.File(a.write_hi, "w") as f:
+                for nm, arr in (("SpectralDensityHI_remap", hi_r), ("SpectralDensityHI_render", hi_s)):
+                    f.create_dataset(nm, data=arr, chunks=(16, n, n), compression="gzip", compression_opts=4)
+                f.attrs["velocity_convention"] = best; f.attrs["Redshift"] = z; f.attrs["snap"] = s
+            print(f"  wrote {a.write_hi} (SpectralDensityHI_remap and SpectralDensityHI_render, same units)")
+            del hi_r
         del rho_s, hi, hi_s
     if a.out:
         dz = vz_cells(d, s, z, box, h, n, best)
