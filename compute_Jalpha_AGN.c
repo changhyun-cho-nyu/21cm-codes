@@ -212,16 +212,22 @@ static double powerlaw_segment(double nu1, double nu2, double L1, double L2) {
  * HDF5 helpers.
  * ========================================================================= */
 static double read_attr_double(hid_t gid, const char *name) {
-    double v;
+    double v = 0.0;
     hid_t a = H5Aopen(gid, name, H5P_DEFAULT);
-    H5Aread(a, H5T_NATIVE_DOUBLE, &v);
+    if (a < 0 || H5Aread(a, H5T_NATIVE_DOUBLE, &v) < 0) {
+        fprintf(stderr, "ERROR: cannot read HDF5 attribute '%s'\n", name);
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
     H5Aclose(a);
     return v;
 }
 static int read_attr_int(hid_t gid, const char *name) {
-    int v;
+    int v = 0;
     hid_t a = H5Aopen(gid, name, H5P_DEFAULT);
-    H5Aread(a, H5T_NATIVE_INT, &v);
+    if (a < 0 || H5Aread(a, H5T_NATIVE_INT, &v) < 0) {
+        fprintf(stderr, "ERROR: cannot read HDF5 attribute '%s'\n", name);
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
     H5Aclose(a);
     return v;
 }
@@ -318,6 +324,16 @@ static void read_agn_box(const char *agn_dir, const char *agn_dir2,
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
     hid_t did = H5Dopen(fid, dataset, H5P_DEFAULT);
+    if (did >= 0) {   /* the box must be NumPixels^3: the read fills N_PIX^3 floats */
+        hid_t sp = H5Dget_space(did); hsize_t dm[3] = {0, 0, 0};
+        int nd = H5Sget_simple_extent_ndims(sp);
+        if (nd == 3) H5Sget_simple_extent_dims(sp, dm, NULL);
+        H5Sclose(sp);
+        if (nd != 3 || dm[0] != (hsize_t)N_PIX || dm[1] != (hsize_t)N_PIX || dm[2] != (hsize_t)N_PIX) {
+            fprintf(stderr, "ERROR: %s in %s is not %d^3 (NumPixels)\n", dataset, path, N_PIX);
+            MPI_Abort(MPI_COMM_WORLD, 1);
+        }
+    }
     if (did < 0 || H5Dread(did, H5T_NATIVE_FLOAT, H5S_ALL, H5S_ALL, H5P_DEFAULT, box) < 0) {
         fprintf(stderr, "ERROR: cannot read dataset '%s' from %s. If the file is compressed with a\n"
                 "       non-standard filter (e.g. Blosc/Zstd/Bitshuffle), set HDF5_PLUGIN_PATH to the\n"
@@ -525,19 +541,31 @@ static void load_agn_sed(const char *sed_file, SpecTable *st, int rank) {
 
     /* Read frequency array */
     hid_t  did_f = H5Dopen(fid, "freq", H5P_DEFAULT);
-    hid_t  sid_f = H5Dget_space(did_f);
-    hsize_t nfreq;
+    hid_t  did_l = H5Dopen(fid, "L_nu", H5P_DEFAULT);
+    if (did_f < 0 || did_l < 0) {
+        fprintf(stderr, "ERROR: SED file %s needs datasets 'freq' and 'L_nu'\n", sed_file);
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+    hid_t  sid_f = H5Dget_space(did_f), sid_l = H5Dget_space(did_l);
+    hsize_t nfreq = 0, nl = 0;
     H5Sget_simple_extent_dims(sid_f, &nfreq, NULL);
-    H5Sclose(sid_f);
+    H5Sget_simple_extent_dims(sid_l, &nl, NULL);
+    H5Sclose(sid_f); H5Sclose(sid_l);
+    if (nfreq < 2 || nl != nfreq) {
+        fprintf(stderr, "ERROR: SED file %s: freq has %llu entries, L_nu %llu\n", sed_file,
+                (unsigned long long)nfreq, (unsigned long long)nl);
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
 
     double *freq_d = (double*)malloc(nfreq * sizeof(double));
     double *lnu_d  = (double*)malloc(nfreq * sizeof(double));
-    H5Dread(did_f, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, freq_d);
+    if (!freq_d || !lnu_d ||
+        H5Dread(did_f, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, freq_d) < 0 ||
+        H5Dread(did_l, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, lnu_d) < 0) {
+        fprintf(stderr, "ERROR: cannot read the SED tables of %s\n", sed_file);
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
     H5Dclose(did_f);
-
-    /* Read L_nu */
-    hid_t did_l = H5Dopen(fid, "L_nu", H5P_DEFAULT);
-    H5Dread(did_l, H5T_NATIVE_DOUBLE, H5S_ALL, H5S_ALL, H5P_DEFAULT, lnu_d);
     H5Dclose(did_l);
     H5Fclose(fid);
 
@@ -655,11 +683,14 @@ static void write_output(const char *path, const float *J,
                           double J_mean, double J_scalar,
                           const char *dset_name) {
     hid_t fid = H5Fcreate(path, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+    if (fid < 0) { fprintf(stderr, "ERROR: cannot create %s (does the directory exist?)\n", path); MPI_Abort(MPI_COMM_WORLD, 1); }
     hsize_t dims[3] = {(hsize_t)N, (hsize_t)N, (hsize_t)N};
     hid_t sid = H5Screate_simple(3, dims, NULL);
     hid_t did = H5Dcreate(fid, dset_name, H5T_NATIVE_FLOAT, sid,
                            H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
-    H5Dwrite(did, H5T_NATIVE_FLOAT, H5S_ALL, H5S_ALL, H5P_DEFAULT, J);
+    if (did < 0 || H5Dwrite(did, H5T_NATIVE_FLOAT, H5S_ALL, H5S_ALL, H5P_DEFAULT, J) < 0) {
+        fprintf(stderr, "ERROR: cannot write the J map to %s\n", path); MPI_Abort(MPI_COMM_WORLD, 1);
+    }
     {   /* same attributes on the dataset, as in the stellar codes */
         const char *nm[6] = {"Redshift", "BoxSize_cMpc", "J_mean", "J_scalar", "NU_LL_species", "J_scalar_attenuated"};
         double      va[6] = {z_obs, box_mpc, J_mean, J_scalar, NU_LL_SPECIES, J_SCALAR_ATT};
@@ -697,7 +728,8 @@ static void write_output(const char *path, const float *J,
     WA("J_scalar",      J_scalar)
     WA("NU_LL_species", NU_LL_SPECIES)
 #undef WA
-    H5Gclose(gid); H5Fclose(fid);
+    H5Gclose(gid);
+    if (H5Fclose(fid) < 0) { fprintf(stderr, "ERROR: closing %s failed (disk full?)\n", path); MPI_Abort(MPI_COMM_WORLD, 1); }
 }
 
 /* =========================================================================
@@ -765,8 +797,8 @@ int main(int argc, char **argv) {
     load_snap_metadata(agn_dir, agn_dir2, prefix, rank);
     MPI_Barrier(MPI_COMM_WORLD);
 
-    if (snap_redshifts[snap_target] < 0) {
-        fprintf(stderr, "ERROR: snap %03d not found\n", snap_target);
+    if (snap_target < 0 || snap_target >= N_SNAPS || snap_redshifts[snap_target] < 0) {
+        fprintf(stderr, "ERROR: snap %03d not found (valid range 0..%d)\n", snap_target, N_SNAPS - 1);
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
     double z_obs   = snap_redshifts[snap_target];
