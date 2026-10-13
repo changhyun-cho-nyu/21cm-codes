@@ -14,7 +14,7 @@
 #   2. mkdir -p logs && sbatch run_3cm.sh
 # Spin-temperature inputs and (He) the signal convention are compile-time options of PS_3cm_mpi.c:
 #   EXTRA_CFLAGS="-DTS_VOLUME_WEIGHTED=1" (volume-weighted T, fractions)
-#   EXTRA_CFLAGS="-DHE_REDSHIFT_SPACE=1" (old mixed-space signal x_HeII x SpectralDensity)
+#   EXTRA_CFLAGS="-DHE_REDSHIFT_SPACE=0" (real-space He signal; default is redshift space like H)
 
 # -------------------------
 # Environment

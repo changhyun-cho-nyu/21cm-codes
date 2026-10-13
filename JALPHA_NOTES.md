@@ -187,6 +187,7 @@ The totals are J_α^H = J_alpha + Jalpha_AGN_H and J_α^He = J_alpha_He + Jalpha
 | `check_sfr_eff_spectrum.py [--Z ...]` | How good is SFR_eff × lifetime spectral shape inside the band? (Section 5) |
 | `bracket_Tb_He.py --render All_NNN.hdf5 --J Jalpha_He_NNN.hdf5 --J Jalpha_AGN_He_NNN.hdf5 [--write]` | Does δT_b^He depend on J_α^He at all? It compares J as computed (no IGM absorption) with J = 0. |
 | `compare_SFR_eff.py REF TEST` | Is the SFR interpolation between snapshots converged? |
+| `check_tb_choices.py --dir <render_dir> --snap NNN [--factor 2]` | How accurate is the He redshift-space approximation (tested on H I, where the exact map exists), and how large is the RSD effect on He? Does mass vs volume weighting matter (signal share in partly ionized cells, T_mass/T_vol)? |
 
 ### 4.5 IGM absorption of the He II band
 
@@ -210,7 +211,10 @@ Variants are kept in separate directories:
 Run with `run_21cm.sh` and `run_3cm.sh`. Each has a `compile` mode; set `J_DIR`, `TR_TAG` (He) and `OUT_DIR` at the top. Inputs are J^H = `J_alpha` + `Jalpha_AGN_H`, and J^He = `J_alpha_He` + `Jalpha_AGN_He` (the `_<TR_TAG>` files).
 
 Changes from the reviewed versions:
-- **He signal** is now the real-space He II density, x_HeII(1+δ) = (`HeII_Fraction`/y) · `Density`/⟨Density⟩. It was x_HeII · `SpectralDensity`, a mixed-space product, while the paper says real space. `-DHE_REDSHIFT_SPACE=1` restores the old signal.
+- **He signal is in redshift space** along the 3rd axis, like H: (`HeII_Fraction`/y) · `SpectralDensity`/⟨Density⟩. The fraction is mass-weighted (it was the volume-weighted one).
+  - There is no He II density in redshift space, so this multiplies the real-space fraction by the redshift-space gas density. That is exact where x_HeII is uniform over the velocity displacement (~1–3 cells).
+  - `check_tb_choices.py` measures the error using the H I analogue, for which the exact map exists.
+  - `-DHE_REDSHIFT_SPACE=0` gives real space. The paper's line on the He field being in real space must change.
 - **He S_α** uses the He II Gunn–Peterson depth 6×10³ x_HeII((1+z)/7)^1.5, as in the paper. It was the H I depth.
 - **Spin-temperature inputs** are the mass-weighted `HII_Fraction`, `Temperature`, `HeII_Fraction` and `HeIII_Fraction`; `-DTS_VOLUME_WEIGHTED=1` restores the volume-weighted fields. A field missing as `<field>/<field>_NNN.hdf5` is read from `All/All_NNN.hdf5`.
 - **Cosmology:** h comes from the header (it was 0.6774 hard-coded, which made n_H 0.24% high). Ω_m and Ω_b come from the header, or else Lumina's 0.30964 / 0.048975; the old Planck 2015 values put the prefactor +0.53% off.

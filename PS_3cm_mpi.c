@@ -12,7 +12,7 @@
     - Prefactor : 1.67/sqrt(10) uK * (Omega_b h^2 / 0.023) * sqrt(0.15/(Omega_m h^2) * (1+z))
                   (= 1.67 uK ((1+z)/10)^1/2 for Planck values, as global_snaps_clean.ipynb)
     - S_alpha   : He II Gunn-Peterson depth 6e3 x_HeII ((1+z)/7)^1.5 (paper eq.)
-    - Signal    : x_HeII (1+delta), real space (see HE_REDSHIFT_SPACE)
+    - Signal    : x_HeII x SpectralDensity, redshift space (see HE_REDSHIFT_SPACE)
 
   Author: Changhyun
 */
@@ -56,11 +56,15 @@
 #define F_HEIII_FIELD "HeIII_Fraction"
 #endif
 
-/* HE_REDSHIFT_SPACE = 0 (default): the signal is x_HeII (1+delta) in REAL space, from the
- *   mass-weighted HeII_Fraction and Density (= the He II density); = 1: the earlier
- *   x_HeII x SpectralDensity (total gas in redshift space), a mixed-space product. */
+/* HE_REDSHIFT_SPACE = 1 (default): the signal is in redshift space along the 3rd axis, like the
+ *   H map: x_HeII x SpectralDensity, with x_HeII = HeII_Fraction / y (mass-weighted). The renders
+ *   have no He II density in redshift space, so the real-space fraction at the redshift-space
+ *   cell multiplies the redshift-space gas density; this is exact where x_HeII is uniform over
+ *   the peculiar-velocity displacement (~1-3 cells) and approximate at He III fronts
+ *   (check_tb_choices.py measures the error with the H I analogue, which has an exact map).
+ * = 0: real space, x_HeII (1+delta) from HeII_Fraction and Density (no velocity term). */
 #ifndef HE_REDSHIFT_SPACE
-#define HE_REDSHIFT_SPACE 0
+#define HE_REDSHIFT_SPACE 1
 #endif
 
 typedef long long myint;
@@ -140,7 +144,7 @@ static double constK  = 47229.765;
 static double omega_m = 0.30964144;
 static double omega_b = 0.048975;
 static double h       = 0.6766;
-#if TS_VOLUME_WEIGHTED && !HE_REDSHIFT_SPACE
+#if TS_VOLUME_WEIGHTED
 static double *fHeII_sig = NULL;   /* mass-weighted HeII_Fraction, local slab, for the signal */
 #endif
 
@@ -407,14 +411,13 @@ int main(int argc, char **argv)
             double sf      = 1.0 - tcmb / Tspin;
 #if HE_REDSHIFT_SPACE
             double sig_rho = spec_rho;                  /* total gas, redshift space (mass per cell) */
-            double x_sig   = x_HeII;
 #else
             double sig_rho = value1;                    /* gas mass per cell, real space */
+#endif
 #if TS_VOLUME_WEIGHTED
-            double x_sig   = fHeII_sig[(size_t)(i*N + j)*N + k] / y_frac;
+            double x_sig   = fHeII_sig[(size_t)(i*N + j)*N + k] / y_frac;   /* mass-weighted, for the signal */
 #else
             double x_sig   = x_HeII;                    /* mass-weighted HeII_Fraction / y */
-#endif
 #endif
             double rin_val = prefactor_He * x_sig * (sig_rho / global_gas) * sf;   /* = dT_b x V_cell */
 
@@ -605,7 +608,7 @@ int main(int argc, char **argv)
         H5Awrite(a, H5T_NATIVE_DOUBLE, &zz); H5Aclose(a);
         hid_t st = H5Tcopy(H5T_C_S1); H5Tset_size(st, 128);
         char u[128];
-        snprintf(u, sizeof u, "delta T_b^He [micro-K], %s", HE_REDSHIFT_SPACE ? "x_HeII x redshift-space gas density" : "real space");
+        snprintf(u, sizeof u, "delta T_b^He [micro-K], %s", HE_REDSHIFT_SPACE ? "redshift space (3rd axis): x_HeII x SpectralDensity" : "real space");
         a = H5Acreate2(dset_out, "content", st, sc, H5P_DEFAULT, H5P_DEFAULT); H5Awrite(a, st, u); H5Aclose(a);
         H5Tclose(st); H5Sclose(sc);
     }
@@ -667,7 +670,7 @@ static void get_offsets_and_data(void)
         for (myint i = 0; i < dset_length_task; i++) {
             if (dset6[i] > lmax) lmax = dset6[i];
             if (dset7[i] > lmax) lmax = dset7[i];
-#if TS_VOLUME_WEIGHTED && !HE_REDSHIFT_SPACE
+#if TS_VOLUME_WEIGHTED
             if (fHeII_sig[i] > lmax) lmax = fHeII_sig[i];
 #endif
         }
@@ -882,13 +885,13 @@ static void read_data(int snapnum, int first, int last,
     read_single_field("SpectralDensity",           dset5, snapnum, local_n0, local_0_start, buffer, length_vector);
     read_single_field(F_HEII_FIELD,                dset6, snapnum, local_n0, local_0_start, buffer, length_vector);
     read_single_field(F_HEIII_FIELD,               dset7, snapnum, local_n0, local_0_start, buffer, length_vector);
-#if TS_VOLUME_WEIGHTED && !HE_REDSHIFT_SPACE
+#if TS_VOLUME_WEIGHTED
     fHeII_sig = malloc(length_vector * sizeof(double));
     read_single_field("HeII_Fraction",             fHeII_sig, snapnum, local_n0, local_0_start, buffer, length_vector);
 #endif
     if (ThisTask == 0)
         printf("Spin-temperature fields: %s, %s, %s, %s; signal: %s\n", F_HII_FIELD, T_FIELD, F_HEII_FIELD, F_HEIII_FIELD,
-               HE_REDSHIFT_SPACE ? "x_HeII x SpectralDensity (redshift space)" : "HeII_Fraction x Density (real space)");
+               HE_REDSHIFT_SPACE ? "HeII_Fraction/y x SpectralDensity (redshift space)" : "HeII_Fraction/y x Density (real space)");
 
     free(buffer);
 }
