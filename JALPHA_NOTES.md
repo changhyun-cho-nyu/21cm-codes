@@ -188,6 +188,23 @@ The totals are J_α^H = J_alpha + Jalpha_AGN_H and J_α^He = J_alpha_He + Jalpha
 | `bracket_Tb_He.py --render All_NNN.hdf5 --J Jalpha_He_NNN.hdf5 --J Jalpha_AGN_He_NNN.hdf5 [--write]` | Does δT_b^He depend on J_α^He at all? It compares J as computed (no IGM absorption) with J = 0. |
 | `compare_SFR_eff.py REF TEST` | Is the SFR interpolation between snapshots converged? |
 
+### 4.5 IGM absorption of the He II band
+
+The physics, the derivations and the references are in the doc "How the He II Lyman-band IGM absorption works". Pipeline:
+
+| Step | Script | Output |
+|---|---|---|
+| 1 | `run_opacity.sh` → `make_opacity_fields.py` | `opacity_NNN.hdf5`: n_HI and n_HeI (comoving cm⁻³) at 320³, every second snapshot. Logs, for star-forming cells, the H I / He I share, `self_T` (fraction of a source cell's 40.8 eV photons that survive their own cell) and the share of ionized-cell H I. |
+| 2 | `bash run_transmission.sh compile`, then `sbatch run_transmission.sh` → `compute_transmission_He` | the `lambda_912 (simulation …)` line (mfp912 mode), then `transmission_He_NNN.hdf5` holding T_n2 and T_n4 on 48 radii × 160³ origins |
+| 3 | `run_Jalpha_test.sh` with `TRANS_DIR` and `TR_TAG` set | `Jalpha_He_NNN_<TR_TAG>.hdf5` and `Jalpha_AGN_He_NNN_<TR_TAG>.hdf5` |
+
+Variants are kept in separate directories:
+- **`SF_MASK=1`** in `run_opacity.sh` and `run_transmission.sh` makes star-forming cells transparent, as in Lumina's own RT. Otherwise their absorption would be counted on top of f_esc. Outputs go to `*_sfmask`; set `TR_TAG=tr_sfmask` for the J runs. The ray tracer refuses a directory that mixes masked and unmasked opacity files.
+- **`LLS_A > 0`** adds unresolved absorbers, with outputs in `*_lls`. Use it only if λ₉₁₂,sim > λ₉₁₂,obs, and then calibrate it with 1/λ_extra = 1/λ_obs − 1/λ_sim.
+  - The conversion from 912 Å to the band is the effective opacity of a broken power-law f(N): slope 1.5 below 10¹⁷·⁵, 0.8 up to 10¹⁹ (Prochaska+10) and 1.5 above. This gives λ_E/λ₉₁₂ = 1.59 (n = 2) and 1.82 (n ≥ 4).
+  - The earlier single power law with β = 1.5 gave 3.5 and 4.8, about 2× too transparent.
+  - `-DLLS_FN_B1/B2/B3/LOGN1/LOGN2` change the f(N) slopes and break columns; `-DLLS_BETA=b` restores a single power law.
+
 ---
 
 ## 5. Approximations that remain (and how big they are)
@@ -198,7 +215,7 @@ The totals are J_α^H = J_alpha + Jalpha_AGN_H and J_α^He = J_alpha_He + Jalpha
 | SFR_eff uses band-integrated age weights × lifetime spectral shape | **Measured with BPASS:** J-weighted error +1–3% (H, box-mean history at z ≈ 10), +2–5% at z ≳ 15 (low Z); He ≲ 1%. Single voxels: +7.5% just after a burst, −11% 20–30 Myr after (H) | Accepted; state in the paper |
 | Stars stay in their birth voxel | 3–9 proper kpc drift in 30 Myr vs a 71 proper kpc voxel at z = 10 | Negligible for the H band |
 | No emission before the first render (z = 29.43) | J_α is a lower limit for z_obs ≳ 24.7 | State in the text if those z are used |
-| He II band: no IGM absorption by H I / He I | Large before overlap. After overlap J_He is reduced roughly ×0.13–0.25 at z = 6, ×0.4–0.6 at z = 5, ×0.9 at z = 4 (estimates; λ₉₁₂ numbers from memory) | **Run `bracket_Tb_He.py`**; then decide on option B (Section 6) |
+| He II band: IGM absorption by H I / He I | **Implemented** (4.5). Bracket J vs J = 0: mean δT_b^He changes by 7.7% (z = 6.35) and 21% (z = 4.01) at most. Open: λ₉₁₂ calibration, the star-forming-gas mask, the angular-covariance and resolution tests | Run steps 1–3 of 4.5 |
 | AGN f_esc applied in the H band too | The factor is the Hopkins-type obscured fraction (dust affects the UV), so it is kept | Confirm the meaning with Oliver Zier |
 
 ---
@@ -213,9 +230,10 @@ The totals are J_α^H = J_alpha + Jalpha_AGN_H and J_α^He = J_alpha_He + Jalpha
 5. **Regenerate everything downstream:** x_α, T_S, δT_b maps, power spectra, bispectra, VIDs and bubble statistics. Every J_α made before these changes is stale. Make sure the T_b code sums stars + AGN for both species.
 
 ### 6.2 Decisions still open
-- **Helium IGM absorption.** Run `bracket_Tb_He.py` at several snapshots across the He epoch (e.g. 406, 450, 500, 558, 596, plus two or three at z ≈ 6–8).
-  - zero/upper ≳ 0.95 → state the bracket in the paper.
-  - Otherwise add post-overlap attenuation exp(−R_prop/λ_He(z)) per shell (cheap). Add pre-overlap transmission from the x_HI field only if the z > 5.5 He signal is part of the results.
+- **Helium IGM absorption** (implemented, 4.5):
+  - compare λ₉₁₂,sim with Becker+21, Zhu+23 and Worseck+14 to decide on `LLS_A`;
+  - compare the masked and unmasked star-forming cells to decide on `SF_MASK`;
+  - rerun `bracket_Tb_He.py` on the `_<TR_TAG>` maps.
 - **AGN factor.** Confirm with Oliver Zier that f_esc(L) is the Hopkins/Vogelsberger obscuration factor (one factor for all frequencies).
 
 ### 6.3 Manuscript edits (drafts with inline marks were given in the conversation)
@@ -268,3 +286,7 @@ Its AGN-SED finding (#3) is fixed (2.3 above). Its helium-coupling finding (#10,
 | `check_agn_luminosity.py` | recovers an injected factor 0.25 exactly; on Lumina R = 0.1949 |
 | `bracket_Tb_He.py` | one voxel vs independent formula 2×10⁻⁹; J = 0 → ratio 1 |
 | `check_sfr_eff_spectrum.py` | flat-spectrum mock gives 1.0000 for every history |
+| Transmission: uniform absorber vs analytic exp(−τ); ionized sphere | 3×10⁻⁷; T = 1.0000 inside, 0 outside |
+| J_α^He with transmission, stars and AGN; T ≡ 1; species H | 0.20527 vs analytic 0.20513; maps identical to 9.3×10⁻⁷; H unchanged |
+| LLS conversion vs independent scipy integral (broken law, single β = 1.5, b₃ = 2) | agrees to < 2×10⁻³; LLS-only T(R) vs analytic: 2×10⁻⁶ |
+| `--sf-mask` vs direct calculation; mixed-directory guard | 7×10⁻⁸; H I share exact; mixed masked/unmasked aborts |

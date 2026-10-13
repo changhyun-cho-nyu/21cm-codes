@@ -23,6 +23,8 @@ OPA=/orcd/data/mvogelsb/004/chcho/opacity_He       # run_opacity.sh output
 TRANS=/orcd/data/mvogelsb/004/chcho/transmission_He
 HDF5_PREFIX=                                       # set if hdf5.h is not found (see run_Jalpha_test.sh)
 LLS_A=0                                            # extra lambda_912 at (1+z)/5 = 1 [proper Mpc]; 0 = off
+SF_MASK=0                                          # 1: read ${OPA}_sfmask, write ${TRANS}_sfmask
+                                                   # (run_opacity.sh with SF_MASK=1 first)
 
 source ~/.bashrc
 set -eo pipefail
@@ -50,6 +52,8 @@ if [ -z "${HDF5_PLUGIN_PATH:-}" ]; then     # the opacity files use gzip only; k
     [ -n "$HDF5_PLUGIN_PATH" ] && export HDF5_PLUGIN_PATH
 fi
 SNAP=${SNAPS[$SLURM_ARRAY_TASK_ID]}
+[ "$SF_MASK" = 1 ] && { OPA=${OPA}_sfmask; TRANS=${TRANS}_sfmask; }
+[ "$LLS_A" != 0 ] && TRANS=${TRANS}_lls                 # keep the LLS variant apart (attribute LLS_A records it)
 mkdir -p "$TRANS"
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 echo "snap $SNAP  host $(hostname)  $(date)  commit $(git rev-parse --short HEAD)"
