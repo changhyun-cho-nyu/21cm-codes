@@ -27,7 +27,35 @@
 #include <hdf5.h>
 #include <time.h>
 #include <omp.h>
+#include <unistd.h>
 #include "functions.h"
+
+/* ------------------------------------------------------------------
+ * Field choices (compile-time):
+ *   TS_VOLUME_WEIGHTED = 0 (default): the spin temperature uses the
+ *     mass-weighted render fields HII_Fraction, Temperature,
+ *     HeII_Fraction, HeIII_Fraction (consistent with the signal, which
+ *     is weighted by H I / He II mass); = 1: the volume-weighted fields
+ *     HII_VolumeFraction, TemperatureVolumeWeighted, He*_VolumeFraction.
+ * A field is read from <dir>/<field>/<field>_NNN.hdf5 and, if that file
+ * does not exist, from <dir>/All/All_NNN.hdf5.
+ * The He fractions are per H nucleus in the renders (max = y = 0.079);
+ * the code aborts if a He fraction exceeds 1.05 y.
+ * ------------------------------------------------------------------ */
+#ifndef TS_VOLUME_WEIGHTED
+#define TS_VOLUME_WEIGHTED 0
+#endif
+#if TS_VOLUME_WEIGHTED
+#define F_HII_FIELD   "HII_VolumeFraction"
+#define T_FIELD       "TemperatureVolumeWeighted"
+#define F_HEII_FIELD  "HeII_VolumeFraction"
+#define F_HEIII_FIELD "HeIII_VolumeFraction"
+#else
+#define F_HII_FIELD   "HII_Fraction"
+#define T_FIELD       "Temperature"
+#define F_HEII_FIELD  "HeII_Fraction"
+#define F_HEIII_FIELD "HeIII_Fraction"
+#endif
 
 typedef long long myint ;
 
@@ -100,9 +128,11 @@ static myint dset_length_task, total_length ;
 static double global_gas ;
 
 static double constK  = 47229.765 ;
-static double omega_m = 0.3089 ;
-static double omega_b = 0.0486 ;
-static double h       = 0.6774 ;
+/* Lumina (Planck 2018). Omega_m, Omega_b are replaced by the render header's Omega0 /
+ * OmegaBaryon when present; h is always the header's HubbleParam (read_header). */
+static double omega_m = 0.30964144 ;
+static double omega_b = 0.048975 ;
+static double h       = 0.6766 ;
 
 static inline double T_CMB(double z)
 {
@@ -126,6 +156,11 @@ int main(int argc, char **argv)
   fftw_complex *cout, *cout1;
   ptrdiff_t alloc_local, local_n0, local_0_start ;
 
+  if (argc < 8) {
+      if (ThisTask == 0)
+          fprintf(stderr, "Usage: %s <snap> <render_dir> <PS.out> <Tb_map.hdf5> <line> <Jalpha_H.hdf5> <Jalpha_AGN_H.hdf5>\n", argv[0]);
+      MPI_Finalize(); return 1;
+  }
   int snapnum = atoi(argv[1]);
   strcpy(inputfilename,  argv[2]);
   strcpy(outputfilename, argv[3]);
@@ -464,6 +499,10 @@ int main(int argc, char **argv)
 
   hid_t file = H5Fcreate(debugfilename, H5F_ACC_TRUNC, H5P_DEFAULT, plist_id);
   H5Pclose(plist_id);
+  if (file < 0) {
+    if (ThisTask == 0) fprintf(stderr, "FATAL: cannot create %s (does the directory exist?)\n", debugfilename);
+    MPI_Abort(MPI_COMM_WORLD, 1);
+  }
 
   hsize_t dims[3] = {N, N, N};
   hid_t dspace = H5Screate_simple(3, dims, NULL);
@@ -490,7 +529,20 @@ int main(int argc, char **argv)
   hid_t xfer = H5Pcreate(H5P_DATASET_XFER);
   H5Pset_dxpl_mpio(xfer, H5FD_MPIO_COLLECTIVE);
 
-  H5Dwrite(dset, H5T_NATIVE_FLOAT, memspace, filespace, xfer, buffer);
+  if (H5Dwrite(dset, H5T_NATIVE_FLOAT, memspace, filespace, xfer, buffer) < 0) {
+    if (ThisTask == 0) fprintf(stderr, "FATAL: cannot write the T_b map to %s\n", debugfilename);
+    MPI_Abort(MPI_COMM_WORLD, 1);
+  }
+  {   /* record what the map is */
+    double zz = 1.0/afac - 1.0;
+    hid_t sc = H5Screate(H5S_SCALAR);
+    hid_t a = H5Acreate2(dset, "Redshift", H5T_NATIVE_DOUBLE, sc, H5P_DEFAULT, H5P_DEFAULT);
+    H5Awrite(a, H5T_NATIVE_DOUBLE, &zz); H5Aclose(a);
+    hid_t st = H5Tcopy(H5T_C_S1); H5Tset_size(st, 128);
+    char u[128] = "delta T_b [mK], real-space spin factor x redshift-space H I density";
+    a = H5Acreate2(dset, "content", st, sc, H5P_DEFAULT, H5P_DEFAULT); H5Awrite(a, st, u); H5Aclose(a);
+    H5Tclose(st); H5Sclose(sc);
+  }
 
   free(buffer);
   H5Pclose(xfer);
@@ -498,7 +550,10 @@ int main(int argc, char **argv)
   H5Sclose(filespace);
   H5Dclose(dset);
   H5Sclose(dspace);
-  H5Fclose(file);
+  if (H5Fclose(file) < 0) {
+    if (ThisTask == 0) fprintf(stderr, "FATAL: closing %s failed (disk full?)\n", debugfilename);
+    MPI_Abort(MPI_COMM_WORLD, 1);
+  }
 
   fftw_execute(plan);
   fftw_execute(plan1);
@@ -547,6 +602,35 @@ static void get_offsets_and_data(void)
     }
 
   MPI_Barrier(MPI_COMM_WORLD) ;
+
+  /* Self-checks on the raw fields:
+   *  - SpectralDensityHI is the H I mass density remapped along +z, with X = 0.76 and
+   *    star-forming (equation-of-state) gas counted as fully neutral; the remapping conserves
+   *    mass, so sum(SpectralDensityHI)/0.76 / sum(Density (1 - x_HII)) is 1 plus the extra H I
+   *    of EoS gas (whose HII_Fraction comes from the equilibrium network). Reported only:
+   *    ~1 before overlap, > 1 once ISM gas holds much of the H I. A missing X would give 1/0.76.
+   *  - the He fractions must be per H nucleus (<= y). */
+  {
+    double ls[2] = {0.0, 0.0}, gs[2], lmax = 0.0, gmax;
+    for (myint i = 0; i < dset_length_task; i++) {
+      ls[0] += dset[i];
+      ls[1] += dset2[i] * (1.0 - dset3[i]);
+      if (dset6[i] > lmax) lmax = dset6[i];
+      if (dset7[i] > lmax) lmax = dset7[i];
+    }
+    MPI_Allreduce(ls, gs, 2, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(&lmax, &gmax, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
+    double ratio = (gs[1] > 0.0) ? gs[0] / 0.76 / gs[1] : 1.0;
+    if (ThisTask == 0)
+      printf("Check: sum(SpectralDensityHI)/0.76 / sum(Density x_HI%s) = %.5f (1 + EoS-gas H I excess; "
+             "1/0.76 = 1.316 would mean no X); max He fraction = %.4f (<= %.4f)\n",
+             TS_VOLUME_WEIGHTED ? ", volume-weighted x" : "", ratio, gmax, 0.24 / (4.0 * 0.76));
+    if (gmax > 1.05 * 0.24 / (4.0 * 0.76)) {
+      if (ThisTask == 0)
+        fprintf(stderr, "FATAL: He fraction up to %.3f > y: the fields look per He nucleus, the code assumes per H\n", gmax);
+      MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+  }
 
   double local_gas=0.0 ;
   global_gas=0.0 ;
@@ -683,6 +767,8 @@ static void read_header(int snapnum)
         H5Aread(H5Aopen(grp, "UnitMass_in_g",          H5P_DEFAULT), H5T_NATIVE_DOUBLE, &MASS);
         H5Aread(H5Aopen(grp, "UnitLength_in_cm",       H5P_DEFAULT), H5T_NATIVE_DOUBLE, &LENGTH);
         H5Aread(H5Aopen(grp, "UnitVelocity_in_cm_per_s", H5P_DEFAULT), H5T_NATIVE_DOUBLE, &VEL);
+        if (H5Aexists(grp, "Omega0") > 0)      H5Aread(H5Aopen(grp, "Omega0",      H5P_DEFAULT), H5T_NATIVE_DOUBLE, &omega_m);
+        if (H5Aexists(grp, "OmegaBaryon") > 0) H5Aread(H5Aopen(grp, "OmegaBaryon", H5P_DEFAULT), H5T_NATIVE_DOUBLE, &omega_b);
 
         H5Gclose(grp);
         H5Fclose(file);
@@ -699,51 +785,69 @@ static void read_header(int snapnum)
     MPI_Bcast(&LENGTH,      1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
     MPI_Bcast(&VEL,         1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
     MPI_Bcast(&NumSubhalos, 1, MPI_INT,    0, MPI_COMM_WORLD);
+    MPI_Bcast(&omega_m,     1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&omega_b,     1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    h = hubble;    /* unit conversions and the T_b prefactor use the render's own h */
+    if (ThisTask == 0)
+        printf("Cosmology: h = %.5f (header), Omega_m = %.6f, Omega_b = %.6f\n", h, omega_m, omega_b);
 }
 
 /*#############################################################*/
 
-/* Opt #5: collective MPI-IO for all field reads */
-static void read_single_field(const char *field,
-                              double *dest,
-                              int snapnum,
-                              ptrdiff_t local_n0,
-                              ptrdiff_t local_0_start,
-                              float *buffer,
-                              myint length_vector)
+/* Opt #5: collective MPI-IO for all field reads (checked) */
+static void read_single_field(const char *field, double *dest, int snapnum,
+                               ptrdiff_t local_n0, ptrdiff_t local_0_start,
+                               float *buffer, myint length_vector)
 {
-    char fname[500];
-    hid_t hdf5_file, dataset, dataspace, memspace;
-
+    /* <dir>/<field>/<field>_NNN.hdf5, else the combined <dir>/All/All_NNN.hdf5 */
+    char fname[1024], dsetname[256];
+    sprintf(dsetname, "/%s", field);
     sprintf(fname, "%s/%s/%s_%03d.hdf5", inputfilename, field, field, snapnum);
+    if (access(fname, R_OK) != 0)
+        sprintf(fname, "%s/All/All_%03d.hdf5", inputfilename, snapnum);
 
     hid_t fapl = H5Pcreate(H5P_FILE_ACCESS);
     H5Pset_fapl_mpio(fapl, MPI_COMM_WORLD, MPI_INFO_NULL);
-    hdf5_file = H5Fopen(fname, H5F_ACC_RDONLY, fapl);
+    hid_t hdf5_file = H5Fopen(fname, H5F_ACC_RDONLY, fapl);
     H5Pclose(fapl);
-
-    char dsetname[256];
-    sprintf(dsetname, "/%s", field);
-    dataset   = H5Dopen(hdf5_file, dsetname);
-    dataspace = H5Dget_space(dataset);
+    if (hdf5_file < 0) {
+        if (ThisTask == 0) fprintf(stderr, "FATAL: cannot open %s for field %s\n", fname, field);
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+    hid_t dataset = H5Dopen(hdf5_file, dsetname);
+    if (dataset < 0) {
+        if (ThisTask == 0) fprintf(stderr, "FATAL: no dataset %s in %s\n", dsetname, fname);
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+    hid_t dataspace = H5Dget_space(dataset);
+    hsize_t dm[3] = {0, 0, 0};
+    if (H5Sget_simple_extent_ndims(dataspace) != 3 || H5Sget_simple_extent_dims(dataspace, dm, NULL) < 0
+        || dm[0] != (hsize_t)N || dm[1] != (hsize_t)N || dm[2] != (hsize_t)N) {
+        if (ThisTask == 0) fprintf(stderr, "FATAL: %s in %s is not %d^3\n", dsetname, fname, N);
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
 
     hsize_t start[3] = {local_0_start, 0, 0};
     hsize_t count[3] = {local_n0, N, N};
-    memspace = H5Screate_simple(3, count, NULL);
+    hid_t   memspace = H5Screate_simple(3, count, NULL);
     H5Sselect_hyperslab(dataspace, H5S_SELECT_SET, start, NULL, count, NULL);
 
     hid_t xfer = H5Pcreate(H5P_DATASET_XFER);
     H5Pset_dxpl_mpio(xfer, H5FD_MPIO_COLLECTIVE);
-    H5Dread(dataset, H5T_NATIVE_FLOAT, memspace, dataspace, xfer, buffer);
+    if (H5Dread(dataset, H5T_NATIVE_FLOAT, memspace, dataspace, xfer, buffer) < 0) {
+        if (ThisTask == 0)
+            fprintf(stderr, "FATAL: cannot read %s from %s. If it is compressed with a non-standard filter\n"
+                    "       (Blosc/Zstd/Bitshuffle), set HDF5_PLUGIN_PATH (python -c 'import hdf5plugin; "
+                    "print(hdf5plugin.PLUGIN_PATH)')\n", dsetname, fname);
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
     H5Pclose(xfer);
 
     for (myint j = 0; j < length_vector; j++)
         dest[j] = buffer[j];
 
-    H5Sclose(memspace);
-    H5Sclose(dataspace);
-    H5Dclose(dataset);
-    H5Fclose(hdf5_file);
+    H5Sclose(memspace); H5Sclose(dataspace);
+    H5Dclose(dataset);  H5Fclose(hdf5_file);
 }
 
 static void read_data(int snapnum,
@@ -757,23 +861,25 @@ static void read_data(int snapnum,
 
     dset  = malloc(length_vector*sizeof(double)); // SpectralDensityHI
     dset2 = malloc(length_vector*sizeof(double)); // Density
-    dset3 = malloc(length_vector*sizeof(double)); // HII_VolumeFraction
-    dsetT = malloc(length_vector*sizeof(double)); // TemperatureVolumeWeighted
+    dset3 = malloc(length_vector*sizeof(double)); // F_HII_FIELD
+    dsetT = malloc(length_vector*sizeof(double)); // T_FIELD
     dset4 = malloc(length_vector*sizeof(double)); // StarFormationRate
     dset5 = malloc(length_vector*sizeof(double)); // SpectralDensity
-    dset6 = malloc(length_vector*sizeof(double)); // HeII_VolumeFraction
-    dset7 = malloc(length_vector*sizeof(double)); // HeIII_VolumeFraction
+    dset6 = malloc(length_vector*sizeof(double)); // F_HEII_FIELD
+    dset7 = malloc(length_vector*sizeof(double)); // F_HEIII_FIELD
 
     float *buffer = malloc(length_vector*sizeof(float));
 
     read_single_field("SpectralDensityHI",       dset,  snapnum, local_n0, local_0_start, buffer, length_vector);
     read_single_field("Density",                 dset2, snapnum, local_n0, local_0_start, buffer, length_vector);
-    read_single_field("HII_VolumeFraction",      dset3, snapnum, local_n0, local_0_start, buffer, length_vector);
-    read_single_field("TemperatureVolumeWeighted", dsetT, snapnum, local_n0, local_0_start, buffer, length_vector);
+    read_single_field(F_HII_FIELD,               dset3, snapnum, local_n0, local_0_start, buffer, length_vector);
+    read_single_field(T_FIELD,                   dsetT, snapnum, local_n0, local_0_start, buffer, length_vector);
     read_single_field("StarFormationRate",       dset4, snapnum, local_n0, local_0_start, buffer, length_vector);
     read_single_field("SpectralDensity",         dset5, snapnum, local_n0, local_0_start, buffer, length_vector);
-    read_single_field("HeII_VolumeFraction",     dset6, snapnum, local_n0, local_0_start, buffer, length_vector);
-    read_single_field("HeIII_VolumeFraction",    dset7, snapnum, local_n0, local_0_start, buffer, length_vector);
+    read_single_field(F_HEII_FIELD,              dset6, snapnum, local_n0, local_0_start, buffer, length_vector);
+    read_single_field(F_HEIII_FIELD,             dset7, snapnum, local_n0, local_0_start, buffer, length_vector);
+    if (ThisTask == 0)
+        printf("Spin-temperature fields: %s, %s, %s, %s\n", F_HII_FIELD, T_FIELD, F_HEII_FIELD, F_HEIII_FIELD);
 
     free(buffer);
 }
@@ -878,12 +984,34 @@ static void read_Jalpha_slab(const char *filename, const char *dsetname,
     H5Pclose(fapl);
 
     if (file < 0) {
-        fprintf(stderr, "FATAL: cannot open Jalpha file %s\n", filename);
+        if (ThisTask == 0) fprintf(stderr, "FATAL: cannot open J_alpha file %s\n", filename);
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
 
-    hid_t dset   = H5Dopen(file, dsetname);
+    hid_t dset = H5Dopen(file, dsetname);
+    if (dset < 0) {
+        if (ThisTask == 0) fprintf(stderr, "FATAL: no dataset %s in %s\n", dsetname, filename);
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
+    /* the J map must be for this snapshot and this grid */
+    double z_render = 1.0 / afac - 1.0, zJ = -1.0;
+    if (H5Aexists(dset, "Redshift") > 0) {
+        hid_t a = H5Aopen(dset, "Redshift", H5P_DEFAULT);
+        H5Aread(a, H5T_NATIVE_DOUBLE, &zJ); H5Aclose(a);
+        if (fabs(zJ - z_render) > 1e-3) {
+            if (ThisTask == 0) fprintf(stderr, "FATAL: %s is for z = %.4f, the render is at z = %.4f\n",
+                                       filename, zJ, z_render);
+            MPI_Abort(MPI_COMM_WORLD, 1);
+        }
+    } else if (ThisTask == 0)
+        printf("WARNING: %s:%s has no Redshift attribute: snapshot match not checked\n", filename, dsetname);
     hid_t dspace = H5Dget_space(dset);
+    hsize_t dm[3] = {0, 0, 0};
+    if (H5Sget_simple_extent_ndims(dspace) != 3 || H5Sget_simple_extent_dims(dspace, dm, NULL) < 0
+        || dm[0] != (hsize_t)N || dm[1] != (hsize_t)N || dm[2] != (hsize_t)N) {
+        if (ThisTask == 0) fprintf(stderr, "FATAL: %s in %s is not %d^3\n", dsetname, filename, N);
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
 
     hsize_t start[3] = {local_0_start, 0, 0};
     hsize_t count[3] = {local_n0,      N, N};
@@ -892,8 +1020,13 @@ static void read_Jalpha_slab(const char *filename, const char *dsetname,
 
     hid_t xfer = H5Pcreate(H5P_DATASET_XFER);
     H5Pset_dxpl_mpio(xfer, H5FD_MPIO_COLLECTIVE);
-    H5Dread(dset, H5T_NATIVE_DOUBLE, memspace, dspace, xfer, Jalpha);
+    if (H5Dread(dset, H5T_NATIVE_DOUBLE, memspace, dspace, xfer, Jalpha) < 0) {
+        if (ThisTask == 0) fprintf(stderr, "FATAL: cannot read %s from %s\n", dsetname, filename);
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
     H5Pclose(xfer);
+    if (ThisTask == 0)
+        printf("J_alpha %s:%s  (z = %.4f, render z = %.4f)\n", filename, dsetname, zJ, z_render);
 
     H5Sclose(memspace); H5Sclose(dspace);
     H5Dclose(dset);     H5Fclose(file);
@@ -903,9 +1036,12 @@ static void read_Jalpha_slab(const char *filename, const char *dsetname,
 
 void output_PS(int local_n0, int local_0_start, fftw_complex *cout, fftw_complex *cout1, char *outputfilename)
 {
-  FILE *fd ;
+  FILE *fd = NULL ;
 
-  fd = fopen(outputfilename, "w") ;
+  if (ThisTask == 0) {
+    fd = fopen(outputfilename, "w") ;
+    if (!fd) { fprintf(stderr, "FATAL: cannot write %s\n", outputfilename); MPI_Abort(MPI_COMM_WORLD, 1); }
+  }
 
   L = BOXSIZE ;
 
@@ -998,7 +1134,7 @@ void output_PS(int local_n0, int local_0_start, fftw_complex *cout, fftw_complex
           fprintf(fd, "%g %g %g %g %g \n", Kval, delta, SumPower[i], (double)CountModes[i], shotnoise);
         }
     }
-  fclose(fd) ;
+  if (ThisTask == 0) fclose(fd) ;
   free(CountModes) ;
   free(SumPower) ;
 }

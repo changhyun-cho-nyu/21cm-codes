@@ -187,6 +187,7 @@ The totals are J_α^H = J_alpha + Jalpha_AGN_H and J_α^He = J_alpha_He + Jalpha
 | `check_sfr_eff_spectrum.py [--Z ...]` | How good is SFR_eff × lifetime spectral shape inside the band? (Section 5) |
 | `bracket_Tb_He.py --render All_NNN.hdf5 --J Jalpha_He_NNN.hdf5 --J Jalpha_AGN_He_NNN.hdf5 [--write]` | Does δT_b^He depend on J_α^He at all? It compares J as computed (no IGM absorption) with J = 0. |
 | `compare_SFR_eff.py REF TEST` | Is the SFR interpolation between snapshots converged? |
+| `check_tb_choices.py --dir <render_dir> --snap NNN [--factor 2]` | How accurate is the He redshift-space approximation (tested on H I, where the exact map exists), and how large is the RSD effect on He? Does mass vs volume weighting matter (signal share in partly ionized cells, T_mass/T_vol)? |
 
 ### 4.5 IGM absorption of the He II band
 
@@ -204,6 +205,33 @@ Variants are kept in separate directories:
   - The conversion from 912 Å to the band is the effective opacity of a broken power-law f(N): slope 1.5 below 10¹⁷·⁵, 0.8 up to 10¹⁹ (Prochaska+10) and 1.5 above. This gives λ_E/λ₉₁₂ = 1.59 (n = 2) and 1.82 (n ≥ 4).
   - The earlier single power law with β = 1.5 gave 3.5 and 4.8, about 2× too transparent.
   - `-DLLS_FN_B1/B2/B3/LOGN1/LOGN2` change the f(N) slopes and break columns; `-DLLS_BETA=b` restores a single power law.
+
+### 4.6 Brightness-temperature maps (`PS_21cm_mpi.c`, `PS_3cm_mpi.c`)
+
+Run with `run_21cm.sh` and `run_3cm.sh`. Each has a `compile` mode; set `J_DIR`, `TR_TAG` (He) and `OUT_DIR` at the top. Inputs are J^H = `J_alpha` + `Jalpha_AGN_H`, and J^He = `J_alpha_He` + `Jalpha_AGN_He` (the `_<TR_TAG>` files).
+
+Changes from the reviewed versions:
+- **He signal is in redshift space** along the 3rd axis, like H: (`HeII_Fraction`/y) · `SpectralDensity`/⟨Density⟩. The fraction is mass-weighted (it was the volume-weighted one).
+  - There is no He II density in redshift space, so this multiplies the real-space fraction by the redshift-space gas density. That is exact where x_HeII is uniform over the velocity displacement (~1–3 cells).
+  - `check_tb_choices.py` measures the error using the H I analogue, for which the exact map exists.
+  - `-DHE_REDSHIFT_SPACE=0` gives real space. The paper's line on the He field being in real space must change.
+- **He S_α** uses the He II Gunn–Peterson depth 6×10³ x_HeII((1+z)/7)^1.5, as in the paper. It was the H I depth.
+- **Spin-temperature inputs** are the mass-weighted `HII_Fraction`, `Temperature`, `HeII_Fraction` and `HeIII_Fraction`; `-DTS_VOLUME_WEIGHTED=1` restores the volume-weighted fields. A field missing as `<field>/<field>_NNN.hdf5` is read from `All/All_NNN.hdf5`.
+- **Cosmology:** h comes from the header (it was 0.6774 hard-coded, which made n_H 0.24% high). Ω_m and Ω_b come from the header, or else Lumina's 0.30964 / 0.048975; the old Planck 2015 values put the prefactor +0.53% off.
+- **He prefactor:** 1.67/√10 µK, the same as `global_snaps_clean.ipynb`. It was 0.53, labelled mK.
+- **Checks** that abort the run:
+  - every read is checked, and dataset shapes must be N³;
+  - the J maps must be at the render's redshift;
+  - He fractions must be per H nucleus (≤ 1.05 y);
+  - Σ SpectralDensityHI / 0.76 must equal Σ Density·x_HI to 5%, which confirms the 0.76 division;
+  - an unwritable output aborts.
+- **Output:** the map file records `Redshift` and `content`.
+- **Power spectra:** the `.out` normalisation is unchanged. Δ²(k) in mK² (µK² for He) is obtained by multiplying column 2 by (line 3 / line 4)², as `load_ps` in the notebooks does.
+
+Test, on a mock render (N = 32) against an independent Python calculation:
+- original and new codes, all compile options: map 3×10⁻⁸, Δ² 5×10⁻⁶;
+- identical maps with 1 and 4 MPI ranks;
+- each guard aborts as intended.
 
 ---
 
