@@ -31,6 +31,9 @@ RB=/orcd/data/mvogelsb/005/mkilab001/mvogelsblab003/Lab/Thesan-XL/Flagship_below
 SED=agn_sed_full.hdf5                                           # in the repository
 MIN_FREE_GB=20                                                  # ~1 GB per output, 16 outputs
 CONDA_ENV=jupyter_env      # has hdf5plugin: its filter plugins let the C codes read the compressed renders
+TRANS_DIR=                 # He II-band IGM transmission (run_transmission.sh output); empty = no IGM absorption.
+                           # When set: compile builds bin/Jalpha_He_tr and bin/Jalpha_AGN_tr, and the He tasks
+                           # write *_tr.hdf5 (rerun only the He tasks: sbatch --array=1,3,5,7,9,11,13,15)
 # FFTW (single precision, with OpenMP) and HDF5 install prefixes: the directories that contain
 # include/fftw3.h and include/hdf5.h. Left empty, they are found from the loaded modules
 # (FFTW_ROOT/HDF5_ROOT-style variables, pkg-config, CMAKE_PREFIX_PATH, h5cc on PATH).
@@ -71,6 +74,11 @@ if [ "$1" = "compile" ]; then
     mpicc -O3 -fopenmp $INC compute_Jalpha_He.c -o bin/Jalpha_He \
         -DZ_WEIGHTS_FILE="\"$WEIGHTS\"" -DSFR_DIR_OLD="\"$OUT/He\"" -DSFR_DIR_NEW="\"$OUT/He\"" $LIBS
     mpicc -O3 -fopenmp $INC compute_Jalpha_AGN.c -o bin/Jalpha_AGN $LIBS
+    if [ -n "$TRANS_DIR" ]; then
+        mpicc -O3 -fopenmp $INC compute_Jalpha_He.c -o bin/Jalpha_He_tr -DTRANSMISSION_DIR="\"$TRANS_DIR\"" \
+            -DZ_WEIGHTS_FILE="\"$WEIGHTS\"" -DSFR_DIR_OLD="\"$OUT/He\"" -DSFR_DIR_NEW="\"$OUT/He\"" $LIBS
+        mpicc -O3 -fopenmp $INC compute_Jalpha_AGN.c -o bin/Jalpha_AGN_tr -DTRANSMISSION_DIR="\"$TRANS_DIR\"" $LIBS
+    fi
     echo "built: $(ls bin)   commit $(git rev-parse --short HEAD)"
     exit 0
 fi
@@ -85,7 +93,8 @@ fi
 [ -n "$HDF5_PLUGIN_PATH" ] || { echo "HDF5_PLUGIN_PATH not set and hdf5plugin not found in $CONDA_ENV"; exit 1; }
 export HDF5_PLUGIN_PATH
 echo "HDF5_PLUGIN_PATH=$HDF5_PLUGIN_PATH"
-for b in bin/Jalpha_H bin/Jalpha_He bin/Jalpha_AGN; do
+BINS="bin/Jalpha_H bin/Jalpha_He bin/Jalpha_AGN"; [ -n "$TRANS_DIR" ] && BINS="$BINS bin/Jalpha_He_tr bin/Jalpha_AGN_tr"
+for b in $BINS; do
     [ -x "$b" ] || { echo "missing $b: run 'bash $0 compile' first"; exit 1; }
 done
 [ -f "$SED" ] && [ -f "$WEIGHTS" ] && [ -d "$OUT/H/All" ] && [ -d "$OUT/He/StarFormationRate" ] \
@@ -101,12 +110,13 @@ CODE=${CODES[$((i % 4))]}
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 echo "task $i: snap $SNAP, code $CODE, host $(hostname), $(date), commit $(git rev-parse --short HEAD)"
 
+TR=""; [ -n "$TRANS_DIR" ] && TR="_tr"      # He tasks only; the H band has no continuum absorption
 case $CODE in
     H)      mpirun -np $SLURM_NTASKS -x HDF5_PLUGIN_PATH bin/Jalpha_H  $SNAP "$OUT/H" "$OUT/H" "$J/Jalpha_H_${SNAP}.hdf5" ;;
-    He)     mpirun -np $SLURM_NTASKS -x HDF5_PLUGIN_PATH bin/Jalpha_He $SNAP "$J/Jalpha_He_${SNAP}.hdf5" ;;
+    He)     mpirun -np $SLURM_NTASKS -x HDF5_PLUGIN_PATH bin/Jalpha_He$TR $SNAP "$J/Jalpha_He_${SNAP}${TR}.hdf5" ;;
     AGN_H)  mpirun -np $SLURM_NTASKS -x HDF5_PLUGIN_PATH bin/Jalpha_AGN $SNAP "$R/LuminosityAGN" "$J/Jalpha_AGN_H_${SNAP}.hdf5" \
                 "$SED" "$RB/LuminosityAGN" LuminosityAGN H ;;
-    AGN_He) mpirun -np $SLURM_NTASKS -x HDF5_PLUGIN_PATH bin/Jalpha_AGN $SNAP "$R/LuminosityAGN" "$J/Jalpha_AGN_He_${SNAP}.hdf5" \
+    AGN_He) mpirun -np $SLURM_NTASKS -x HDF5_PLUGIN_PATH bin/Jalpha_AGN$TR $SNAP "$R/LuminosityAGN" "$J/Jalpha_AGN_He_${SNAP}${TR}.hdf5" \
                 "$SED" "$RB/LuminosityAGN" LuminosityAGN He ;;
 esac
 echo "done $(date)"

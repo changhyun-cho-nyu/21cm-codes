@@ -635,6 +635,21 @@ static void load_agn_sed(const char *sed_file, SpecTable *st, int rank) {
 /* =========================================================================
  * HDF5 output.
  * ========================================================================= */
+#include "jalpha_transmission.h"   /* optional IGM transmission, species He only (-DTRANSMISSION_DIR) */
+static int    TR_ON = 0;
+#define N_SUB_SCALAR 16            /* sub-steps per snapshot interval in the scalar check */
+static double snap_mean_val[N_SNAPS];
+static int    snap_mean_ok[N_SNAPS];
+static double snap_mean_of(int s, const float *box, long N3) {   /* box mean of snapshot s, cached */
+    if (!snap_mean_ok[s]) {
+        double m = 0.0;
+        for (long k = 0; k < N3; k++) m += box[k];
+        snap_mean_val[s] = m / N3; snap_mean_ok[s] = 1;
+    }
+    return snap_mean_val[s];
+}
+static double J_SCALAR_ATT = -1.0;
+
 static void write_output(const char *path, const float *J,
                           int N, double z_obs, double box_mpc,
                           double J_mean, double J_scalar,
@@ -646,9 +661,9 @@ static void write_output(const char *path, const float *J,
                            H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
     H5Dwrite(did, H5T_NATIVE_FLOAT, H5S_ALL, H5S_ALL, H5P_DEFAULT, J);
     {   /* same attributes on the dataset, as in the stellar codes */
-        const char *nm[5] = {"Redshift", "BoxSize_cMpc", "J_mean", "J_scalar", "NU_LL_species"};
-        double      va[5] = {z_obs, box_mpc, J_mean, J_scalar, NU_LL_SPECIES};
-        for (int k = 0; k < 5; k++) {
+        const char *nm[6] = {"Redshift", "BoxSize_cMpc", "J_mean", "J_scalar", "NU_LL_species", "J_scalar_attenuated"};
+        double      va[6] = {z_obs, box_mpc, J_mean, J_scalar, NU_LL_SPECIES, J_SCALAR_ATT};
+        for (int k = 0; k < 6; k++) {
             hid_t s1 = H5Screate(H5S_SCALAR);
             hid_t a1 = H5Acreate(did, nm[k], H5T_NATIVE_DOUBLE, s1, H5P_DEFAULT, H5P_DEFAULT);
             H5Awrite(a1, H5T_NATIVE_DOUBLE, &va[k]); H5Aclose(a1); H5Sclose(s1);
@@ -657,6 +672,16 @@ static void write_output(const char *path, const float *J,
         hid_t s1 = H5Screate(H5S_SCALAR);
         hid_t a1 = H5Acreate(did, "Units", st, s1, H5P_DEFAULT, H5P_DEFAULT);
         { char u[64] = "photons s^-1 cm^-2 Hz^-1 sr^-1"; H5Awrite(a1, st, u); } H5Aclose(a1); H5Sclose(s1); H5Tclose(st);
+        char tr[2048];
+#ifdef TRANSMISSION_DIR
+        snprintf(tr, sizeof tr, "%s", TR_ON ? TR_FILE : "none (species H: no continuum absorption)");
+#else
+        snprintf(tr, sizeof tr, "none (no IGM absorption)");
+#endif
+        hid_t st2 = H5Tcopy(H5T_C_S1); H5Tset_size(st2, sizeof tr);
+        hid_t s2 = H5Screate(H5S_SCALAR);
+        hid_t a2 = H5Acreate(did, "IGM_transmission", st2, s2, H5P_DEFAULT, H5P_DEFAULT);
+        H5Awrite(a2, st2, tr); H5Aclose(a2); H5Sclose(s2); H5Tclose(st2);
     }
     H5Dclose(did); H5Sclose(sid);
 
@@ -748,6 +773,13 @@ int main(int argc, char **argv) {
     double box_mpc = BOX_CMPC;
     int    N       = N_PIX;
     long   N3      = (long)N * N * N;
+#ifdef TRANSMISSION_DIR
+    if (strcmp(species, "He") == 0) { trans_init(snap_target, z_obs, box_mpc, N, rank); TR_ON = 1; }
+    else if (rank == 0) printf("  IGM transmission: not applied for species H (photons below 13.6 eV)\n");
+#else
+    if (rank == 0 && strcmp(species, "He") == 0)
+        printf("  IGM transmission: none (compile with -DTRANSMISSION_DIR to include IGM absorption)\n");
+#endif
     if (rank == 0) {
         double cell_mpc  = box_mpc / N;
         double cell_ckpc = cell_mpc * 1000.0;
@@ -817,6 +849,10 @@ int main(int argc, char **argv) {
         if (z_max > snap_z_max()) z_max = snap_z_max();
         if (z_max <= z_obs)       continue;
         double R_max = comoving_Mpc(z_obs, z_max, 0);
+#ifdef TRANSMISSION_DIR
+        int tr_g = (n == 2) ? 0 : 1;
+        if (TR_ON) trans_need(tr_g, R_max);
+#endif
         double R_min = box_mpc / N;              /* 1 cell = first log shell */
 
         /* Lyman-n photon frequency window at z_obs:
@@ -881,6 +917,9 @@ int main(int argc, char **argv) {
             smooth_shell(agn_z, agn_smooth,
                          N, box_mpc, R_lo, R_hi,
                          plan_r2c, plan_c2r, work_k, work_r);
+#ifdef TRANSMISSION_DIR
+            if (TR_ON) trans_apply(tr_g, R_mid, agn_smooth, N);
+#endif
 
             #pragma omp parallel for num_threads(N_OMP)
             for (long i = 0; i < N3; i++)
@@ -959,7 +998,7 @@ int main(int argc, char **argv) {
          * instead of the full 3D field. Result should equal J_mean.
          * Uses the same cache (already populated) -- no extra disk I/O.
          */
-        double J_scalar = 0.0;
+        double J_scalar = 0.0, J_scalar_att = 0.0;
         for (int n = 2; n <= N_MAX; n++) {
             double frec = f_rec(n);
             if (frec == 0.0) continue;
@@ -982,15 +1021,27 @@ int main(int argc, char **argv) {
             for (int iz = 0; iz < np2-1; iz++) {
                 double zm  = 0.5*(z_pts[iz]+z_pts[iz+1]);
                 double dz  = z_pts[iz+1] - z_pts[iz];
-                float *box = cache_get(&cache, zm, 0);
-                double agn_mean = 0.0;
-                for (long k = 0; k < N3; k++) agn_mean += box[k];
-                agn_mean /= N3;
-                double nu_p = nu_emitted(zm, z_obs, n);
-                double c_H  = C_CGS / H_cgm(zm);
-                J_scalar += (1.0+z_obs)*(1.0+z_obs) / (4.0*M_PI_)
-                             * frec * eps_b(&st, nu_p) * c_H
-                             * LUM_UNIT * agn_mean * dz;
+                (void)cache_get(&cache, zm, 0);              /* loads the bracketing snapshots */
+                int sl, sh; find_bracket(zm, &sl, &sh);       /* cache_get loaded both when sl != sh */
+                double m_lo = snap_mean_of(sl, cache.box_lo, N3);
+                double m_hi = (sh == sl) ? m_lo : snap_mean_of(sh, cache.box_hi, N3);
+                for (int ss = 0; ss < N_SUB_SCALAR; ss++) {  /* box mean is linear in z between snapshots */
+                    double zs = z_pts[iz] + (ss + 0.5) * dz / N_SUB_SCALAR;
+                    double agn_mean = (sh == sl) ? m_lo
+                        : m_lo + (zs - snap_redshifts[sl]) / (snap_redshifts[sh] - snap_redshifts[sl]) * (m_hi - m_lo);
+                    if (agn_mean < 0.0) agn_mean = 0.0;
+                    double nu_p = nu_emitted(zs, z_obs, n);
+                    double c_H  = C_CGS / H_cgm(zs);
+                    double dJ = (1.0+z_obs)*(1.0+z_obs) / (4.0*M_PI_)
+                                 * frec * eps_b(&st, nu_p) * c_H
+                                 * LUM_UNIT * agn_mean * dz / N_SUB_SCALAR;
+                    J_scalar += dJ;
+#ifdef TRANSMISSION_DIR
+                    J_scalar_att += TR_ON ? dJ * trans_mean(n == 2 ? 0 : 1, comoving_Mpc(z_obs, zs, 0)) : dJ;
+#else
+                    J_scalar_att += dJ;
+#endif
+                }
             }
         }
 
@@ -1009,10 +1060,18 @@ int main(int argc, char **argv) {
                n_pos, (long)N*N*N, 100.0*n_pos/((long)N*N*N));
         printf("\n  Scalar sanity check (mean-field, no FFT):\n");
         printf("  J_scalar    = %+.6e\n",  J_scalar);
-        printf("  ratio       = %.6f       (J_mean/J_scalar, should be ~1.0)\n",
-               (J_scalar > 0) ? J_mean/J_scalar : 0.0);
-        if (fabs(J_mean/J_scalar - 1.0) > 0.05 && J_scalar > 0)
-            printf("  WARNING: ratio deviates >5%% -- check FFT normalisation\n");
+        if (TR_ON) {
+            J_SCALAR_ATT = J_scalar_att;
+            printf("  J_scalar with box-mean transmission = %+.6e\n", J_scalar_att);
+            printf("  attenuation <J>/J_unattenuated = %.6f\n", (J_scalar > 0) ? J_mean/J_scalar : 0.0);
+            printf("  ratio       = %.6f       (J_mean/J_scalar_att: 1 if transmission and sources are uncorrelated)\n",
+                   (J_scalar_att > 0) ? J_mean/J_scalar_att : 0.0);
+        } else {
+            printf("  ratio       = %.6f       (J_mean/J_scalar, should be ~1.0)\n",
+                   (J_scalar > 0) ? J_mean/J_scalar : 0.0);
+            if (fabs(J_mean/J_scalar - 1.0) > 0.05 && J_scalar > 0)
+                printf("  WARNING: ratio deviates >5%% -- check FFT normalisation\n");
+        }
         printf("\n  Timing:\n");
         printf("  Elapsed     = %.1f s  (%.2f min)\n",
                t_end-t_start, (t_end-t_start)/60.0);
