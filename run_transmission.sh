@@ -33,7 +33,9 @@ set -eo pipefail
 cd "${SLURM_SUBMIT_DIR:-$PWD}"
 
 if [ "$1" = "compile" ]; then
-    [ -z "$HDF5_PREFIX" ] && command -v h5cc >/dev/null && HDF5_PREFIX=$(dirname "$(dirname "$(command -v h5cc)")")
+    for w in h5pcc h5cc; do                       # parallel builds ship h5pcc
+        [ -z "$HDF5_PREFIX" ] && command -v $w >/dev/null && HDF5_PREFIX=$(dirname "$(dirname "$(command -v $w)")")
+    done
     [ -z "$HDF5_PREFIX" ] && [ -n "${HDF5_ROOT:-}" ] && HDF5_PREFIX=$HDF5_ROOT
     INC=""; LIB=""
     if [ -n "$HDF5_PREFIX" ]; then
@@ -45,17 +47,20 @@ if [ "$1" = "compile" ]; then
     CC=gcc
     PUBCONF=""; [ -n "$HDF5_PREFIX" ] && PUBCONF="$HDF5_PREFIX/include/H5pubconf.h"
     if [ -n "$PUBCONF" ] && grep -qE '^#define H5_HAVE_PARALLEL 1' "$PUBCONF" 2>/dev/null || ! echo '#include <hdf5.h>' | gcc $INC -fsyntax-only -x c - 2>/dev/null; then
-        command -v mpicc >/dev/null || { echo "this HDF5 is an MPI build: load the MPI module first (the one used for the J_alpha jobs)"; exit 1; }
+        command -v mpicc >/dev/null || { echo "hdf5.h does not compile with gcc -I${HDF5_PREFIX:-?}/include (an MPI build of HDF5, or a wrong HDF5_PREFIX): load the MPI module, or set HDF5_PREFIX"; exit 1; }
         CC=mpicc
     fi
     mkdir -p bin
     $CC -O3 -fopenmp $INC -DLLS_A=$LLS_A compute_transmission_He.c -o bin/transmission_He $LIB -lhdf5 -lm
+    echo "$LLS_A" > bin/transmission_He.LLS_A     # the run step checks that the script's LLS_A matches the binary
     echo "built bin/transmission_He with $CC (HDF5 prefix: ${HDF5_PREFIX:-default}, LLS_A = $LLS_A)"
     exit 0
 fi
 
 [ -n "$SLURM_ARRAY_TASK_ID" ] || { echo "submit with sbatch (or run: bash $0 compile)"; exit 1; }
 [ -x bin/transmission_He ] || { echo "run 'bash $0 compile' first"; exit 1; }
+[ "$(cat bin/transmission_He.LLS_A 2>/dev/null)" = "$LLS_A" ] || \
+    { echo "bin/transmission_He was built with LLS_A = $(cat bin/transmission_He.LLS_A 2>/dev/null || echo '?'), the script says $LLS_A: run 'bash $0 compile' again"; exit 1; }
 if [ -z "${HDF5_PLUGIN_PATH:-}" ]; then     # the opacity files use gzip only; kept for safety
     conda activate jupyter_env 2>/dev/null || true
     HDF5_PLUGIN_PATH=$(python -c 'import hdf5plugin; print(hdf5plugin.PLUGIN_PATH)' 2>/dev/null) || HDF5_PLUGIN_PATH=

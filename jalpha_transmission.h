@@ -71,6 +71,12 @@ static void trans_init(int snap, double z_obs, double box_mpc, int N, int rank) 
 
 /* make sure group g holds all radii up to R_need (reads a hyperslab of radii) */
 static void trans_need(int g, double R_need) {
+    static int warned = 0;
+    if (!warned && R_need > 1.01 * TR_R[TR_NR - 1]) {
+        warned = 1;
+        fprintf(stderr, "WARNING: J needs radii to %.1f cMpc but %s stops at %.1f: T is held at its last value beyond\n",
+                R_need, TR_FILE, TR_R[TR_NR - 1]);
+    }
     int k = 0;
     while (k < TR_NR - 1 && TR_R[k] < R_need) k++;
     int nk = k + 1;
