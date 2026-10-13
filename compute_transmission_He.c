@@ -18,7 +18,7 @@
  *     T(x, R) = < exp(-tau(x, R n)) >_n
  * on N_R log-spaced radii, for two energy groups:
  *     T_n2 : the Ly-beta -> Ly-alpha window (E_n = 40.8 eV, f_rec = 1),
- *     T_n4 : the n >= 4 windows, E_n = mean weighted by f_rec x redshift window (~51.6 eV).
+ *     T_n4 : the n >= 4 windows, E_n = mean weighted by f_rec x redshift window (~52.5 eV).
  * Cross sections: Verner et al. (1996) fits for H I and He I.
  *
  * Optional unresolved absorbers (Lyman-limit systems below the render
