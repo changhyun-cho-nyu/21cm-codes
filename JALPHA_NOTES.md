@@ -205,6 +205,30 @@ Variants are kept in separate directories:
   - The earlier single power law with β = 1.5 gave 3.5 and 4.8, about 2× too transparent.
   - `-DLLS_FN_B1/B2/B3/LOGN1/LOGN2` change the f(N) slopes and break columns; `-DLLS_BETA=b` restores a single power law.
 
+### 4.6 Brightness-temperature maps (`PS_21cm_mpi.c`, `PS_3cm_mpi.c`)
+
+Run with `run_21cm.sh` and `run_3cm.sh`. Each has a `compile` mode; set `J_DIR`, `TR_TAG` (He) and `OUT_DIR` at the top. Inputs are J^H = `J_alpha` + `Jalpha_AGN_H`, and J^He = `J_alpha_He` + `Jalpha_AGN_He` (the `_<TR_TAG>` files).
+
+Changes from the reviewed versions:
+- **He signal** is now the real-space He II density, x_HeII(1+δ) = (`HeII_Fraction`/y) · `Density`/⟨Density⟩. It was x_HeII · `SpectralDensity`, a mixed-space product, while the paper says real space. `-DHE_REDSHIFT_SPACE=1` restores the old signal.
+- **He S_α** uses the He II Gunn–Peterson depth 6×10³ x_HeII((1+z)/7)^1.5, as in the paper. It was the H I depth.
+- **Spin-temperature inputs** are the mass-weighted `HII_Fraction`, `Temperature`, `HeII_Fraction` and `HeIII_Fraction`; `-DTS_VOLUME_WEIGHTED=1` restores the volume-weighted fields. A field missing as `<field>/<field>_NNN.hdf5` is read from `All/All_NNN.hdf5`.
+- **Cosmology:** h comes from the header (it was 0.6774 hard-coded, which made n_H 0.24% high). Ω_m and Ω_b come from the header, or else Lumina's 0.30964 / 0.048975; the old Planck 2015 values put the prefactor +0.53% off.
+- **He prefactor:** 1.67/√10 µK, the same as `global_snaps_clean.ipynb`. It was 0.53, labelled mK.
+- **Checks** that abort the run:
+  - every read is checked, and dataset shapes must be N³;
+  - the J maps must be at the render's redshift;
+  - He fractions must be per H nucleus (≤ 1.05 y);
+  - Σ SpectralDensityHI / 0.76 must equal Σ Density·x_HI to 5%, which confirms the 0.76 division;
+  - an unwritable output aborts.
+- **Output:** the map file records `Redshift` and `content`.
+- **Power spectra:** the `.out` normalisation is unchanged. Δ²(k) in mK² (µK² for He) is obtained by multiplying column 2 by (line 3 / line 4)², as `load_ps` in the notebooks does.
+
+Test, on a mock render (N = 32) against an independent Python calculation:
+- original and new codes, all compile options: map 3×10⁻⁸, Δ² 5×10⁻⁶;
+- identical maps with 1 and 4 MPI ranks;
+- each guard aborts as intended.
+
 ---
 
 ## 5. Approximations that remain (and how big they are)
