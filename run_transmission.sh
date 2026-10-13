@@ -22,6 +22,8 @@ SNAPS=(156 300 406 500)
 OPA=/orcd/data/mvogelsb/004/chcho/opacity_He       # run_opacity.sh output
 TRANS=/orcd/data/mvogelsb/004/chcho/transmission_He
 HDF5_PREFIX=                                       # set if hdf5.h is not found (see run_Jalpha_test.sh)
+# Modules: load the same MPI + HDF5 modules as for the J_alpha jobs before compiling AND before sbatch
+# (sbatch passes the loaded environment to the job; the binary needs the MPI/HDF5 libraries at run time).
 LLS_A=0                                            # extra lambda_912 at (1+z)/5 = 1 [proper Mpc]; 0 = off
 SF_MASK=0                                          # 1: read ${OPA}_sfmask, write ${TRANS}_sfmask
                                                    # (run_opacity.sh with SF_MASK=1 first)
@@ -38,9 +40,17 @@ if [ "$1" = "compile" ]; then
         INC="-I$HDF5_PREFIX/include"
         for l in "$HDF5_PREFIX/lib" "$HDF5_PREFIX/lib64"; do [ -d "$l" ] && LIB="$LIB -L$l -Wl,-rpath,$l"; done
     fi
+    # A parallel HDF5 build (H5_HAVE_PARALLEL) includes mpi.h from hdf5.h and links MPI: compile with mpicc
+    # then (the program itself makes no MPI calls and runs without mpirun).
+    CC=gcc
+    PUBCONF=""; [ -n "$HDF5_PREFIX" ] && PUBCONF="$HDF5_PREFIX/include/H5pubconf.h"
+    if [ -n "$PUBCONF" ] && grep -qE '^#define H5_HAVE_PARALLEL 1' "$PUBCONF" 2>/dev/null || ! echo '#include <hdf5.h>' | gcc $INC -fsyntax-only -x c - 2>/dev/null; then
+        command -v mpicc >/dev/null || { echo "this HDF5 is an MPI build: load the MPI module first (the one used for the J_alpha jobs)"; exit 1; }
+        CC=mpicc
+    fi
     mkdir -p bin
-    gcc -O3 -fopenmp $INC -DLLS_A=$LLS_A compute_transmission_He.c -o bin/transmission_He $LIB -lhdf5 -lm
-    echo "built bin/transmission_He (HDF5 prefix: ${HDF5_PREFIX:-default}, LLS_A = $LLS_A)"
+    $CC -O3 -fopenmp $INC -DLLS_A=$LLS_A compute_transmission_He.c -o bin/transmission_He $LIB -lhdf5 -lm
+    echo "built bin/transmission_He with $CC (HDF5 prefix: ${HDF5_PREFIX:-default}, LLS_A = $LLS_A)"
     exit 0
 fi
 
