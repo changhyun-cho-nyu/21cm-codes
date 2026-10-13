@@ -12,6 +12,10 @@ Measures, on one render snapshot, the two choices left open in the T_b maps
    than H II fronts, so the He error should be smaller). Reported as
    P_approx/P_exact and the cross-correlation r(k) of the two fields, and the
    size of the redshift-space effect itself on He, P_rs/P_real.
+   SpectralDensityHI counts star-forming (equation-of-state) gas as fully
+   neutral, HII_Fraction does not; so that this does not pose as an RSD error,
+   cells within --pad cells (along z) of a star-forming cell take the exact
+   value in the approximate field. The EoS H I excess is reported separately.
 
 2. Mass- vs volume-weighted spin-temperature inputs. They differ only in cells
    that are partly ionized, so the script reports which share of the signal
@@ -80,6 +84,7 @@ def main():
     p.add_argument("--dir", required=True)
     p.add_argument("--snap", type=int, required=True)
     p.add_argument("--factor", type=int, default=1)
+    p.add_argument("--pad", type=int, default=4, help="mask star-forming cells +- pad cells along z (RSD shift)")
     a = p.parse_args()
     d, s, f = a.dir, a.snap, a.factor
     with h5py.File(os.path.join(d, "All", f"All_{s:03d}.hdf5"), "r") as h:
@@ -100,16 +105,29 @@ def main():
     # ---- 1. redshift space -------------------------------------------------
     exact = hi_s / 0.76 / mean                                 # x_HI (1+delta), redshift space, exact
     approx = (1 - xm) * rho_s / mean                           # the He construction applied to H I
+    sf = load(d, "StarFormationRate", s, f) > 0
+    m = sf.copy()
+    for sh in range(1, a.pad + 1):                             # star-forming cells, widened along the line of sight
+        m |= np.roll(sf, sh, axis=2) | np.roll(sf, -sh, axis=2)
+    hn = (rho * (1 - xm))[m].sum(dtype=np.float64)
+    eos = f"{hi_s[m].sum(dtype=np.float64) / 0.76 / hn:.3f}" if hn > 0 else "n/a"
+    print(f"  star-forming cells (+-{a.pad} along z): {100 * m.mean():.2f}% of cells, "
+          f"{100 * hi_s[m].sum(dtype=np.float64) / max(hi_s.sum(dtype=np.float64), 1e-300):.1f}% of SpectralDensityHI; "
+          f"H I there, EoS-neutral / network = {eos}")
+    approx = np.where(m, exact, approx)
+    print(f"  He II mass in star-forming cells: {100 * (rho * he2)[sf].sum(dtype=np.float64) / max((rho * he2).sum(dtype=np.float64), 1e-300):.2f}% "
+          "(SpectralDensityHI treats that gas as neutral, i.e. He I; the He map keeps its network He II)")
     he_real = he2 / Y * rho / mean
     he_rs = he2 / Y * rho_s / mean
     kc, cnt, P, X = spectra([exact, approx], box)
-    r = X[0] / np.sqrt(P[0] * P[1])
+    with np.errstate(invalid="ignore", divide="ignore"):
+        r = X[0] / np.sqrt(P[0] * P[1])
     kc2, _, P2, _ = spectra([he_real, he_rs], box)
     print("\n1. redshift space (k in h/cMpc)")
     print("   H I test of the He construction: x_HI(real) x SpectralDensity vs SpectralDensityHI;  He: rs / real")
     print(f"   {'k':>8s} {'modes':>8s} {'P_approx/P_exact':>17s} {'r(k)':>8s} {'P_He,rs/P_He,real':>18s}")
     for i in range(len(kc)):
-        if cnt[i] == 0 or P[0][i] <= 0:
+        if cnt[i] == 0 or P[0][i] <= 0 or P2[0][i] <= 0:
             continue
         print(f"   {kc[i]:8.3f} {cnt[i]:8d} {P[1][i] / P[0][i]:17.4f} {r[i]:8.4f} {P2[1][i] / P2[0][i]:18.4f}")
     print(f"   field level: rms(approx - exact)/rms(exact - 1) = "
