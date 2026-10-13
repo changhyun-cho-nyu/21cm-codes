@@ -25,7 +25,7 @@ HDF5_PREFIX=                                       # set if hdf5.h is not found 
 # Modules: load the same MPI + HDF5 modules as for the J_alpha jobs before compiling AND before sbatch
 # (sbatch passes the loaded environment to the job; the binary needs the MPI/HDF5 libraries at run time).
 LLS_A=0                                            # extra lambda_912 at (1+z)/5 = 1 [proper Mpc]; 0 = off
-SF_MASK=0                                          # 1: read ${OPA}_sfmask, write ${TRANS}_sfmask
+SF_MASK=1                                          # 1 (default): read ${OPA}_sfmask, write ${TRANS}_sfmask
                                                    # (run_opacity.sh with SF_MASK=1 first)
 
 source ~/.bashrc

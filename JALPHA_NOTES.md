@@ -199,7 +199,7 @@ The physics, the derivations and the references are in the doc "How the He II Ly
 | 3 | `run_Jalpha_test.sh` with `TRANS_DIR` and `TR_TAG` set | `Jalpha_He_NNN_<TR_TAG>.hdf5` and `Jalpha_AGN_He_NNN_<TR_TAG>.hdf5` |
 
 Variants are kept in separate directories:
-- **`SF_MASK=1`** in `run_opacity.sh` and `run_transmission.sh` makes star-forming cells transparent, as in Lumina's own RT. Otherwise their absorption would be counted on top of f_esc. Outputs go to `*_sfmask`; set `TR_TAG=tr_sfmask` for the J runs. The ray tracer refuses a directory that mixes masked and unmasked opacity files.
+- **`SF_MASK=1`** (the default since the measurements below) in `run_opacity.sh` and `run_transmission.sh` makes star-forming cells transparent, as in Lumina's own RT. Otherwise their absorption would be counted on top of f_esc. Outputs go to `*_sfmask`; set `TR_TAG=tr_sfmask` for the J runs. The ray tracer refuses a directory that mixes masked and unmasked opacity files.
 - **`LLS_A > 0`** adds unresolved absorbers, with outputs in `*_lls`. Use it only if λ₉₁₂,sim > λ₉₁₂,obs, and then calibrate it with 1/λ_extra = 1/λ_obs − 1/λ_sim.
   - The conversion from 912 Å to the band is the effective opacity of a broken power-law f(N): slope 1.5 below 10¹⁷·⁵, 0.8 up to 10¹⁹ (Prochaska+10) and 1.5 above. This gives λ_E/λ₉₁₂ = 1.59 (n = 2) and 1.82 (n ≥ 4).
   - The earlier single power law with β = 1.5 gave 3.5 and 4.8, about 2× too transparent.
@@ -232,7 +232,7 @@ Variants are kept in separate directories:
 ### 6.2 Decisions still open
 - **Helium IGM absorption** (implemented, 4.5):
   - compare λ₉₁₂,sim with Becker+21, Zhu+23 and Worseck+14 to decide on `LLS_A`;
-  - compare the masked and unmasked star-forming cells to decide on `SF_MASK`;
+  - `SF_MASK`: decided ON. Measured at snapshot 300 (z = 6.35): star-forming cells hold 15% of all H I and 52% of the H I in ionized cells, with self_T = 0.10. At snapshot 500 (z = 4.01) they hold 98% of all H I, with self_T = 0.08. Unmasked, the sources' own cells would absorb about 90% of their photons on top of f_esc. At z < 4.75 the opacity would also be almost entirely galaxy ISM smeared over 1.56 cMpc cells, an artifact.
   - rerun `bracket_Tb_He.py` on the `_<TR_TAG>` maps.
 - **AGN factor.** Confirm with Oliver Zier that f_esc(L) is the Hopkins/Vogelsberger obscuration factor (one factor for all frequencies).
 
