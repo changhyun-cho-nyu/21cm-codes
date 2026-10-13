@@ -835,6 +835,20 @@ static void smooth_shell(const float *sfr_in, float *sfr_out,
  * Units: photons s^-1 cm^-2 Hz^-1 sr^-1
  * ========================================================================= */
 
+#include "jalpha_transmission.h"   /* optional IGM transmission (-DTRANSMISSION_DIR) */
+#define N_SUB_SCALAR 16            /* sub-steps per snapshot interval in the scalar check */
+static double snap_mean_val[N_SNAPS];
+static int    snap_mean_ok[N_SNAPS];
+static double snap_mean_of(int s, const float *box, long N3) {   /* box mean of snapshot s, cached */
+    if (!snap_mean_ok[s]) {
+        double m = 0.0;
+        for (long k = 0; k < N3; k++) m += box[k];
+        snap_mean_val[s] = m / N3; snap_mean_ok[s] = 1;
+    }
+    return snap_mean_val[s];
+}
+static double J_SCALAR_ATT = -1.0;  /* scalar J with the box-mean transmission */
+
 static void write_output(const char *outfile, const float *J,
                           int N, double z_obs, double box_mpc,
                           double J_mean, double J_scalar,
@@ -864,6 +878,7 @@ static void write_output(const char *outfile, const float *J,
     WA("J_scalar",    J_scalar)
     WA("NU_LL_HeII",  1.31583e16)
     WA("f_esc_star",  F_ESC_STAR_HE)
+    WA("J_scalar_attenuated", J_SCALAR_ATT)
     #undef WA
 
     {
@@ -881,6 +896,17 @@ static void write_output(const char *outfile, const float *J,
 
     hid_t str_t = H5Tcopy(H5T_C_S1);
     H5Tset_size(str_t,64);
+    {
+        char tr[2048];
+#ifdef TRANSMISSION_DIR
+        snprintf(tr, sizeof tr, "%s", TR_FILE);
+#else
+        snprintf(tr, sizeof tr, "none (no IGM absorption)");
+#endif
+        hid_t st1 = H5Tcopy(H5T_C_S1); H5Tset_size(st1, sizeof tr);
+        hid_t at = H5Acreate(did, "IGM_transmission", st1, sc, H5P_DEFAULT, H5P_DEFAULT);
+        H5Awrite(at, st1, tr); H5Aclose(at); H5Tclose(st1);
+    }
     hid_t a = H5Acreate(did,"Units",str_t,sc,H5P_DEFAULT,H5P_DEFAULT);
     { char u[64] = "photons s^-1 cm^-2 Hz^-1 sr^-1"; H5Awrite(a,str_t,u); }   /* 64-byte buffer, as the type says */
     H5Aclose(a);
@@ -953,6 +979,11 @@ int main(int argc, char **argv) {
     int    N      = N_PIX;
     long   N3     = (long)N*N*N;
     double box_mpc = BOX_CMPC;
+#ifdef TRANSMISSION_DIR
+    trans_init(snap_target, z_obs, box_mpc, N, rank);
+#else
+    if (rank==0) printf("  IGM transmission: none (compile with -DTRANSMISSION_DIR to include IGM absorption)\n");
+#endif
 
     if (rank==0) printf("\nLoading BPASS spectrum...\n");
     SpecTable st = load_spectrum(rank);
@@ -1010,6 +1041,10 @@ int main(int argc, char **argv) {
 
         double R_max = comoving_Mpc(z_obs, z_max, 500);
         double R_min = box_mpc / N;
+#ifdef TRANSMISSION_DIR
+        int tr_g = (n == 2) ? 0 : 1;
+        trans_need(tr_g, R_max);
+#endif
 
         printf("  rank %d: n=%2d  f_rec=%.4f  z_max=%.3f  R_max=%.1f Mpc\n",
                rank, n, frec, z_max, R_max);
@@ -1048,6 +1083,9 @@ int main(int argc, char **argv) {
             smooth_shell(sfr_z, sfr_smooth,
                          N, box_mpc, R_lo, R_hi,
                          plan_r2c, plan_c2r, work_k, work_r);
+#ifdef TRANSMISSION_DIR
+            trans_apply(tr_g, R_mid, sfr_smooth, N);   /* IGM absorption from R_mid to each voxel */
+#endif
 
             #pragma omp parallel for num_threads(N_OMP)
             for (long i=0; i<N3; i++)
@@ -1098,7 +1136,7 @@ int main(int argc, char **argv) {
         J_mean /= N3;
 
         /* Scalar sanity check — same trapezoid approach as hydrogen version */
-        double J_scalar = 0.0;
+        double J_scalar = 0.0, J_scalar_att = 0.0;
         for (int n=2; n<=N_MAX; n++) {
             double frec = f_rec(n);
             if (frec==0.0) continue;
@@ -1127,15 +1165,25 @@ int main(int argc, char **argv) {
                 double z2  = z_pts[iz2+1];
                 double zm  = 0.5*(z1+z2);
                 double dz2 = z2 - z1;
-                float *box = cache_get(&cache, zm, 0);
-                double sfr_mean=0.0;
-                for (long k=0; k<N3; k++) sfr_mean+=box[k];
-                sfr_mean /= N3;
-                double nu_p = nu_emitted(zm, z_obs, n);
-                double c_H  = C_CGS / H_cgm(zm);
-                J_scalar += (1.0+z_obs)*(1.0+z_obs)/(4.0*M_PI_)
-                             * frec * eps_mix(&st,nu_p,zm) * c_H
-                             * sfr_mean * SFR_UNIT / MP_CGS * dz2;
+                (void)cache_get(&cache, zm, 0);              /* loads the bracketing snapshots */
+                int sl, sh; find_bracket(zm, &sl, &sh);       /* cache_get loaded both when sl != sh */
+                double m_lo = snap_mean_of(sl, cache.box_lo, N3);
+                double m_hi = (sh == sl) ? m_lo : snap_mean_of(sh, cache.box_hi, N3);
+                for (int ss = 0; ss < N_SUB_SCALAR; ss++) {  /* box mean is linear in z between snapshots */
+                    double zs = z1 + (ss + 0.5) * dz2 / N_SUB_SCALAR;
+                    double sfr_mean = (sh == sl) ? m_lo
+                        : m_lo + (zs - snap_redshifts[sl]) / (snap_redshifts[sh] - snap_redshifts[sl]) * (m_hi - m_lo);
+                    if (sfr_mean < 0.0) sfr_mean = 0.0;
+                    double nu_p = nu_emitted(zs, z_obs, n);
+                    double c_H  = C_CGS / H_cgm(zs);
+                    double dJ = (1.0+z_obs)*(1.0+z_obs)/(4.0*M_PI_)
+                                 * frec * eps_mix(&st,nu_p,zs) * c_H
+                                 * sfr_mean * SFR_UNIT / MP_CGS * dz2 / N_SUB_SCALAR;
+                    J_scalar += dJ;
+#ifdef TRANSMISSION_DIR
+                    J_scalar_att += dJ * trans_mean(n == 2 ? 0 : 1, comoving_Mpc(z_obs, zs, 60));
+#endif
+                }
             }
         }
 
@@ -1143,8 +1191,17 @@ int main(int argc, char **argv) {
         printf("  J_mean   = %.6e  [ph/s/cm^2/Hz/sr]\n", J_mean);
         printf("  J_max    = %.6e\n", J_max);
         printf("  J_scalar = %.6e\n", J_scalar);
+#ifdef TRANSMISSION_DIR
+        J_SCALAR_ATT = J_scalar_att;
+        printf("  J_scalar with box-mean transmission = %.6e\n", J_scalar_att);
+        printf("  attenuation <J>/J_unattenuated = %.6f\n", (J_scalar>0) ? J_mean/J_scalar : 0.0);
+        printf("  ratio    = %.6f  (J_mean / J_scalar_att: 1 if transmission and sources are uncorrelated)\n",
+               (J_scalar_att>0) ? J_mean/J_scalar_att : 0.0);
+#else
+        (void)J_scalar_att;
         printf("  ratio    = %.6f  (should be ~1.0)\n",
                (J_scalar>0) ? J_mean/J_scalar : 0.0);
+#endif
 
         printf("\nWriting %s...\n", outfile);
         write_output(outfile, J_total, N, z_obs, box_mpc, J_mean, J_scalar, &st);
