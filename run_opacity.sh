@@ -20,9 +20,11 @@ OPA=/orcd/data/mvogelsb/004/chcho/opacity_He       # output directory
 EVERY=2                                            # every 2nd snapshot (~5 Myr apart)
 FACTOR=2                                           # 640^3 -> 320^3
 FIRST=0; LAST=708
-SF_MASK=0                                          # 1: star-forming cells transparent (n_HI = n_HeI = 0), as in
-                                                   # Lumina's RT; written to ${OPA}_sfmask. Either way the log
-                                                   # prints the share of H I / He I in star-forming cells.
+SF_MASK=1                                          # 1 (default): star-forming cells transparent (n_HI = n_HeI = 0),
+                                                   # as in Lumina's RT and its f_esc; written to ${OPA}_sfmask.
+                                                   # Unmasked, the sources' own cells absorb 90-92% of their He-band
+                                                   # photons (self_T = 0.10 at z = 6.35, 0.08 at z = 4.01) and at
+                                                   # z < 4.75 98% of all H I sits in star-forming cells.
 
 source ~/.bashrc
 conda activate jupyter_env
