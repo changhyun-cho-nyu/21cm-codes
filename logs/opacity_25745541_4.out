@@ -1,0 +1,24 @@
+task 4: snapshots 360..448 every 2  Tue Oct 13 13:33:59 EDT 2026
+snap 360  z =   5.551  <n_HI> = 6.258e-09  <n_HeI> = 5.069e-10 (comoving cm^-3)  -> /orcd/data/mvogelsb/004/chcho/opacity_He/opacity_360.hdf5
+snap 362  z =   5.526  <n_HI> = 5.667e-09  <n_HeI> = 4.624e-10 (comoving cm^-3)  -> /orcd/data/mvogelsb/004/chcho/opacity_He/opacity_362.hdf5
+snap 364  z =   5.501  <n_HI> = 5.131e-09  <n_HeI> = 4.221e-10 (comoving cm^-3)  -> /orcd/data/mvogelsb/004/chcho/opacity_He/opacity_364.hdf5
+snap 366  z =   5.476  <n_HI> = 4.652e-09  <n_HeI> = 3.860e-10 (comoving cm^-3)  -> /orcd/data/mvogelsb/004/chcho/opacity_He/opacity_366.hdf5
+snap 368  z =   5.452  <n_HI> = 4.227e-09  <n_HeI> = 3.540e-10 (comoving cm^-3)  -> /orcd/data/mvogelsb/004/chcho/opacity_He/opacity_368.hdf5
+snap 370  z =   5.427  <n_HI> = 3.850e-09  <n_HeI> = 3.256e-10 (comoving cm^-3)  -> /orcd/data/mvogelsb/004/chcho/opacity_He/opacity_370.hdf5
+snap 372  z =   5.402  <n_HI> = 3.516e-09  <n_HeI> = 3.004e-10 (comoving cm^-3)  -> /orcd/data/mvogelsb/004/chcho/opacity_He/opacity_372.hdf5
+snap 374  z =   5.378  <n_HI> = 3.227e-09  <n_HeI> = 2.785e-10 (comoving cm^-3)  -> /orcd/data/mvogelsb/004/chcho/opacity_He/opacity_374.hdf5
+snap 376  z =   5.354  <n_HI> = 2.975e-09  <n_HeI> = 2.594e-10 (comoving cm^-3)  -> /orcd/data/mvogelsb/004/chcho/opacity_He/opacity_376.hdf5
+snap 378  z =   5.330  <n_HI> = 2.760e-09  <n_HeI> = 2.432e-10 (comoving cm^-3)  -> /orcd/data/mvogelsb/004/chcho/opacity_He/opacity_378.hdf5
+snap 380  z =   5.305  <n_HI> = 2.575e-09  <n_HeI> = 2.290e-10 (comoving cm^-3)  -> /orcd/data/mvogelsb/004/chcho/opacity_He/opacity_380.hdf5
+snap 382  z =   5.281  <n_HI> = 2.424e-09  <n_HeI> = 2.174e-10 (comoving cm^-3)  -> /orcd/data/mvogelsb/004/chcho/opacity_He/opacity_382.hdf5
+snap 384  z =   5.257  <n_HI> = 2.297e-09  <n_HeI> = 2.077e-10 (comoving cm^-3)  -> /orcd/data/mvogelsb/004/chcho/opacity_He/opacity_384.hdf5
+snap 386  z =   5.234  <n_HI> = 2.190e-09  <n_HeI> = 1.994e-10 (comoving cm^-3)  -> /orcd/data/mvogelsb/004/chcho/opacity_He/opacity_386.hdf5
+snap 388  z =   5.210  <n_HI> = 2.104e-09  <n_HeI> = 1.926e-10 (comoving cm^-3)  -> /orcd/data/mvogelsb/004/chcho/opacity_He/opacity_388.hdf5
+snap 390  z =   5.186  <n_HI> = 2.034e-09  <n_HeI> = 1.870e-10 (comoving cm^-3)  -> /orcd/data/mvogelsb/004/chcho/opacity_He/opacity_390.hdf5
+snap 392  z =   5.162  <n_HI> = 1.974e-09  <n_HeI> = 1.822e-10 (comoving cm^-3)  -> /orcd/data/mvogelsb/004/chcho/opacity_He/opacity_392.hdf5
+snap 394  z =   5.139  <n_HI> = 1.925e-09  <n_HeI> = 1.782e-10 (comoving cm^-3)  -> /orcd/data/mvogelsb/004/chcho/opacity_He/opacity_394.hdf5
+snap 396  z =   5.116  <n_HI> = 1.883e-09  <n_HeI> = 1.746e-10 (comoving cm^-3)  -> /orcd/data/mvogelsb/004/chcho/opacity_He/opacity_396.hdf5
+snap 398  z =   5.092  <n_HI> = 1.851e-09  <n_HeI> = 1.719e-10 (comoving cm^-3)  -> /orcd/data/mvogelsb/004/chcho/opacity_He/opacity_398.hdf5
+snap 400  z =   5.069  <n_HI> = 1.824e-09  <n_HeI> = 1.695e-10 (comoving cm^-3)  -> /orcd/data/mvogelsb/004/chcho/opacity_He/opacity_400.hdf5
+snap 402  z =   5.046  <n_HI> = 1.802e-09  <n_HeI> = 1.675e-10 (comoving cm^-3)  -> /orcd/data/mvogelsb/004/chcho/opacity_He/opacity_402.hdf5
+snap 404  z =   5.023  <n_HI> = 1.783e-09  <n_HeI> = 1.658e-10 (comoving cm^-3)  -> /orcd/data/mvogelsb/004/chcho/opacity_He/opacity_404.hdf5

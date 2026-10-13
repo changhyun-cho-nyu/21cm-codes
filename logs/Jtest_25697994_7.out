@@ -1,0 +1,731 @@
+task 7: snap 300, code AGN_He, host node1442, Tue Oct 13 00:10:12 EDT 2026, commit 62f50cb
+==============================
+Array task : (from SLURM)
+Snapshot   : 300
+Species    : He  (NU_LL = 1.3159e+16 Hz)
+AGN dir    : /orcd/data/mvogelsb/005/mkilab001/mvogelsblab003/Lab/Thesan-XL/Flagship_new/postprocessing/ren_640/LuminosityAGN
+AGN dir2   : /orcd/data/mvogelsb/005/mkilab001/mvogelsblab003/Lab/Thesan-XL/Flagship_below_z_4p75_new/postprocessing/ren_640/LuminosityAGN
+Dataset    : LuminosityAGN
+SED file   : agn_sed_full.hdf5
+Output     : /orcd/data/mvogelsb/004/chcho/Jalpha_test/Jalpha_AGN_He_300.hdf5  [dataset: Jalpha_AGN_He]
+MPI ranks  : 16
+OMP threads: 4
+==============================
+
+Loading snapshot metadata...
+  Box=500.0 cMpc  N=640  cell_cm=2.4107e+24  LUM_UNIT=4.6011e-37 erg/s/cm^3/codeunit
+  Redshifts loaded: z=2.987 to z=29.428  (709 snaps)
+z_obs = 6.346433  (snap 300)
+
+--- Geometry ---
+  BoxSize     = 500.000 cMpc
+  N_pix       = 640  (262144000 voxels total)
+  cell size   = 0.7812 cMpc  = 781.25 ckpc
+  LUM_UNIT    = 4.6011e-37 erg/s/cm^3 per code unit
+  NU_LL       = 1.3159e+16 Hz  = 54.43 eV  (species He)
+  H(z_obs)    = 2.4365e-17 s^-1
+  c/H(z_obs)  = 1.2304e+27 cm  = 398.74 cMpc
+
+Loading AGN SED...
+  AGN SED: Nfreq=3936  freq=[3.162e+12, 4.830e+20] Hz  (8.18 decades)
+  L_bol (power law between nodes, E <= 500 keV) = 2.0363e+46 erg/s
+  eps_agn at Ly-alpha (9.870e+15 Hz) = 1.0992e-07 ph/Hz/erg
+  eps_agn at Lyman limit       = 4.1958e-08 ph/Hz/erg
+  eps_agn at Lyman-n frequencies [ph/Hz/erg]:
+     n       nu_n [Hz]  E_n [eV]   eps_agn(nu_n)
+     2  9.8696e+15     40.82  1.0992e-07
+     4  1.2337e+16     51.03  5.2077e-08
+     5  1.2633e+16     52.25  4.8102e-08
+     6  1.2794e+16     52.92  4.6107e-08
+     7  1.2891e+16     53.32  4.4956e-08
+     8  1.2954e+16     53.58  4.4229e-08
+     9  1.2997e+16     53.76  4.3739e-08
+    10  1.3028e+16     53.88  4.3393e-08
+
+Planning FFTs...
+  rank 6: n= 8  f_rec=0.3410  z_max=6.371  R_max=    9.7 Mpc  dz=0.024
+           nu window = [1.295e+16, 1.300e+16] Hz  =  [53.58, 53.76] eV
+  [rank 6 cache] reading snap 299  z=6.3605
+  [rank 6 cache] reading snap 300  z=6.3464
+  rank 12: n=14  f_rec=0.3535  z_max=6.351  R_max=    1.9 Mpc  dz=0.005
+           nu window = [1.309e+16, 1.310e+16] Hz  =  [54.15, 54.19] eV
+  [rank 12 cache] reading snap 299  z=6.3605
+  [rank 12 cache] reading snap 300  z=6.3464
+  rank 2: n= 4  f_rec=0.2609  z_max=6.523  R_max=   69.1 Mpc  dz=0.176
+           nu window = [1.234e+16, 1.263e+16] Hz  =  [51.03, 52.25] eV
+  [rank 2 cache] reading snap 299  z=6.3605
+  [rank 2 cache] reading snap 300  z=6.3464
+  rank 8: n=10  f_rec=0.3476  z_max=6.359  R_max=    5.1 Mpc  dz=0.013
+           nu window = [1.303e+16, 1.305e+16] Hz  =  [53.88, 53.98] eV
+  [rank 8 cache] reading snap 299  z=6.3605
+  rank 4: n= 6  f_rec=0.3259  z_max=6.402  R_max=   22.1 Mpc  dz=0.056
+           nu window = [1.279e+16, 1.289e+16] Hz  =  [52.92, 53.32] eV
+  [rank 4 cache] reading snap 299  z=6.3605
+  [rank 8 cache] reading snap 300  z=6.3464
+FFT plans ready.
+
+  [rank 4 cache] reading snap 300  z=6.3464
+  rank 5: n= 7  f_rec=0.3353  z_max=6.382  R_max=   14.3 Mpc  dz=0.036
+           nu window = [1.289e+16, 1.295e+16] Hz  =  [53.32, 53.58] eV
+  [rank 5 cache] reading snap 299  z=6.3605
+  [rank 5 cache] reading snap 300  z=6.3464
+  rank 14: n=16  f_rec=0.3550  z_max=6.350  R_max=    1.3 Mpc  dz=0.003
+           nu window = [1.311e+16, 1.311e+16] Hz  =  [54.22, 54.24] eV
+  [rank 14 cache] reading snap 299  z=6.3605
+Computing J_alpha_AGN partial boxes...
+  rank 0: n= 2  f_rec=1.0000  z_max=7.707  R_max=  477.4 Mpc  dz=1.360
+           nu window = [9.870e+15, 1.170e+16] Hz  =  [40.82, 48.38] eV
+  [rank 0 cache] reading snap 299  z=6.3605
+  [rank 14 cache] reading snap 300  z=6.3464
+  [rank 0 cache] reading snap 300  z=6.3464
+  rank 10: n=12  f_rec=0.3512  z_max=6.354  R_max=    3.0 Mpc  dz=0.008
+           nu window = [1.307e+16, 1.308e+16] Hz  =  [54.05, 54.11] eV
+  [rank 10 cache] reading snap 299  z=6.3605
+  rank 13: n=15  f_rec=0.3543  z_max=6.350  R_max=    1.6 Mpc  dz=0.004
+           nu window = [1.310e+16, 1.311e+16] Hz  =  [54.19, 54.22] eV
+  [rank 13 cache] reading snap 299  z=6.3605
+  [rank 10 cache] reading snap 300  z=6.3464
+  [rank 13 cache] reading snap 300  z=6.3464
+  rank 9: n=11  f_rec=0.3496  z_max=6.356  R_max=    3.9 Mpc  dz=0.010
+           nu window = [1.305e+16, 1.307e+16] Hz  =  [53.98, 54.05] eV
+  [rank 9 cache] reading snap 299  z=6.3605
+  [rank 9 cache] reading snap 300  z=6.3464
+  rank 1: n=19  f_rec=0.3565  z_max=6.348  R_max=    0.8 Mpc  dz=0.002
+           nu window = [1.312e+16, 1.313e+16] Hz  =  [54.28, 54.29] eV
+  [rank 1 cache] reading snap 299  z=6.3605
+  rank 3: n= 5  f_rec=0.3078  z_max=6.440  R_max=   36.9 Mpc  dz=0.094
+           nu window = [1.263e+16, 1.279e+16] Hz  =  [52.25, 52.92] eV
+  [rank 3 cache] reading snap 299  z=6.3605
+  rank 15: n=17  f_rec=0.3556  z_max=6.349  R_max=    1.1 Mpc  dz=0.003
+           nu window = [1.311e+16, 1.312e+16] Hz  =  [54.24, 54.26] eV
+  [rank 15 cache] reading snap 299  z=6.3605
+  [rank 1 cache] reading snap 300  z=6.3464
+  [rank 3 cache] reading snap 300  z=6.3464
+  [rank 15 cache] reading snap 300  z=6.3464
+  rank 7: n= 9  f_rec=0.3448  z_max=6.364  R_max=    6.9 Mpc  dz=0.017
+           nu window = [1.300e+16, 1.303e+16] Hz  =  [53.76, 53.88] eV
+  [rank 7 cache] reading snap 299  z=6.3605
+  [rank 7 cache] reading snap 300  z=6.3464
+  rank 11: n=13  f_rec=0.3524  z_max=6.352  R_max=    2.4 Mpc  dz=0.006
+           nu window = [1.308e+16, 1.309e+16] Hz  =  [54.11, 54.15] eV
+  [rank 11 cache] reading snap 299  z=6.3605
+  [rank 11 cache] reading snap 300  z=6.3464
+    [rank 6 n= 8] shell   0/200  R_mid=    0.39 Mpc  z'=6.3474  eps_agn=4.421e-08 [ph/Hz/erg]  prefac=7.182e-20
+    [rank 2 n= 4] shell   0/200  R_mid=    0.39 Mpc  z'=6.3474  eps_agn=5.205e-08 [ph/Hz/erg]  prefac=6.470e-20
+    [rank 12 n=14] shell   0/200  R_mid=    0.39 Mpc  z'=6.3474  eps_agn=4.266e-08 [ph/Hz/erg]  prefac=7.184e-20
+    [rank 5 n= 7] shell   0/200  R_mid=    0.39 Mpc  z'=6.3474  eps_agn=4.494e-08 [ph/Hz/erg]  prefac=7.178e-20
+    [rank 8 n=10] shell   0/200  R_mid=    0.39 Mpc  z'=6.3474  eps_agn=4.337e-08 [ph/Hz/erg]  prefac=7.182e-20
+    [rank 4 n= 6] shell   0/200  R_mid=    0.39 Mpc  z'=6.3474  eps_agn=4.609e-08 [ph/Hz/erg]  prefac=7.155e-20
+    [rank 0 n= 2] shell   0/200  R_mid=    0.39 Mpc  z'=6.3474  eps_agn=1.099e-07 [ph/Hz/erg]  prefac=5.234e-19
+    [rank 13 n=15] shell   0/200  R_mid=    0.39 Mpc  z'=6.3474  eps_agn=4.257e-08 [ph/Hz/erg]  prefac=7.185e-20
+    [rank 10 n=12] shell   0/200  R_mid=    0.39 Mpc  z'=6.3474  eps_agn=4.293e-08 [ph/Hz/erg]  prefac=7.182e-20
+    [rank 14 n=16] shell   0/200  R_mid=    0.39 Mpc  z'=6.3474  eps_agn=4.249e-08 [ph/Hz/erg]  prefac=7.186e-20
+    [rank 3 n= 5] shell   0/200  R_mid=    0.39 Mpc  z'=6.3474  eps_agn=4.808e-08 [ph/Hz/erg]  prefac=7.050e-20
+    [rank 9 n=11] shell   0/200  R_mid=    0.39 Mpc  z'=6.3474  eps_agn=4.312e-08 [ph/Hz/erg]  prefac=7.181e-20
+    [rank 1 n=19] shell   0/200  R_mid=    0.39 Mpc  z'=6.3474  eps_agn=4.233e-08 [ph/Hz/erg]  prefac=7.189e-20
+    [rank 15 n=17] shell   0/200  R_mid=    0.39 Mpc  z'=6.3474  eps_agn=4.243e-08 [ph/Hz/erg]  prefac=7.187e-20
+    [rank 7 n= 9] shell   0/200  R_mid=    0.39 Mpc  z'=6.3474  eps_agn=4.372e-08 [ph/Hz/erg]  prefac=7.181e-20
+    [rank 11 n=13] shell   0/200  R_mid=    0.39 Mpc  z'=6.3474  eps_agn=4.278e-08 [ph/Hz/erg]  prefac=7.182e-20
+    [rank 6 n= 8] shell   1/200  R_mid=    0.79 Mpc  z'=6.3484  eps_agn=4.419e-08 [ph/Hz/erg]  prefac=9.111e-22
+    [rank 12 n=14] shell   1/200  R_mid=    0.78 Mpc  z'=6.3484  eps_agn=4.264e-08 [ph/Hz/erg]  prefac=3.264e-22
+    [rank 2 n= 4] shell   1/200  R_mid=    0.79 Mpc  z'=6.3484  eps_agn=5.203e-08 [ph/Hz/erg]  prefac=1.466e-21
+    [rank 5 n= 7] shell   1/200  R_mid=    0.79 Mpc  z'=6.3484  eps_agn=4.492e-08 [ph/Hz/erg]  prefac=1.049e-21
+    [rank 4 n= 6] shell   1/200  R_mid=    0.79 Mpc  z'=6.3484  eps_agn=4.607e-08 [ph/Hz/erg]  prefac=1.205e-21
+    [rank 13 n=15] shell   1/200  R_mid=    0.78 Mpc  z'=6.3484  eps_agn=4.255e-08 [ph/Hz/erg]  prefac=2.540e-22
+    [rank 8 n=10] shell   1/200  R_mid=    0.78 Mpc  z'=6.3484  eps_agn=4.335e-08 [ph/Hz/erg]  prefac=6.786e-22
+    [rank 0 n= 2] shell   1/200  R_mid=    0.79 Mpc  z'=6.3484  eps_agn=1.098e-07 [ph/Hz/erg]  prefac=1.705e-20
+    [rank 3 n= 5] shell   1/200  R_mid=    0.79 Mpc  z'=6.3484  eps_agn=4.806e-08 [ph/Hz/erg]  prefac=1.372e-21
+    [rank 10 n=12] shell   1/200  R_mid=    0.78 Mpc  z'=6.3484  eps_agn=4.291e-08 [ph/Hz/erg]  prefac=4.879e-22
+    [rank 9 n=11] shell   1/200  R_mid=    0.78 Mpc  z'=6.3484  eps_agn=4.310e-08 [ph/Hz/erg]  prefac=5.789e-22
+    [rank 14 n=16] shell   1/200  R_mid=    0.78 Mpc  z'=6.3484  eps_agn=4.247e-08 [ph/Hz/erg]  prefac=1.862e-22
+    [rank 1 n=19] shell   1/200  R_mid=    0.78 Mpc  z'=6.3484  eps_agn=4.231e-08 [ph/Hz/erg]  prefac=5.453e-24
+    [rank 15 n=17] shell   1/200  R_mid=    0.78 Mpc  z'=6.3484  eps_agn=4.241e-08 [ph/Hz/erg]  prefac=1.225e-22
+    [rank 7 n= 9] shell   1/200  R_mid=    0.79 Mpc  z'=6.3484  eps_agn=4.370e-08 [ph/Hz/erg]  prefac=7.884e-22
+    [rank 11 n=13] shell   1/200  R_mid=    0.78 Mpc  z'=6.3484  eps_agn=4.276e-08 [ph/Hz/erg]  prefac=4.040e-22
+    [rank 9 n=11] shell  50/200  R_mid=    1.16 Mpc  z'=6.3493  eps_agn=4.308e-08 [ph/Hz/erg]  prefac=8.578e-22
+    [rank 6 n= 8] shell  50/200  R_mid=    1.46 Mpc  z'=6.3501  eps_agn=4.416e-08 [ph/Hz/erg]  prefac=1.689e-21
+    [rank 12 n=14] shell  50/200  R_mid=    0.98 Mpc  z'=6.3489  eps_agn=4.263e-08 [ph/Hz/erg]  prefac=4.076e-22
+    [rank 15 n=17] shell  50/200  R_mid=    0.85 Mpc  z'=6.3486  eps_agn=4.241e-08 [ph/Hz/erg]  prefac=1.332e-22
+    [rank 4 n= 6] shell  50/200  R_mid=    1.79 Mpc  z'=6.3509  eps_agn=4.601e-08 [ph/Hz/erg]  prefac=2.729e-21
+    [rank 11 n=13] shell  50/200  R_mid=    1.03 Mpc  z'=6.3490  eps_agn=4.275e-08 [ph/Hz/erg]  prefac=5.318e-22
+    [rank 0 n= 2] shell  50/200  R_mid=    3.82 Mpc  z'=6.3560  eps_agn=1.094e-07 [ph/Hz/erg]  prefac=8.183e-20
+    [rank 5 n= 7] shell  50/200  R_mid=    1.60 Mpc  z'=6.3505  eps_agn=4.487e-08 [ph/Hz/erg]  prefac=2.135e-21
+    [rank 8 n=10] shell  50/200  R_mid=    1.24 Mpc  z'=6.3496  eps_agn=4.333e-08 [ph/Hz/erg]  prefac=1.076e-21
+    [rank 13 n=15] shell  50/200  R_mid=    0.93 Mpc  z'=6.3488  eps_agn=4.254e-08 [ph/Hz/erg]  prefac=3.019e-22
+    [rank 1 n=19] shell  50/200  R_mid=    0.78 Mpc  z'=6.3484  eps_agn=4.231e-08 [ph/Hz/erg]  prefac=5.474e-24
+    [rank 10 n=12] shell  50/200  R_mid=    1.09 Mpc  z'=6.3492  eps_agn=4.289e-08 [ph/Hz/erg]  prefac=6.798e-22
+    [rank 7 n= 9] shell  50/200  R_mid=    1.34 Mpc  z'=6.3498  eps_agn=4.367e-08 [ph/Hz/erg]  prefac=1.346e-21
+    [rank 2 n= 4] shell  50/200  R_mid=    2.37 Mpc  z'=6.3524  eps_agn=5.194e-08 [ph/Hz/erg]  prefac=4.386e-21
+    [rank 3 n= 5] shell  50/200  R_mid=    2.03 Mpc  z'=6.3515  eps_agn=4.799e-08 [ph/Hz/erg]  prefac=3.524e-21
+    [rank 14 n=16] shell  50/200  R_mid=    0.89 Mpc  z'=6.3487  eps_agn=4.247e-08 [ph/Hz/erg]  prefac=2.114e-22
+  [rank 0 cache] reading snap 298  z=6.3746
+  [rank 0 cache] reading snap 299  z=6.3605
+  [rank 0 cache] reading snap 297  z=6.3887
+  [rank 0 cache] reading snap 298  z=6.3746
+  [rank 2 cache] reading snap 298  z=6.3746
+  [rank 2 cache] reading snap 299  z=6.3605
+    [rank 5 n= 7] shell 100/200  R_mid=    3.31 Mpc  z'=6.3547  eps_agn=4.479e-08 [ph/Hz/erg]  prefac=4.404e-21
+  [rank 0 cache] reading snap 296  z=6.4028
+  [rank 0 cache] reading snap 297  z=6.3887
+    [rank 8 n=10] shell 100/200  R_mid=    1.99 Mpc  z'=6.3514  eps_agn=4.329e-08 [ph/Hz/erg]  prefac=1.720e-21
+    [rank 7 n= 9] shell 100/200  R_mid=    2.32 Mpc  z'=6.3522  eps_agn=4.362e-08 [ph/Hz/erg]  prefac=2.321e-21
+    [rank 15 n=17] shell 100/200  R_mid=    0.93 Mpc  z'=6.3488  eps_agn=4.240e-08 [ph/Hz/erg]  prefac=1.450e-22
+    [rank 12 n=14] shell 100/200  R_mid=    1.23 Mpc  z'=6.3495  eps_agn=4.262e-08 [ph/Hz/erg]  prefac=5.112e-22
+    [rank 6 n= 8] shell 100/200  R_mid=    2.74 Mpc  z'=6.3533  eps_agn=4.409e-08 [ph/Hz/erg]  prefac=3.169e-21
+    [rank 9 n=11] shell 100/200  R_mid=    1.74 Mpc  z'=6.3508  eps_agn=4.305e-08 [ph/Hz/erg]  prefac=1.281e-21
+    [rank 0 n= 2] shell 100/200  R_mid=   19.01 Mpc  z'=6.3943  eps_agn=1.076e-07 [ph/Hz/erg]  prefac=3.998e-19
+    [rank 4 n= 6] shell 100/200  R_mid=    4.12 Mpc  z'=6.3568  eps_agn=4.589e-08 [ph/Hz/erg]  prefac=6.276e-21
+    [rank 11 n=13] shell 100/200  R_mid=    1.37 Mpc  z'=6.3499  eps_agn=4.273e-08 [ph/Hz/erg]  prefac=7.038e-22
+    [rank 3 n= 5] shell 100/200  R_mid=    5.32 Mpc  z'=6.3598  eps_agn=4.781e-08 [ph/Hz/erg]  prefac=9.206e-21
+    [rank 2 n= 4] shell 100/200  R_mid=    7.26 Mpc  z'=6.3647  eps_agn=5.165e-08 [ph/Hz/erg]  prefac=1.337e-20
+    [rank 14 n=16] shell 100/200  R_mid=    1.01 Mpc  z'=6.3490  eps_agn=4.246e-08 [ph/Hz/erg]  prefac=2.406e-22
+    [rank 10 n=12] shell 100/200  R_mid=    1.53 Mpc  z'=6.3503  eps_agn=4.287e-08 [ph/Hz/erg]  prefac=9.533e-22
+    [rank 13 n=15] shell 100/200  R_mid=    1.11 Mpc  z'=6.3492  eps_agn=4.253e-08 [ph/Hz/erg]  prefac=3.602e-22
+    [rank 1 n=19] shell 100/200  R_mid=    0.79 Mpc  z'=6.3484  eps_agn=4.231e-08 [ph/Hz/erg]  prefac=5.494e-24
+  [rank 3 cache] reading snap 298  z=6.3746
+  [rank 3 cache] reading snap 299  z=6.3605
+  [rank 0 cache] reading snap 295  z=6.4169
+  [rank 0 cache] reading snap 296  z=6.4028
+  [rank 0 cache] reading snap 294  z=6.4311
+  [rank 0 cache] reading snap 295  z=6.4169
+  [rank 0 cache] reading snap 293  z=6.4453
+  [rank 0 cache] reading snap 294  z=6.4311
+  [rank 4 cache] reading snap 298  z=6.3746
+  [rank 4 cache] reading snap 299  z=6.3605
+  [rank 2 cache] reading snap 297  z=6.3887
+  [rank 2 cache] reading snap 298  z=6.3746
+  [rank 0 cache] reading snap 292  z=6.4596
+  [rank 0 cache] reading snap 293  z=6.4453
+  [rank 0 cache] reading snap 291  z=6.4738
+  [rank 0 cache] reading snap 292  z=6.4596
+  [rank 0 cache] reading snap 290  z=6.4881
+  [rank 0 cache] reading snap 291  z=6.4738
+  [rank 5 cache] reading snap 298  z=6.3746
+  [rank 5 cache] reading snap 299  z=6.3605
+  [rank 0 cache] reading snap 289  z=6.5024
+  [rank 0 cache] reading snap 290  z=6.4881
+  [rank 0 cache] reading snap 288  z=6.5168
+  [rank 0 cache] reading snap 289  z=6.5024
+  [rank 2 cache] reading snap 296  z=6.4028
+  [rank 2 cache] reading snap 297  z=6.3887
+  [rank 3 cache] reading snap 297  z=6.3887
+  [rank 3 cache] reading snap 298  z=6.3746
+  [rank 0 cache] reading snap 287  z=6.5311
+  [rank 0 cache] reading snap 288  z=6.5168
+  [rank 0 cache] reading snap 286  z=6.5455
+  [rank 0 cache] reading snap 287  z=6.5311
+    [rank 8 n=10] shell 150/200  R_mid=    3.19 Mpc  z'=6.3544  eps_agn=4.324e-08 [ph/Hz/erg]  prefac=2.749e-21
+  [rank 0 cache] reading snap 285  z=6.5600
+  [rank 0 cache] reading snap 286  z=6.5455
+    [rank 7 n= 9] shell 150/200  R_mid=    4.00 Mpc  z'=6.3565  eps_agn=4.354e-08 [ph/Hz/erg]  prefac=4.000e-21
+    [rank 5 n= 7] shell 150/200  R_mid=    6.85 Mpc  z'=6.3636  eps_agn=4.461e-08 [ph/Hz/erg]  prefac=9.065e-21
+    [rank 15 n=17] shell 150/200  R_mid=    1.01 Mpc  z'=6.3490  eps_agn=4.240e-08 [ph/Hz/erg]  prefac=1.579e-22
+  [rank 0 cache] reading snap 284  z=6.5744
+  [rank 0 cache] reading snap 285  z=6.5600
+    [rank 9 n=11] shell 150/200  R_mid=    2.60 Mpc  z'=6.3529  eps_agn=4.301e-08 [ph/Hz/erg]  prefac=1.912e-21
+    [rank 6 n= 8] shell 150/200  R_mid=    5.15 Mpc  z'=6.3594  eps_agn=4.397e-08 [ph/Hz/erg]  prefac=5.937e-21
+  [rank 0 cache] reading snap 283  z=6.5889
+  [rank 0 cache] reading snap 284  z=6.5744
+    [rank 12 n=14] shell 150/200  R_mid=    1.54 Mpc  z'=6.3503  eps_agn=4.261e-08 [ph/Hz/erg]  prefac=6.411e-22
+    [rank 3 n= 5] shell 150/200  R_mid=   13.95 Mpc  z'=6.3816  eps_agn=4.734e-08 [ph/Hz/erg]  prefac=2.390e-20
+  [rank 0 cache] reading snap 282  z=6.6034
+  [rank 0 cache] reading snap 283  z=6.5889
+    [rank 10 n=12] shell 150/200  R_mid=    2.15 Mpc  z'=6.3518  eps_agn=4.284e-08 [ph/Hz/erg]  prefac=1.337e-21
+    [rank 4 n= 6] shell 150/200  R_mid=    9.50 Mpc  z'=6.3703  eps_agn=4.561e-08 [ph/Hz/erg]  prefac=1.438e-20
+    [rank 14 n=16] shell 150/200  R_mid=    1.15 Mpc  z'=6.3493  eps_agn=4.246e-08 [ph/Hz/erg]  prefac=2.738e-22
+    [rank 2 n= 4] shell 150/200  R_mid=   22.28 Mpc  z'=6.4026  eps_agn=5.077e-08 [ph/Hz/erg]  prefac=4.031e-20
+  [rank 2 cache] reading snap 295  z=6.4169
+  [rank 2 cache] reading snap 296  z=6.4028
+    [rank 0 n= 2] shell 150/200  R_mid=   94.51 Mpc  z'=6.5893  eps_agn=9.858e-08 [ph/Hz/erg]  prefac=1.822e-18
+    [rank 11 n=13] shell 150/200  R_mid=    1.81 Mpc  z'=6.3510  eps_agn=4.271e-08 [ph/Hz/erg]  prefac=9.313e-22
+    [rank 1 n=19] shell 150/200  R_mid=    0.79 Mpc  z'=6.3484  eps_agn=4.231e-08 [ph/Hz/erg]  prefac=5.515e-24
+  [rank 0 cache] reading snap 281  z=6.6180
+  [rank 0 cache] reading snap 282  z=6.6034
+    [rank 13 n=15] shell 150/200  R_mid=    1.32 Mpc  z'=6.3498  eps_agn=4.252e-08 [ph/Hz/erg]  prefac=4.296e-22
+  [rank 0 cache] reading snap 280  z=6.6325
+  [rank 0 cache] reading snap 281  z=6.6180
+  [rank 6 cache] reading snap 298  z=6.3746
+  [rank 6 cache] reading snap 299  z=6.3605
+  [rank 0 cache] reading snap 279  z=6.6471
+  [rank 0 cache] reading snap 280  z=6.6325
+  [rank 0 cache] reading snap 278  z=6.6617
+  [rank 0 cache] reading snap 279  z=6.6471
+  [rank 0 cache] reading snap 277  z=6.6764
+  [rank 0 cache] reading snap 278  z=6.6617
+  [rank 3 cache] reading snap 296  z=6.4028
+  [rank 3 cache] reading snap 297  z=6.3887
+  [rank 4 cache] reading snap 297  z=6.3887
+  [rank 4 cache] reading snap 298  z=6.3746
+  [rank 0 cache] reading snap 276  z=6.6911
+  [rank 0 cache] reading snap 277  z=6.6764
+  [rank 2 cache] reading snap 294  z=6.4311
+  [rank 2 cache] reading snap 295  z=6.4169
+  [rank 0 cache] reading snap 275  z=6.7058
+  [rank 0 cache] reading snap 276  z=6.6911
+  [rank 0 cache] reading snap 274  z=6.7205
+  [rank 0 cache] reading snap 275  z=6.7058
+  [rank 0 cache] reading snap 273  z=6.7353
+  [rank 0 cache] reading snap 274  z=6.7205
+  [rank 0 cache] reading snap 272  z=6.7501
+  [rank 0 cache] reading snap 273  z=6.7353
+  [rank 0 cache] reading snap 271  z=6.7649
+  [rank 0 cache] reading snap 272  z=6.7501
+  [rank 0 cache] reading snap 270  z=6.7797
+  [rank 0 cache] reading snap 271  z=6.7649
+  [rank 0 cache] reading snap 269  z=6.7946
+  [rank 0 cache] reading snap 270  z=6.7797
+  [rank 2 cache] reading snap 293  z=6.4453
+  [rank 2 cache] reading snap 294  z=6.4311
+  [rank 0 cache] reading snap 268  z=6.8095
+  [rank 0 cache] reading snap 269  z=6.7946
+  [rank 0 cache] reading snap 267  z=6.8244
+  [rank 0 cache] reading snap 268  z=6.8095
+  [rank 0 cache] reading snap 266  z=6.8394
+  [rank 0 cache] reading snap 267  z=6.8244
+  [rank 0 cache] reading snap 265  z=6.8544
+  [rank 0 cache] reading snap 266  z=6.8394
+  [rank 7 cache] reading snap 298  z=6.3746
+  [rank 7 cache] reading snap 299  z=6.3605
+  [rank 0 cache] reading snap 264  z=6.8694
+  [rank 0 cache] reading snap 265  z=6.8544
+  [rank 3 cache] reading snap 295  z=6.4169
+  [rank 3 cache] reading snap 296  z=6.4028
+  [rank 0 cache] reading snap 262  z=6.8995
+  [rank 0 cache] reading snap 263  z=6.8844
+  [rank 2 cache] reading snap 292  z=6.4596
+  [rank 2 cache] reading snap 293  z=6.4453
+  [rank 0 cache] reading snap 261  z=6.9146
+  [rank 0 cache] reading snap 262  z=6.8995
+  [rank 0 cache] reading snap 260  z=6.9298
+  [rank 0 cache] reading snap 261  z=6.9146
+  [rank 0 cache] reading snap 259  z=6.9449
+  [rank 0 cache] reading snap 260  z=6.9298
+  [rank 0 cache] reading snap 257  z=6.9753
+  [rank 0 cache] reading snap 258  z=6.9601
+  [rank 5 cache] reading snap 297  z=6.3887
+  [rank 5 cache] reading snap 298  z=6.3746
+  [rank 0 cache] reading snap 256  z=6.9906
+  [rank 0 cache] reading snap 257  z=6.9753
+  [rank 2 cache] reading snap 291  z=6.4738
+  [rank 2 cache] reading snap 292  z=6.4596
+  [rank 0 cache] reading snap 254  z=7.0212
+  [rank 0 cache] reading snap 255  z=7.0058
+  [rank 0 cache] reading snap 253  z=7.0365
+  [rank 0 cache] reading snap 254  z=7.0212
+  [rank 0 cache] reading snap 251  z=7.0673
+  [rank 0 cache] reading snap 252  z=7.0519
+  [rank 0 cache] reading snap 250  z=7.0827
+  [rank 0 cache] reading snap 251  z=7.0673
+  [rank 3 cache] reading snap 294  z=6.4311
+  [rank 3 cache] reading snap 295  z=6.4169
+  [rank 4 cache] reading snap 296  z=6.4028
+  [rank 4 cache] reading snap 297  z=6.3887
+  [rank 0 cache] reading snap 248  z=7.1136
+  [rank 0 cache] reading snap 249  z=7.0981
+  [rank 0 cache] reading snap 246  z=7.1447
+  [rank 0 cache] reading snap 247  z=7.1291
+  [rank 2 cache] reading snap 290  z=6.4881
+  [rank 2 cache] reading snap 291  z=6.4738
+  [rank 0 cache] reading snap 245  z=7.1602
+  [rank 0 cache] reading snap 246  z=7.1447
+  [rank 0 cache] reading snap 243  z=7.1915
+  [rank 0 cache] reading snap 244  z=7.1758
+  [rank 0 cache] reading snap 241  z=7.2228
+  [rank 0 cache] reading snap 242  z=7.2071
+  [rank 2 cache] reading snap 289  z=6.5024
+  [rank 2 cache] reading snap 290  z=6.4881
+  [rank 0 cache] reading snap 239  z=7.2543
+  [rank 0 cache] reading snap 240  z=7.2386
+  [rank 0 cache] reading snap 237  z=7.2859
+  [rank 0 cache] reading snap 238  z=7.2701
+    [rank 7 n= 9] shell 200/200  R_mid=    6.91 Mpc  z'=6.3638  eps_agn=4.340e-08 [ph/Hz/erg]  prefac=6.884e-21
+  rank 7: n= 9 done -- running J_partial mean = 0.0000e+00 [ph/s/cm^2/Hz/sr]
+  rank 7: n=25  f_rec=0.3582  z_max=6.347  R_max=    0.4 Mpc  dz=0.001
+           nu window = [1.314e+16, 1.314e+16] Hz  =  [54.34, 54.35] eV
+  [rank 7 cache] reading snap 299  z=6.3605
+  [rank 7 cache] reading snap 300  z=6.3464
+  [rank 0 cache] reading snap 235  z=7.3176
+  [rank 0 cache] reading snap 236  z=7.3017
+    [rank 7 n=25] shell   0/200  R_mid=    0.18 Mpc  z'=6.3469  eps_agn=4.217e-08 [ph/Hz/erg]  prefac=3.262e-20
+  rank 7: n=25 done -- running J_partial mean = 0.0000e+00 [ph/s/cm^2/Hz/sr]
+  rank 7: 202 shells done (all n)
+  [rank 0 cache] reading snap 232  z=7.3654
+  [rank 0 cache] reading snap 233  z=7.3495
+    [rank 8 n=10] shell 200/200  R_mid=    5.10 Mpc  z'=6.3593  eps_agn=4.314e-08 [ph/Hz/erg]  prefac=4.391e-21
+  [rank 3 cache] reading snap 293  z=6.4453
+  [rank 3 cache] reading snap 294  z=6.4311
+  rank 8: n=10 done -- running J_partial mean = 0.0000e+00 [ph/s/cm^2/Hz/sr]
+  rank 8: n=26  f_rec=0.3584  z_max=6.347  R_max=    0.3 Mpc  dz=0.001
+           nu window = [1.314e+16, 1.314e+16] Hz  =  [54.35, 54.35] eV
+  [rank 2 cache] reading snap 288  z=6.5168
+  [rank 2 cache] reading snap 289  z=6.5024
+  [rank 0 cache] reading snap 230  z=7.3974
+  [rank 0 cache] reading snap 231  z=7.3814
+    [rank 8 n=26] shell   0/200  R_mid=    0.16 Mpc  z'=6.3468  eps_agn=4.216e-08 [ph/Hz/erg]  prefac=2.907e-20
+  rank 8: n=26 done -- running J_partial mean = 0.0000e+00 [ph/s/cm^2/Hz/sr]
+  rank 8: 202 shells done (all n)
+  [rank 0 cache] reading snap 228  z=7.4296
+  [rank 0 cache] reading snap 229  z=7.4135
+    [rank 15 n=17] shell 200/200  R_mid=    1.10 Mpc  z'=6.3492  eps_agn=4.239e-08 [ph/Hz/erg]  prefac=1.719e-22
+  rank 15: n=17 done -- running J_partial mean = 0.0000e+00 [ph/s/cm^2/Hz/sr]
+  rank 15: 201 shells done (all n)
+    [rank 5 n= 7] shell 200/200  R_mid=   14.15 Mpc  z'=6.3820  eps_agn=4.423e-08 [ph/Hz/erg]  prefac=1.858e-20
+  rank 5: n= 7 done -- running J_partial mean = 0.0000e+00 [ph/s/cm^2/Hz/sr]
+  rank 5: n=23  f_rec=0.3578  z_max=6.348  R_max=    0.5 Mpc  dz=0.001
+           nu window = [1.313e+16, 1.314e+16] Hz  =  [54.33, 54.33] eV
+  [rank 5 cache] reading snap 299  z=6.3605
+  [rank 5 cache] reading snap 300  z=6.3464
+    [rank 9 n=11] shell 200/200  R_mid=    3.88 Mpc  z'=6.3562  eps_agn=4.295e-08 [ph/Hz/erg]  prefac=2.853e-21
+  rank 9: n=11 done -- running J_partial mean = 0.0000e+00 [ph/s/cm^2/Hz/sr]
+  rank 9: n=27  f_rec=0.3586  z_max=6.347  R_max=    0.3 Mpc  dz=0.001
+           nu window = [1.314e+16, 1.314e+16] Hz  =  [54.35, 54.36] eV
+  [rank 0 cache] reading snap 225  z=7.4780
+  [rank 0 cache] reading snap 226  z=7.4618
+    [rank 5 n=23] shell   0/200  R_mid=    0.23 Mpc  z'=6.3470  eps_agn=4.221e-08 [ph/Hz/erg]  prefac=4.169e-20
+  [rank 2 cache] reading snap 287  z=6.5311
+  [rank 2 cache] reading snap 288  z=6.5168
+  rank 5: n=23 done -- running J_partial mean = 0.0000e+00 [ph/s/cm^2/Hz/sr]
+  rank 5: 202 shells done (all n)
+    [rank 9 n=27] shell   0/200  R_mid=    0.14 Mpc  z'=6.3468  eps_agn=4.214e-08 [ph/Hz/erg]  prefac=2.601e-20
+  rank 9: n=27 done -- running J_partial mean = 0.0000e+00 [ph/s/cm^2/Hz/sr]
+  rank 9: 202 shells done (all n)
+  [rank 0 cache] reading snap 223  z=7.5267
+  [rank 0 cache] reading snap 224  z=7.4942
+    [rank 6 n= 8] shell 200/200  R_mid=    9.67 Mpc  z'=6.3708  eps_agn=4.374e-08 [ph/Hz/erg]  prefac=1.110e-20
+  rank 6: n= 8 done -- running J_partial mean = 0.0000e+00 [ph/s/cm^2/Hz/sr]
+  rank 6: n=24  f_rec=0.3580  z_max=6.347  R_max=    0.4 Mpc  dz=0.001
+           nu window = [1.314e+16, 1.314e+16] Hz  =  [54.33, 54.34] eV
+  [rank 6 cache] reading snap 299  z=6.3605
+  [rank 6 cache] reading snap 300  z=6.3464
+    [rank 3 n= 5] shell 200/200  R_mid=   36.59 Mpc  z'=6.4391  eps_agn=4.613e-08 [ph/Hz/erg]  prefac=6.108e-20
+    [rank 11 n=13] shell 200/200  R_mid=    2.39 Mpc  z'=6.3524  eps_agn=4.268e-08 [ph/Hz/erg]  prefac=1.232e-21
+  rank 3: n= 5 done -- running J_partial mean = 0.0000e+00 [ph/s/cm^2/Hz/sr]
+  rank 3: n=21  f_rec=0.3572  z_max=6.348  R_max=    0.6 Mpc  dz=0.001
+           nu window = [1.313e+16, 1.313e+16] Hz  =  [54.31, 54.32] eV
+  [rank 3 cache] reading snap 299  z=6.3605
+  [rank 3 cache] reading snap 300  z=6.3464
+  rank 11: n=13 done -- running J_partial mean = 0.0000e+00 [ph/s/cm^2/Hz/sr]
+  rank 11: n=29  f_rec=0.3589  z_max=6.347  R_max=    0.2 Mpc  dz=0.001
+           nu window = [1.314e+16, 1.314e+16] Hz  =  [54.36, 54.37] eV
+  [rank 0 cache] reading snap 222  z=7.5594
+  [rank 0 cache] reading snap 223  z=7.5267
+    [rank 12 n=14] shell 200/200  R_mid=    1.93 Mpc  z'=6.3513  eps_agn=4.259e-08 [ph/Hz/erg]  prefac=8.039e-22
+    [rank 6 n=24] shell   0/200  R_mid=    0.20 Mpc  z'=6.3469  eps_agn=4.219e-08 [ph/Hz/erg]  prefac=3.678e-20
+  rank 12: n=14 done -- running J_partial mean = 0.0000e+00 [ph/s/cm^2/Hz/sr]
+  rank 12: n=30  f_rec=0.3590  z_max=6.347  R_max=    0.2 Mpc  dz=0.001
+           nu window = [1.314e+16, 1.315e+16] Hz  =  [54.37, 54.37] eV
+  rank 6: n=24 done -- running J_partial mean = 0.0000e+00 [ph/s/cm^2/Hz/sr]
+  rank 6: 202 shells done (all n)
+    [rank 3 n=21] shell   0/200  R_mid=    0.30 Mpc  z'=6.3472  eps_agn=4.226e-08 [ph/Hz/erg]  prefac=5.444e-20
+    [rank 14 n=16] shell 200/200  R_mid=    1.31 Mpc  z'=6.3497  eps_agn=4.245e-08 [ph/Hz/erg]  prefac=3.116e-22
+    [rank 11 n=29] shell   0/200  R_mid=    0.11 Mpc  z'=6.3467  eps_agn=4.212e-08 [ph/Hz/erg]  prefac=2.107e-20
+    [rank 2 n= 4] shell 200/200  R_mid=   68.30 Mpc  z'=6.5208  eps_agn=4.814e-08 [ph/Hz/erg]  prefac=1.172e-19
+  rank 3: n=21 done -- running J_partial mean = 0.0000e+00 [ph/s/cm^2/Hz/sr]
+  rank 3: 202 shells done (all n)
+  rank 14: n=16 done -- running J_partial mean = 0.0000e+00 [ph/s/cm^2/Hz/sr]
+  rank 14: 201 shells done (all n)
+  rank 11: n=29 done -- running J_partial mean = 0.0000e+00 [ph/s/cm^2/Hz/sr]
+  rank 11: 202 shells done (all n)
+  rank 2: n= 4 done -- running J_partial mean = 0.0000e+00 [ph/s/cm^2/Hz/sr]
+  rank 2: n=20  f_rec=0.3569  z_max=6.348  R_max=    0.7 Mpc  dz=0.002
+           nu window = [1.313e+16, 1.313e+16] Hz  =  [54.29, 54.31] eV
+  [rank 2 cache] reading snap 299  z=6.3605
+  [rank 2 cache] reading snap 300  z=6.3464
+    [rank 10 n=12] shell 200/200  R_mid=    3.02 Mpc  z'=6.3540  eps_agn=4.280e-08 [ph/Hz/erg]  prefac=1.874e-21
+  rank 10: n=12 done -- running J_partial mean = 0.0000e+00 [ph/s/cm^2/Hz/sr]
+  rank 10: n=28  f_rec=0.3587  z_max=6.347  R_max=    0.3 Mpc  dz=0.001
+           nu window = [1.314e+16, 1.314e+16] Hz  =  [54.36, 54.36] eV
+  [rank 0 cache] reading snap 221  z=7.5921
+  [rank 0 cache] reading snap 222  z=7.5594
+    [rank 12 n=30] shell   0/200  R_mid=    0.10 Mpc  z'=6.3467  eps_agn=4.211e-08 [ph/Hz/erg]  prefac=1.906e-20
+  rank 12: n=30 done -- running J_partial mean = 0.0000e+00 [ph/s/cm^2/Hz/sr]
+  rank 12: 202 shells done (all n)
+    [rank 2 n=20] shell   0/200  R_mid=    0.34 Mpc  z'=6.3473  eps_agn=4.229e-08 [ph/Hz/erg]  prefac=6.281e-20
+    [rank 4 n= 6] shell 200/200  R_mid=   21.90 Mpc  z'=6.4017  eps_agn=4.497e-08 [ph/Hz/erg]  prefac=3.269e-20
+  rank 2: n=20 done -- running J_partial mean = 0.0000e+00 [ph/s/cm^2/Hz/sr]
+  rank 2: 202 shells done (all n)
+  rank 4: n= 6 done -- running J_partial mean = 0.0000e+00 [ph/s/cm^2/Hz/sr]
+  rank 4: n=22  f_rec=0.3575  z_max=6.348  R_max=    0.5 Mpc  dz=0.001
+           nu window = [1.313e+16, 1.313e+16] Hz  =  [54.32, 54.33] eV
+  [rank 4 cache] reading snap 299  z=6.3605
+    [rank 1 n=19] shell 200/200  R_mid=    0.79 Mpc  z'=6.3484  eps_agn=4.231e-08 [ph/Hz/erg]  prefac=5.536e-24
+  [rank 4 cache] reading snap 300  z=6.3464
+    [rank 10 n=28] shell   0/200  R_mid=    0.13 Mpc  z'=6.3468  eps_agn=4.213e-08 [ph/Hz/erg]  prefac=2.336e-20
+  rank 1: n=19 done -- running J_partial mean = 0.0000e+00 [ph/s/cm^2/Hz/sr]
+  rank 1: 201 shells done (all n)
+  [rank 0 cache] reading snap 219  z=7.6580
+  rank 10: n=28 done -- running J_partial mean = 0.0000e+00 [ph/s/cm^2/Hz/sr]
+  rank 10: 202 shells done (all n)
+  [rank 0 cache] reading snap 220  z=7.6250
+    [rank 4 n=22] shell   0/200  R_mid=    0.26 Mpc  z'=6.3471  eps_agn=4.224e-08 [ph/Hz/erg]  prefac=4.749e-20
+  rank 4: n=22 done -- running J_partial mean = 0.0000e+00 [ph/s/cm^2/Hz/sr]
+  rank 4: 202 shells done (all n)
+  [rank 0 cache] reading snap 218  z=7.6912
+  [rank 0 cache] reading snap 219  z=7.6580
+    [rank 13 n=15] shell 200/200  R_mid=    1.58 Mpc  z'=6.3504  eps_agn=4.251e-08 [ph/Hz/erg]  prefac=5.124e-22
+  rank 13: n=15 done -- running J_partial mean = 0.0000e+00 [ph/s/cm^2/Hz/sr]
+  rank 13: 201 shells done (all n)
+    [rank 0 n= 2] shell 200/200  R_mid=  469.89 Mpc  z'=7.6826  eps_agn=6.282e-08 [ph/Hz/erg]  prefac=5.773e-18
+  rank 0: n= 2 done -- running J_partial mean = 0.0000e+00 [ph/s/cm^2/Hz/sr]
+  rank 0: n=18  f_rec=0.3561  z_max=6.349  R_max=    0.9 Mpc  dz=0.002
+           nu window = [1.312e+16, 1.312e+16] Hz  =  [54.26, 54.28] eV
+  [rank 0 cache] reading snap 299  z=6.3605
+  [rank 0 cache] reading snap 300  z=6.3464
+    [rank 0 n=18] shell   0/200  R_mid=    0.39 Mpc  z'=6.3474  eps_agn=4.238e-08 [ph/Hz/erg]  prefac=7.188e-20
+    [rank 0 n=18] shell   1/200  R_mid=    0.78 Mpc  z'=6.3484  eps_agn=4.236e-08 [ph/Hz/erg]  prefac=6.237e-23
+    [rank 0 n=18] shell  50/200  R_mid=    0.82 Mpc  z'=6.3485  eps_agn=4.235e-08 [ph/Hz/erg]  prefac=6.508e-23
+    [rank 0 n=18] shell 100/200  R_mid=    0.85 Mpc  z'=6.3486  eps_agn=4.235e-08 [ph/Hz/erg]  prefac=6.796e-23
+    [rank 0 n=18] shell 150/200  R_mid=    0.89 Mpc  z'=6.3487  eps_agn=4.235e-08 [ph/Hz/erg]  prefac=7.097e-23
+    [rank 0 n=18] shell 200/200  R_mid=    0.93 Mpc  z'=6.3488  eps_agn=4.235e-08 [ph/Hz/erg]  prefac=7.412e-23
+  rank 0: n=18 done -- running J_partial mean = 0.0000e+00 [ph/s/cm^2/Hz/sr]
+  rank 0: 402 shells done (all n)
+  clipped 0 negative voxels (0.000e+00 of box), min J = 0.000e+00, mean shift = 0.000e+00 of J_mean
+  [rank 0 cache] reading snap 298  z=6.3746
+  [rank 0 cache] reading snap 299  z=6.3605
+  [rank 0 cache] reading snap 297  z=6.3887
+  [rank 0 cache] reading snap 298  z=6.3746
+  [rank 0 cache] reading snap 296  z=6.4028
+  [rank 0 cache] reading snap 297  z=6.3887
+  [rank 0 cache] reading snap 295  z=6.4169
+  [rank 0 cache] reading snap 296  z=6.4028
+  [rank 0 cache] reading snap 294  z=6.4311
+  [rank 0 cache] reading snap 295  z=6.4169
+  [rank 0 cache] reading snap 293  z=6.4453
+  [rank 0 cache] reading snap 294  z=6.4311
+  [rank 0 cache] reading snap 292  z=6.4596
+  [rank 0 cache] reading snap 293  z=6.4453
+  [rank 0 cache] reading snap 291  z=6.4738
+  [rank 0 cache] reading snap 292  z=6.4596
+  [rank 0 cache] reading snap 290  z=6.4881
+  [rank 0 cache] reading snap 291  z=6.4738
+  [rank 0 cache] reading snap 289  z=6.5024
+  [rank 0 cache] reading snap 290  z=6.4881
+  [rank 0 cache] reading snap 288  z=6.5168
+  [rank 0 cache] reading snap 289  z=6.5024
+  [rank 0 cache] reading snap 287  z=6.5311
+  [rank 0 cache] reading snap 288  z=6.5168
+  [rank 0 cache] reading snap 286  z=6.5455
+  [rank 0 cache] reading snap 287  z=6.5311
+  [rank 0 cache] reading snap 285  z=6.5600
+  [rank 0 cache] reading snap 286  z=6.5455
+  [rank 0 cache] reading snap 284  z=6.5744
+  [rank 0 cache] reading snap 285  z=6.5600
+  [rank 0 cache] reading snap 283  z=6.5889
+  [rank 0 cache] reading snap 284  z=6.5744
+  [rank 0 cache] reading snap 282  z=6.6034
+  [rank 0 cache] reading snap 283  z=6.5889
+  [rank 0 cache] reading snap 281  z=6.6180
+  [rank 0 cache] reading snap 282  z=6.6034
+  [rank 0 cache] reading snap 280  z=6.6325
+  [rank 0 cache] reading snap 281  z=6.6180
+  [rank 0 cache] reading snap 279  z=6.6471
+  [rank 0 cache] reading snap 280  z=6.6325
+  [rank 0 cache] reading snap 278  z=6.6617
+  [rank 0 cache] reading snap 279  z=6.6471
+  [rank 0 cache] reading snap 277  z=6.6764
+  [rank 0 cache] reading snap 278  z=6.6617
+  [rank 0 cache] reading snap 276  z=6.6911
+  [rank 0 cache] reading snap 277  z=6.6764
+  [rank 0 cache] reading snap 275  z=6.7058
+  [rank 0 cache] reading snap 276  z=6.6911
+  [rank 0 cache] reading snap 274  z=6.7205
+  [rank 0 cache] reading snap 275  z=6.7058
+  [rank 0 cache] reading snap 273  z=6.7353
+  [rank 0 cache] reading snap 274  z=6.7205
+  [rank 0 cache] reading snap 272  z=6.7501
+  [rank 0 cache] reading snap 273  z=6.7353
+  [rank 0 cache] reading snap 271  z=6.7649
+  [rank 0 cache] reading snap 272  z=6.7501
+  [rank 0 cache] reading snap 270  z=6.7797
+  [rank 0 cache] reading snap 271  z=6.7649
+  [rank 0 cache] reading snap 269  z=6.7946
+  [rank 0 cache] reading snap 270  z=6.7797
+  [rank 0 cache] reading snap 268  z=6.8095
+  [rank 0 cache] reading snap 269  z=6.7946
+  [rank 0 cache] reading snap 267  z=6.8244
+  [rank 0 cache] reading snap 268  z=6.8095
+  [rank 0 cache] reading snap 266  z=6.8394
+  [rank 0 cache] reading snap 267  z=6.8244
+  [rank 0 cache] reading snap 265  z=6.8544
+  [rank 0 cache] reading snap 266  z=6.8394
+  [rank 0 cache] reading snap 264  z=6.8694
+  [rank 0 cache] reading snap 265  z=6.8544
+  [rank 0 cache] reading snap 263  z=6.8844
+  [rank 0 cache] reading snap 264  z=6.8694
+  [rank 0 cache] reading snap 262  z=6.8995
+  [rank 0 cache] reading snap 263  z=6.8844
+  [rank 0 cache] reading snap 261  z=6.9146
+  [rank 0 cache] reading snap 262  z=6.8995
+  [rank 0 cache] reading snap 260  z=6.9298
+  [rank 0 cache] reading snap 261  z=6.9146
+  [rank 0 cache] reading snap 259  z=6.9449
+  [rank 0 cache] reading snap 260  z=6.9298
+  [rank 0 cache] reading snap 258  z=6.9601
+  [rank 0 cache] reading snap 259  z=6.9449
+  [rank 0 cache] reading snap 257  z=6.9753
+  [rank 0 cache] reading snap 258  z=6.9601
+  [rank 0 cache] reading snap 256  z=6.9906
+  [rank 0 cache] reading snap 257  z=6.9753
+  [rank 0 cache] reading snap 255  z=7.0058
+  [rank 0 cache] reading snap 256  z=6.9906
+  [rank 0 cache] reading snap 254  z=7.0212
+  [rank 0 cache] reading snap 255  z=7.0058
+  [rank 0 cache] reading snap 253  z=7.0365
+  [rank 0 cache] reading snap 254  z=7.0212
+  [rank 0 cache] reading snap 252  z=7.0519
+  [rank 0 cache] reading snap 253  z=7.0365
+  [rank 0 cache] reading snap 251  z=7.0673
+  [rank 0 cache] reading snap 252  z=7.0519
+  [rank 0 cache] reading snap 250  z=7.0827
+  [rank 0 cache] reading snap 251  z=7.0673
+  [rank 0 cache] reading snap 249  z=7.0981
+  [rank 0 cache] reading snap 250  z=7.0827
+  [rank 0 cache] reading snap 248  z=7.1136
+  [rank 0 cache] reading snap 249  z=7.0981
+  [rank 0 cache] reading snap 247  z=7.1291
+  [rank 0 cache] reading snap 248  z=7.1136
+  [rank 0 cache] reading snap 246  z=7.1447
+  [rank 0 cache] reading snap 247  z=7.1291
+  [rank 0 cache] reading snap 245  z=7.1602
+  [rank 0 cache] reading snap 246  z=7.1447
+  [rank 0 cache] reading snap 244  z=7.1758
+  [rank 0 cache] reading snap 245  z=7.1602
+  [rank 0 cache] reading snap 243  z=7.1915
+  [rank 0 cache] reading snap 244  z=7.1758
+  [rank 0 cache] reading snap 242  z=7.2071
+  [rank 0 cache] reading snap 243  z=7.1915
+  [rank 0 cache] reading snap 241  z=7.2228
+  [rank 0 cache] reading snap 242  z=7.2071
+  [rank 0 cache] reading snap 240  z=7.2386
+  [rank 0 cache] reading snap 241  z=7.2228
+  [rank 0 cache] reading snap 239  z=7.2543
+  [rank 0 cache] reading snap 240  z=7.2386
+  [rank 0 cache] reading snap 238  z=7.2701
+  [rank 0 cache] reading snap 239  z=7.2543
+  [rank 0 cache] reading snap 237  z=7.2859
+  [rank 0 cache] reading snap 238  z=7.2701
+  [rank 0 cache] reading snap 236  z=7.3017
+  [rank 0 cache] reading snap 237  z=7.2859
+  [rank 0 cache] reading snap 235  z=7.3176
+  [rank 0 cache] reading snap 236  z=7.3017
+  [rank 0 cache] reading snap 234  z=7.3335
+  [rank 0 cache] reading snap 235  z=7.3176
+  [rank 0 cache] reading snap 233  z=7.3495
+  [rank 0 cache] reading snap 234  z=7.3335
+  [rank 0 cache] reading snap 232  z=7.3654
+  [rank 0 cache] reading snap 233  z=7.3495
+  [rank 0 cache] reading snap 231  z=7.3814
+  [rank 0 cache] reading snap 232  z=7.3654
+  [rank 0 cache] reading snap 230  z=7.3974
+  [rank 0 cache] reading snap 231  z=7.3814
+  [rank 0 cache] reading snap 229  z=7.4135
+  [rank 0 cache] reading snap 230  z=7.3974
+  [rank 0 cache] reading snap 228  z=7.4296
+  [rank 0 cache] reading snap 229  z=7.4135
+  [rank 0 cache] reading snap 227  z=7.4457
+  [rank 0 cache] reading snap 228  z=7.4296
+  [rank 0 cache] reading snap 226  z=7.4618
+  [rank 0 cache] reading snap 227  z=7.4457
+  [rank 0 cache] reading snap 225  z=7.4780
+  [rank 0 cache] reading snap 226  z=7.4618
+  [rank 0 cache] reading snap 224  z=7.4942
+  [rank 0 cache] reading snap 225  z=7.4780
+  [rank 0 cache] reading snap 223  z=7.5267
+  [rank 0 cache] reading snap 224  z=7.4942
+  [rank 0 cache] reading snap 222  z=7.5594
+  [rank 0 cache] reading snap 223  z=7.5267
+  [rank 0 cache] reading snap 221  z=7.5921
+  [rank 0 cache] reading snap 222  z=7.5594
+  [rank 0 cache] reading snap 220  z=7.6250
+  [rank 0 cache] reading snap 221  z=7.5921
+  [rank 0 cache] reading snap 219  z=7.6580
+  [rank 0 cache] reading snap 220  z=7.6250
+  [rank 0 cache] reading snap 218  z=7.6912
+  [rank 0 cache] reading snap 219  z=7.6580
+  [rank 0 cache] reading snap 217  z=7.7245
+  [rank 0 cache] reading snap 218  z=7.6912
+  [rank 0 cache] reading snap 299  z=6.3605
+  [rank 0 cache] reading snap 300  z=6.3464
+  [rank 0 cache] reading snap 298  z=6.3746
+  [rank 0 cache] reading snap 299  z=6.3605
+  [rank 0 cache] reading snap 297  z=6.3887
+  [rank 0 cache] reading snap 298  z=6.3746
+  [rank 0 cache] reading snap 296  z=6.4028
+  [rank 0 cache] reading snap 297  z=6.3887
+  [rank 0 cache] reading snap 295  z=6.4169
+  [rank 0 cache] reading snap 296  z=6.4028
+  [rank 0 cache] reading snap 294  z=6.4311
+  [rank 0 cache] reading snap 295  z=6.4169
+  [rank 0 cache] reading snap 293  z=6.4453
+  [rank 0 cache] reading snap 294  z=6.4311
+  [rank 0 cache] reading snap 292  z=6.4596
+  [rank 0 cache] reading snap 293  z=6.4453
+  [rank 0 cache] reading snap 291  z=6.4738
+  [rank 0 cache] reading snap 292  z=6.4596
+  [rank 0 cache] reading snap 290  z=6.4881
+  [rank 0 cache] reading snap 291  z=6.4738
+  [rank 0 cache] reading snap 289  z=6.5024
+  [rank 0 cache] reading snap 290  z=6.4881
+  [rank 0 cache] reading snap 288  z=6.5168
+  [rank 0 cache] reading snap 289  z=6.5024
+  [rank 0 cache] reading snap 287  z=6.5311
+  [rank 0 cache] reading snap 288  z=6.5168
+  [rank 0 cache] reading snap 299  z=6.3605
+  [rank 0 cache] reading snap 300  z=6.3464
+  [rank 0 cache] reading snap 298  z=6.3746
+  [rank 0 cache] reading snap 299  z=6.3605
+  [rank 0 cache] reading snap 297  z=6.3887
+  [rank 0 cache] reading snap 298  z=6.3746
+  [rank 0 cache] reading snap 296  z=6.4028
+  [rank 0 cache] reading snap 297  z=6.3887
+  [rank 0 cache] reading snap 295  z=6.4169
+  [rank 0 cache] reading snap 296  z=6.4028
+  [rank 0 cache] reading snap 294  z=6.4311
+  [rank 0 cache] reading snap 295  z=6.4169
+  [rank 0 cache] reading snap 293  z=6.4453
+  [rank 0 cache] reading snap 294  z=6.4311
+  [rank 0 cache] reading snap 299  z=6.3605
+  [rank 0 cache] reading snap 300  z=6.3464
+  [rank 0 cache] reading snap 298  z=6.3746
+  [rank 0 cache] reading snap 299  z=6.3605
+  [rank 0 cache] reading snap 297  z=6.3887
+  [rank 0 cache] reading snap 298  z=6.3746
+  [rank 0 cache] reading snap 296  z=6.4028
+  [rank 0 cache] reading snap 297  z=6.3887
+  [rank 0 cache] reading snap 299  z=6.3605
+  [rank 0 cache] reading snap 300  z=6.3464
+  [rank 0 cache] reading snap 298  z=6.3746
+  [rank 0 cache] reading snap 299  z=6.3605
+  [rank 0 cache] reading snap 297  z=6.3887
+  [rank 0 cache] reading snap 298  z=6.3746
+  [rank 0 cache] reading snap 299  z=6.3605
+  [rank 0 cache] reading snap 300  z=6.3464
+  [rank 0 cache] reading snap 298  z=6.3746
+  [rank 0 cache] reading snap 299  z=6.3605
+  [rank 0 cache] reading snap 299  z=6.3605
+  [rank 0 cache] reading snap 300  z=6.3464
+  [rank 0 cache] reading snap 298  z=6.3746
+  [rank 0 cache] reading snap 299  z=6.3605
+  [rank 0 cache] reading snap 299  z=6.3605
+  [rank 0 cache] reading snap 300  z=6.3464
+
+=== Results (species He, snap 300, z=6.3464) ===
+  All intensities in [ph / s / cm^2 / Hz / sr]
+
+  J_mean      = +0.000000e+00
+  J_std       = +0.000000e+00
+  J_std/J_mean= 0.0000       (spatial fluctuation amplitude)
+  J_max       = +0.000000e+00
+  J_min(>0)   = +0.000000e+00
+  n_positive  = 0 / 262144000  (0.00% of voxels)
+
+  Scalar sanity check (mean-field, no FFT):
+  J_scalar    = +0.000000e+00
+  ratio       = 0.000000       (J_mean/J_scalar, should be ~1.0)
+
+  Timing:
+  Elapsed     = 878.2 s  (14.64 min)
+
+Writing /orcd/data/mvogelsb/004/chcho/Jalpha_test/Jalpha_AGN_He_300.hdf5...
+Done.
+done Tue Oct 13 00:24:51 EDT 2026
