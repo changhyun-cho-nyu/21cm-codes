@@ -402,7 +402,13 @@ static void read_sfr_box(int snap, float *box) {
         }
     }
     hid_t did = H5Dopen(fid, "StarFormationRate", H5P_DEFAULT);
-    H5Dread(did, H5T_NATIVE_FLOAT, H5S_ALL, H5S_ALL, H5P_DEFAULT, box);
+    if (did < 0 || H5Dread(did, H5T_NATIVE_FLOAT, H5S_ALL, H5S_ALL, H5P_DEFAULT, box) < 0) {
+        fprintf(stderr, "ERROR: cannot read dataset '%s' from %s. If the file is compressed with a\n"
+                "       non-standard filter (e.g. Blosc/Zstd/Bitshuffle), set HDF5_PLUGIN_PATH to the\n"
+                "       filter plugins, e.g. $(python -c 'import hdf5plugin; print(hdf5plugin.PLUGIN_PATH)')\n",
+                "StarFormationRate", path);
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
     snprintf(last_sfr_path, sizeof last_sfr_path, "%s", path);
     H5Dclose(did);
     H5Fclose(fid);
