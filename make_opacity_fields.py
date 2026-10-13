@@ -20,8 +20,15 @@ to fractions per He nucleus.
 Star-forming gas: Lumina's radiative transfer treats gas above the star-formation
 threshold as transparent, and the escape fractions (stellar f_esc = 0.18, the
 AGN f_esc in LuminosityAGN) already describe the absorption inside it. Counting
-its H I again would absorb the same photons twice. Every run prints the share of
-the H I and He I that sits in render cells with StarFormationRate > 0; with
+its H I again would absorb the same photons twice. Every run prints two diagnostics
+for render cells with StarFormationRate > 0:
+  * self_T: the SFR-weighted mean of exp(-tau/2) at 40.8 eV (the n = 2 group at
+    the target), with tau the optical depth across one render cell, i.e. the
+    fraction of a source cell's photons that survive leaving that cell in the
+    unmasked run. This is the absorption the mask removes at the sources.
+  * the share of the H I in ionized cells (x_HII > 0.5) that sits in SFR > 0
+    cells: how much of the post-overlap opacity the mask removes elsewhere.
+With
 --sf-mask those cells get n_HI = n_HeI = 0 before the block average. A 640^3 cell
 is 0.78 cMpc, so the mask also removes whatever circumgalactic/IGM H I shares a
 cell with the star-forming gas: the masked and unmasked runs bracket the effect.
@@ -55,6 +62,8 @@ X_H = 0.76
 Y_HE = 0.24 / (4.0 * 0.76)               # n_He / n_H
 M_P = 1.67262192e-24
 MSUN_1E10 = 1.98847e43                   # default UnitMass_in_g (1e10 Msun / h)
+SIG_HI_408, SIG_HEI_408 = 2.885e-19, 3.040e-18   # Verner+96 at 40.8 eV [cm^2] (as compute_transmission_He.c)
+MPC_CM = 3.0857e24
 
 def block_mean(a, f):
     if f == 1:
@@ -96,6 +105,8 @@ def main():
             nHI = np.empty((Nc, Nc, Nc), np.float32); nHeI = np.empty_like(nHI)
             fmax = 0.0
             sum_HI = sum_HeI = sf_HI = sf_HeI = 0.0; n_sf = 0
+            ion_HI = ion_sf_HI = 0.0; w_sfr = w_selfT = 0.0
+            tau_fac = (1.0 + z)**2 * box_cmpc / N * MPC_CM          # tau across one render cell per (n sigma), comoving n
             for i0 in range(0, N, planes):
                 sl = slice(i0, min(N, i0 + planes))
                 nH = X_H * fr["Density"][sl].astype(np.float64) * rho_unit / M_P
@@ -104,9 +115,14 @@ def main():
                 fmax = max(fmax, float(fion.max()))
                 xHeI = np.clip(1.0 - (fion if args.he_per_he else fion / Y_HE), 0.0, 1.0)
                 hi, hei = nH * xHI, Y_HE * nH * xHeI
-                sf = fr["StarFormationRate"][sl] > 0
+                sfr = fr["StarFormationRate"][sl].astype(np.float64)
+                sf = sfr > 0
                 sum_HI += hi.sum(); sum_HeI += hei.sum()
                 sf_HI += hi[sf].sum(); sf_HeI += hei[sf].sum(); n_sf += int(sf.sum())
+                ion = xHI < 0.5
+                ion_HI += hi[ion].sum(); ion_sf_HI += hi[ion & sf].sum()
+                tau = (hi[sf] * SIG_HI_408 + hei[sf] * SIG_HEI_408) * tau_fac
+                w_sfr += sfr[sf].sum(); w_selfT += (sfr[sf] * np.exp(-0.5 * tau)).sum()
                 if args.sf_mask:
                     hi[sf] = 0.0; hei[sf] = 0.0
                 c = slice(i0 // f, sl.stop // f)
@@ -115,6 +131,8 @@ def main():
         if not args.he_per_he and fmax > 1.05 * Y_HE:
             sys.exit(f"ERROR: snap {s}: max(HeII+HeIII fraction) = {fmax:.3f} > y = {Y_HE:.3f}; "
                      "the He fractions look per He nucleus: rerun with --he-per-he")
+        self_T = w_selfT / w_sfr if w_sfr > 0 else 1.0
+        ion_share = ion_sf_HI / ion_HI if ion_HI > 0 else 0.0
         with h5py.File(out, "w") as fo:
             for name, arr in (("n_HI", nHI), ("n_HeI", nHeI)):
                 d = fo.create_dataset(name, data=arr, chunks=(min(16, Nc), Nc, Nc), compression="gzip", compression_opts=4)
@@ -125,11 +143,14 @@ def main():
             fo.attrs["sf_mask"] = int(args.sf_mask)
             fo.attrs["HI_share_SF_cells"] = sf_HI / sum_HI if sum_HI > 0 else 0.0
             fo.attrs["HeI_share_SF_cells"] = sf_HeI / sum_HeI if sum_HeI > 0 else 0.0
+            fo.attrs["self_T_SF_cells_408eV"] = self_T
+            fo.attrs["HI_share_SF_cells_of_ionized"] = ion_share
             fo.attrs["source"] = path
         print(f"snap {s:03d}  z = {z:7.3f}  <n_HI> = {nHI.mean():.3e}  <n_HeI> = {nHeI.mean():.3e} "
               f"(comoving cm^-3)  SFR>0 cells: {100.0 * n_sf / N**3:.3f}% of cells, "
               f"{100.0 * sf_HI / max(sum_HI, 1e-300):.2f}% of H I, {100.0 * sf_HeI / max(sum_HeI, 1e-300):.2f}% of He I "
-              f"({'masked' if args.sf_mask else 'kept'})  -> {out}", flush=True)
+              f"({'masked' if args.sf_mask else 'kept'}); self_T(40.8 eV, SFR-weighted) = {self_T:.3f}, "
+              f"share of ionized-cell H I in SFR>0 cells = {100.0 * ion_share:.1f}%  -> {out}", flush=True)
 
 if __name__ == "__main__":
     main()

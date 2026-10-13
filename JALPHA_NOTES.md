@@ -194,7 +194,7 @@ The physics, the derivations and the references are in the doc "How the He II Ly
 
 | Step | Script | Output |
 |---|---|---|
-| 1 | `run_opacity.sh` → `make_opacity_fields.py` | `opacity_NNN.hdf5`: n_HI and n_HeI (comoving cm⁻³) at 320³, every second snapshot. Logs the share of H I and He I in star-forming cells. |
+| 1 | `run_opacity.sh` → `make_opacity_fields.py` | `opacity_NNN.hdf5`: n_HI and n_HeI (comoving cm⁻³) at 320³, every second snapshot. Logs, for star-forming cells, the H I / He I share, `self_T` (fraction of a source cell's 40.8 eV photons that survive their own cell) and the share of ionized-cell H I. |
 | 2 | `bash run_transmission.sh compile`, then `sbatch run_transmission.sh` → `compute_transmission_He` | the `lambda_912 (simulation …)` line (mfp912 mode), then `transmission_He_NNN.hdf5` holding T_n2 and T_n4 on 48 radii × 160³ origins |
 | 3 | `run_Jalpha_test.sh` with `TRANS_DIR` and `TR_TAG` set | `Jalpha_He_NNN_<TR_TAG>.hdf5` and `Jalpha_AGN_He_NNN_<TR_TAG>.hdf5` |
 
