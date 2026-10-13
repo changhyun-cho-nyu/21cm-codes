@@ -160,7 +160,10 @@ static double R_to_z(double z_obs, double z_max, double R_mpc) {
 static double read_attr_double(hid_t loc, const char *name) {
     double val = 0.0;
     hid_t a = H5Aopen(loc, name, H5P_DEFAULT);
-    H5Aread(a, H5T_NATIVE_DOUBLE, &val);
+    if (a < 0 || H5Aread(a, H5T_NATIVE_DOUBLE, &val) < 0) {
+        fprintf(stderr, "ERROR: cannot read HDF5 attribute '%s'\n", name);
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
     H5Aclose(a);
     return val;
 }
@@ -168,7 +171,10 @@ static double read_attr_double(hid_t loc, const char *name) {
 static int read_attr_int(hid_t loc, const char *name) {
     int val = 0;
     hid_t a = H5Aopen(loc, name, H5P_DEFAULT);
-    H5Aread(a, H5T_NATIVE_INT, &val);
+    if (a < 0 || H5Aread(a, H5T_NATIVE_INT, &val) < 0) {
+        fprintf(stderr, "ERROR: cannot read HDF5 attribute '%s'\n", name);
+        MPI_Abort(MPI_COMM_WORLD, 1);
+    }
     H5Aclose(a);
     return val;
 }
@@ -270,10 +276,50 @@ static void check_sfr_input(hid_t fid, int snap, const char *path) {
                     path, b, SFR_BAND);
             MPI_Abort(MPI_COMM_WORLD, 1);
         }
-        if (H5Aexists(did, "tau_max_Myr") > 0) sfr_tau_max = read_attr_double(did, "tau_max_Myr");
+        if (H5Aexists(did, "tau_max_Myr") > 0) {
+            double tm = read_attr_double(did, "tau_max_Myr");
+            if (n_eff > 0 && fabs(tm - sfr_tau_max) > 1e-9 * tm) {
+                fprintf(stderr, "ERROR: %s has tau_max_Myr = %g, earlier files %g\n", path, tm, sfr_tau_max);
+                MPI_Abort(MPI_COMM_WORLD, 1);
+            }
+            sfr_tau_max = tm;
+        }
+        /* make_SFR_eff.py creates all files first and fills them slab by slab: an interrupted
+         * run, a --plane-range test or a --stride test leaves files that look valid */
+        if (H5Aexists(did, "complete") > 0 && read_attr_int(did, "complete") != 1) {
+            fprintf(stderr, "ERROR: %s is an unfinished make_SFR_eff.py output (complete = 0): rerun it\n", path);
+            MPI_Abort(MPI_COMM_WORLD, 1);
+        }
+        if (H5Aexists(did, "stride") > 0 && read_attr_int(did, "stride") != 1) {
+            fprintf(stderr, "ERROR: %s comes from a --stride convergence test, not the full cadence\n", path);
+            MPI_Abort(MPI_COMM_WORLD, 1);
+        }
+        if (H5Aexists(did, "plane_range") > 0) {
+            int pr[2] = {0, 0};
+            hid_t a = H5Aopen(did, "plane_range", H5P_DEFAULT);
+            if (a < 0 || H5Aread(a, H5T_NATIVE_INT, pr) < 0) {
+                fprintf(stderr, "ERROR: cannot read plane_range of %s\n", path); MPI_Abort(MPI_COMM_WORLD, 1);
+            }
+            H5Aclose(a);
+            if (pr[0] != 0 || pr[1] != N_PIX) {
+                fprintf(stderr, "ERROR: %s covers planes %d..%d only (a --plane-range test), not 0..%d\n",
+                        path, pr[0], pr[1], N_PIX);
+                MPI_Abort(MPI_COMM_WORLD, 1);
+            }
+        }
         n_eff++;
     } else {
         n_raw++;
+    }
+    {   /* the box must have the header's NumPixels^3 cells: read_sfr_box fills N_PIX^3 floats */
+        hid_t sp = H5Dget_space(did); hsize_t dm[3] = {0, 0, 0};
+        int nd = H5Sget_simple_extent_ndims(sp);
+        if (nd == 3) H5Sget_simple_extent_dims(sp, dm, NULL);
+        H5Sclose(sp);
+        if (nd != 3 || dm[0] != (hsize_t)N_PIX || dm[1] != (hsize_t)N_PIX || dm[2] != (hsize_t)N_PIX) {
+            fprintf(stderr, "ERROR: StarFormationRate in %s is not %d^3 (NumPixels)\n", path, N_PIX);
+            MPI_Abort(MPI_COMM_WORLD, 1);
+        }
     }
     (void)snap;
     H5Dclose(did);
@@ -503,13 +549,17 @@ typedef struct {
 
 static SpecTable load_spectrum(int rank) {
     hid_t fid = H5Fopen(SPECTRUM_FILE, H5F_ACC_RDONLY, H5P_DEFAULT);
-    int Nfreq, N_age, N_met;
+    if (fid < 0) { fprintf(stderr, "ERROR: cannot open spectrum file %s\n", SPECTRUM_FILE); MPI_Abort(MPI_COMM_WORLD, 1); }
+    int Nfreq = 0, N_age = 0, N_met = 0;
     {
         /* Number_of_freq, N_age, N_metallicity are scalar DATASETS */
-        hid_t d2;
-        d2=H5Dopen(fid,"Number_of_freq",H5P_DEFAULT); H5Dread(d2,H5T_NATIVE_INT,H5S_ALL,H5S_ALL,H5P_DEFAULT,&Nfreq); H5Dclose(d2);
-        d2=H5Dopen(fid,"N_age",         H5P_DEFAULT); H5Dread(d2,H5T_NATIVE_INT,H5S_ALL,H5S_ALL,H5P_DEFAULT,&N_age); H5Dclose(d2);
-        d2=H5Dopen(fid,"N_metallicity", H5P_DEFAULT); H5Dread(d2,H5T_NATIVE_INT,H5S_ALL,H5S_ALL,H5P_DEFAULT,&N_met); H5Dclose(d2);
+        hid_t d2; int bad = 0;
+        d2=H5Dopen(fid,"Number_of_freq",H5P_DEFAULT); bad |= d2 < 0 || H5Dread(d2,H5T_NATIVE_INT,H5S_ALL,H5S_ALL,H5P_DEFAULT,&Nfreq) < 0; H5Dclose(d2);
+        d2=H5Dopen(fid,"N_age",         H5P_DEFAULT); bad |= d2 < 0 || H5Dread(d2,H5T_NATIVE_INT,H5S_ALL,H5S_ALL,H5P_DEFAULT,&N_age) < 0; H5Dclose(d2);
+        d2=H5Dopen(fid,"N_metallicity", H5P_DEFAULT); bad |= d2 < 0 || H5Dread(d2,H5T_NATIVE_INT,H5S_ALL,H5S_ALL,H5P_DEFAULT,&N_met) < 0; H5Dclose(d2);
+        if (bad || Nfreq <= 0 || N_age <= 0 || N_met <= 0) {
+            fprintf(stderr, "ERROR: bad table dimensions in %s\n", SPECTRUM_FILE); MPI_Abort(MPI_COMM_WORLD, 1);
+        }
         if (rank==0)
             printf("  Spectrum dims: Nfreq=%d  N_age=%d  N_met=%d\n",
                    Nfreq, N_age, N_met);
@@ -528,11 +578,12 @@ static SpecTable load_spectrum(int rank) {
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
 
-    hid_t d;
-    d=H5Dopen(fid,"freq",H5P_DEFAULT);        H5Dread(d,H5T_NATIVE_DOUBLE,H5S_ALL,H5S_ALL,H5P_DEFAULT,freq_arr); H5Dclose(d);
-    d=H5Dopen(fid,"age",H5P_DEFAULT);         H5Dread(d,H5T_NATIVE_DOUBLE,H5S_ALL,H5S_ALL,H5P_DEFAULT,age_arr);  H5Dclose(d);
-    d=H5Dopen(fid,"metallicity",H5P_DEFAULT); H5Dread(d,H5T_NATIVE_DOUBLE,H5S_ALL,H5S_ALL,H5P_DEFAULT,met_arr);  H5Dclose(d);
-    d=H5Dopen(fid,"Lnu",H5P_DEFAULT);         H5Dread(d,H5T_NATIVE_DOUBLE,H5S_ALL,H5S_ALL,H5P_DEFAULT,Lnu);      H5Dclose(d);
+    hid_t d; int bad = 0;
+    d=H5Dopen(fid,"freq",H5P_DEFAULT);        bad |= d < 0 || H5Dread(d,H5T_NATIVE_DOUBLE,H5S_ALL,H5S_ALL,H5P_DEFAULT,freq_arr) < 0; H5Dclose(d);
+    d=H5Dopen(fid,"age",H5P_DEFAULT);         bad |= d < 0 || H5Dread(d,H5T_NATIVE_DOUBLE,H5S_ALL,H5S_ALL,H5P_DEFAULT,age_arr) < 0;  H5Dclose(d);
+    d=H5Dopen(fid,"metallicity",H5P_DEFAULT); bad |= d < 0 || H5Dread(d,H5T_NATIVE_DOUBLE,H5S_ALL,H5S_ALL,H5P_DEFAULT,met_arr) < 0;  H5Dclose(d);
+    d=H5Dopen(fid,"Lnu",H5P_DEFAULT);         bad |= d < 0 || H5Dread(d,H5T_NATIVE_DOUBLE,H5S_ALL,H5S_ALL,H5P_DEFAULT,Lnu) < 0;      H5Dclose(d);
+    if (bad) { fprintf(stderr, "ERROR: cannot read the tables of %s\n", SPECTRUM_FILE); MPI_Abort(MPI_COMM_WORLD, 1); }
     H5Fclose(fid);
 
     const double PLANCK    = 6.62607015e-27;
@@ -814,6 +865,7 @@ static void write_output(const char *outfile, const float *J,
                           double J_mean, double J_scalar,
                           const SpecTable *st) {
     hid_t fid = H5Fcreate(outfile, H5F_ACC_TRUNC, H5P_DEFAULT, H5P_DEFAULT);
+    if (fid < 0) { fprintf(stderr, "ERROR: cannot create %s (does the directory exist?)\n", outfile); MPI_Abort(MPI_COMM_WORLD, 1); }
     hsize_t dims[3] = {(hsize_t)N,(hsize_t)N,(hsize_t)N};
     hid_t sid = H5Screate_simple(3,dims,NULL);
 
@@ -825,7 +877,9 @@ static void write_output(const char *outfile, const float *J,
 
     hid_t did = H5Dcreate(fid,"J_alpha",H5T_NATIVE_FLOAT,
                            sid,H5P_DEFAULT,pid,H5P_DEFAULT);
-    H5Dwrite(did,H5T_NATIVE_FLOAT,H5S_ALL,H5S_ALL,H5P_DEFAULT,J);
+    if (did < 0 || H5Dwrite(did,H5T_NATIVE_FLOAT,H5S_ALL,H5S_ALL,H5P_DEFAULT,J) < 0) {
+        fprintf(stderr, "ERROR: cannot write the J map to %s\n", outfile); MPI_Abort(MPI_COMM_WORLD, 1);
+    }
 
     hid_t sc = H5Screate(H5S_SCALAR);
     #define WA(nm,val) { \
@@ -872,7 +926,8 @@ static void write_output(const char *outfile, const float *J,
 
     H5Sclose(sc); H5Tclose(str_t);
     H5Pclose(pid); H5Dclose(did);
-    H5Sclose(sid); H5Fclose(fid);
+    H5Sclose(sid);
+    if (H5Fclose(fid) < 0) { fprintf(stderr, "ERROR: closing %s failed (disk full?)\n", outfile); MPI_Abort(MPI_COMM_WORLD, 1); }
 }
 
 /* =========================================================================
@@ -918,6 +973,11 @@ int main(int argc, char **argv) {
     load_snap_metadata(sfr_dir, sfr_dir2, rank);
     MPI_Barrier(MPI_COMM_WORLD);
 
+    if (snap_target < 0 || snap_target >= N_SNAPS) {
+        if (rank==0) fprintf(stderr, "ERROR: snap %d outside 0..%d\n", snap_target, N_SNAPS - 1);
+        MPI_Finalize();
+        return 1;
+    }
     double z_obs = snap_redshifts[snap_target];
     if (z_obs < 0.0) {
         if (rank==0)

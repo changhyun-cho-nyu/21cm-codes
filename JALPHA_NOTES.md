@@ -290,3 +290,4 @@ Its AGN-SED finding (#3) is fixed (2.3 above). Its helium-coupling finding (#10,
 | J_α^He with transmission, stars and AGN; T ≡ 1; species H | 0.20527 vs analytic 0.20513; maps identical to 9.3×10⁻⁷; H unchanged |
 | LLS conversion vs independent scipy integral (broken law, single β = 1.5, b₃ = 2) | agrees to < 2×10⁻³; LLS-only T(R) vs analytic: 2×10⁻⁶ |
 | `--sf-mask` vs direct calculation; mixed-directory guard | 7×10⁻⁸; H I share exact; mixed masked/unmasked aborts |
+| Input/output guards (H code on a mock pipeline; same code in He/AGN) | aborts on: unfinished SFR_eff (`complete = 0`), `--plane-range` or `--stride` output, mixed `tau_max_Myr`, box ≠ NumPixels³, missing spectrum/SED, snapshot out of range, unwritable output (non-zero exit). Older full SFR_eff files without `complete` still accepted, bit-identical J |

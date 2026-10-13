@@ -23,8 +23,10 @@ How it is computed
 * Times: each render file's Header/Redshift (the attribute the C codes read)
   is converted to cosmic time with the LUMINA cosmology. No regular spacing
   is assumed anywhere.
-* SFR(x, t) is linear in t between consecutive render snapshots (as in the C
-  codes' interpolation) and zero before the first snapshot.
+* SFR(x, t) is linear in t between consecutive render snapshots and zero
+  before the first snapshot. (The C codes interpolate the boxes they read
+  linearly in z; for the 2-5 Myr snapshot spacing the interpolation weights
+  differ by <= 1.2e-3 at z <= 10, 8e-3 at z = 25: negligible.)
 * Only stars younger than TAU_MAX contribute: 300 Myr for the H band, 100 Myr
   for the He II band (>= 94% and >= 96% of the lifetime yield). Older stars
   are dropped, so SFR_eff is slightly low for an old, steady population.
@@ -37,7 +39,8 @@ How it is computed
   every input box is read once per slab and in total once.
 
 Outputs (same Header attributes as the inputs, dataset name StarFormationRate
-so the C codes need no change; attributes 'content', 'band', 'tau_max_Myr'):
+so the C codes need no change; attributes 'content', 'band', 'tau_max_Myr', 'stride',
+'plane_range' and 'complete' (0 until every slab is written)):
   <out>/H/All/All_NNN.hdf5                              -> compute_Jalpha.c   (sfr_dir argument)
   <out>/He/StarFormationRate/StarFormationRate_NNN.hdf5 -> compute_Jalpha_He.c (-DSFR_DIR_OLD=...)
   <out>/SFR_eff_summary.csv: per snapshot z, t, window size and box means.
@@ -184,6 +187,7 @@ def create_outputs(snaps, out_root, bands, N, in_attrs, stride, plane_range):
                 d.attrs["tau_max_Myr"] = TAU_MAX_MYR[band]
                 d.attrs["stride"] = stride
                 d.attrs["plane_range"] = plane_range
+                d.attrs["complete"] = 0             # set to 1 only after every slab is written
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -280,6 +284,12 @@ def main():
         el = time.time() - t_start
         print(f"  planes {i0:4d}-{i1 - 1:4d} done, {el / 60:.1f} min elapsed, "
               f"~{el / (i1 - p0) * (p1 - i1) / 60:.1f} min left", flush=True)
+
+    # every slab is written: mark the files complete (the J_alpha codes refuse complete = 0)
+    for band in args.bands:
+        for (s, _, _) in snaps:
+            with h5py.File(os.path.join(args.out, OUT_PATTERN[band].format(s)), "r+") as f:
+                f[DSET].attrs["complete"] = 1
 
     csv = os.path.join(args.out, "SFR_eff_summary.csv")
     with open(csv, "w") as f:
