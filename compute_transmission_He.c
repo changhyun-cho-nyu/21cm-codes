@@ -24,9 +24,18 @@
  * Optional unresolved absorbers (Lyman-limit systems below the render
  * resolution), off by default (LLS_A = 0):
  *     lambda_912,extra(z) = LLS_A [(1+z)/5]^LLS_SLOPE  proper Mpc,  z < LLS_ZMAX,
- * converted to the group energy as lambda_E = lambda_912 (sigma_912/sigma_E)^(LLS_BETA-1)
- * for a column-density distribution f(N) ~ N^-LLS_BETA, and applied to every
- * ray as exp(-Int dl/lambda_E). Use the mfp912 mode to decide whether it is needed.
+ * converted to the group energy with the effective opacity of Poisson clouds,
+ *     dtau_eff/dl ~ Int f(N) (1 - exp(-N sigma)) dN,
+ *     lambda_E = lambda_912 * I(sigma_912) / I(sigma_E),
+ * for a broken power-law column-density distribution f(N) ~ N^-b with
+ * b = LLS_FN_B1 below 10^LLS_FN_LOGN1, LLS_FN_B2 up to 10^LLS_FN_LOGN2 and
+ * LLS_FN_B3 above (defaults 1.5 / 0.8 / 1.5 with breaks at 10^17.5 and 10^19 cm^-2;
+ * Prochaska, O'Meara & Worseck 2010 measure b ~ 0.8 for the Lyman-limit range,
+ * which is the range that sets the opacity at 40-54 eV). The integral runs over
+ * 10^11-10^22 cm^-2. A single power law (the old -DLLS_BETA=b) is the special
+ * case b1 = b2 = b3; for 1 < b < 2 it gives (sigma_912/sigma_E)^(b-1).
+ * The term is applied to every ray as exp(-Int dl_proper/lambda_E). Use the
+ * mfp912 mode to decide whether it is needed.
  *
  * Mode mfp912: the 912 A mean free path of the simulation itself at the target
  * snapshot, lambda_912 = < Int exp(-tau_912(r)) dl_proper > over rays from
@@ -76,8 +85,25 @@
 #ifndef LLS_SLOPE
 #define LLS_SLOPE  (-5.4)
 #endif
-#ifndef LLS_BETA
-#define LLS_BETA   1.5
+#ifdef LLS_BETA             /* single power law, kept for comparison */
+#define LLS_FN_B1  LLS_BETA
+#define LLS_FN_B2  LLS_BETA
+#define LLS_FN_B3  LLS_BETA
+#endif
+#ifndef LLS_FN_B1
+#define LLS_FN_B1  1.5       /* f(N) slope below 10^LLS_FN_LOGN1 (Ly-alpha forest)        */
+#endif
+#ifndef LLS_FN_B2
+#define LLS_FN_B2  0.8       /* between the breaks (Lyman-limit systems, Prochaska+10)    */
+#endif
+#ifndef LLS_FN_B3
+#define LLS_FN_B3  1.5       /* above 10^LLS_FN_LOGN2 (super-LLS / sub-DLA)               */
+#endif
+#ifndef LLS_FN_LOGN1
+#define LLS_FN_LOGN1 17.5
+#endif
+#ifndef LLS_FN_LOGN2
+#define LLS_FN_LOGN2 19.0
 #endif
 #ifndef LLS_ZMAX
 #define LLS_ZMAX   5.5
@@ -105,11 +131,31 @@ static double verner(double E, double E0, double s0, double ya, double P, double
 static double sigma_HI(double E)  { return E < 13.598 ? 0.0 : verner(E, 0.4298, 5.475e4, 32.88, 2.963, 0.0, 0.0, 0.0); }
 static double sigma_HeI(double E) { return E < 24.587 ? 0.0 : verner(E, 13.61, 949.2, 1.469, 3.188, 2.039, 0.4434, 2.136); }
 
+/* I(sigma) = Int f(N) (1 - exp(-N sigma)) dN for the broken power law, up to a constant:
+ * proportional to the effective opacity of Poisson-distributed absorbers */
+static double lls_I(double sigma) {
+    const double l0 = 11.0, l1 = 22.0; const int n = 4400;           /* 0.0025 dex steps */
+    const double dl = (l1 - l0) / n, ln10 = log(10.0);
+    double sum = 0.0;
+    for (int i = 0; i <= n; i++) {
+        double l = l0 + i * dl, b, ln_f;
+        if (l < LLS_FN_LOGN1)      { b = LLS_FN_B1; ln_f = -b * (l - LLS_FN_LOGN1) * ln10; }
+        else if (l < LLS_FN_LOGN2) { b = LLS_FN_B2; ln_f = -b * (l - LLS_FN_LOGN1) * ln10; }
+        else { ln_f = (-LLS_FN_B2 * (LLS_FN_LOGN2 - LLS_FN_LOGN1) - LLS_FN_B3 * (l - LLS_FN_LOGN2)) * ln10; }
+        double N = pow(10.0, l);
+        double g = exp(ln_f) * N * ln10 * (-expm1(-N * sigma));      /* f(N) dN/dlog10N (1 - e^-N sigma) */
+        sum += (i == 0 || i == n ? 0.5 : 1.0) * g;
+    }
+    return sum * dl;
+}
+/* lambda_E / lambda_912 for unresolved absorbers, with sigma_E the cross section per H atom */
+static double lls_ratio(double sigma_E) { return lls_I(sigma_HI(13.598)) / lls_I(sigma_E); }
+
 static double H_cgs(double z) { return H_0_CGS * sqrt(OMEGA_M * pow(1 + z, 3) + OMEGA_L); }
 
 /* ------------------------------------------------------------------ fields */
 typedef struct { int snap; double z; float *nHI, *nHeI; } Field;
-static int Nk = 0, FACTOR = 1;
+static int Nk = 0, FACTOR = 1, SF_MASK = -1;   /* sf_mask of the opacity files (-1 = not yet read) */
 static double BOX = 0.0;
 
 static int read_attr_d(hid_t f, const char *n, double *v) {
@@ -143,6 +189,13 @@ static void load_field(const char *dir, Field *F) {
         fprintf(stderr, "ERROR: %s lacks BoxSize_cMpc/factor\n", path); exit(1);
     }
     BOX = box; FACTOR = (int)lround(fac);
+    double sfm = 0.0;                                    /* files written before the option: unmasked */
+    read_attr_d(f, "sf_mask", &sfm);
+    if (SF_MASK >= 0 && (int)sfm != SF_MASK) {
+        fprintf(stderr, "ERROR: %s has sf_mask = %d but other opacity files have %d: keep masked and "
+                "unmasked fields in separate directories\n", path, (int)sfm, SF_MASK); exit(1);
+    }
+    SF_MASK = (int)sfm;
     F->nHI = read_field(f, "n_HI", path);
     F->nHeI = read_field(f, "n_HeI", path);
     H5Fclose(f);
@@ -252,8 +305,8 @@ int main(int argc, char **argv) {
         }
         if (nray == 0) { printf("no ionized origins at this snapshot\n"); return 0; }
         printf("lambda_912 (simulation, z = %.3f) = %.4g proper Mpc  from %ld rays; %.2f%% of rays reached one box "
-               "length (%.0f cMpc) with tau < %g, so this is then a lower limit\n",
-               z_obs, sum / nray, nray, 100.0 * ncap / nray, BOX, TAU_STOP);
+               "length (%.0f cMpc) with tau < %g, so this is then a lower limit; star-forming cells %s\n",
+               z_obs, sum / nray, nray, 100.0 * ncap / nray, BOX, TAU_STOP, SF_MASK > 0 ? "masked" : "kept");
         return 0;
     }
 
@@ -293,8 +346,12 @@ int main(int argc, char **argv) {
     long nsteps = (long)ceil(R_max / ds) + 1;
     printf("absorber grid %d^3 (%.3f cMpc), %d fields z = %.3f .. %.3f; E_n2 = %.2f eV, E_n4 = %.2f eV\n",
            Nk, cell, nf, F[0].z, F[nf - 1].z, E2, E4);
-    printf("R = %.3f .. %.1f cMpc (z' up to %.3f), %ld steps of %.3f cMpc; LLS term: %s\n",
-           R_min, R_max, z_max2, nsteps, ds, LLS_A > 0 ? "ON" : "off");
+    printf("R = %.3f .. %.1f cMpc (z' up to %.3f), %ld steps of %.3f cMpc; star-forming cells %s\n",
+           R_min, R_max, z_max2, nsteps, ds, SF_MASK > 0 ? "MASKED (transparent)" : "kept");
+    printf("LLS term: %s; f(N) slopes %.2f / %.2f / %.2f (breaks 10^%.2f, 10^%.2f): lambda_E/lambda_912 = "
+           "%.3f (n=2, at the target), %.3f (n>=4)\n", LLS_A > 0 ? "ON" : "off", LLS_FN_B1, LLS_FN_B2, LLS_FN_B3,
+           LLS_FN_LOGN1, LLS_FN_LOGN2, lls_ratio(sigma_HI(E2) + Y_HE * sigma_HeI(E2)),
+           lls_ratio(sigma_HI(E4) + Y_HE * sigma_HeI(E4)));
 
     /* per-step weights (depend only on r) */
     double *w2H = malloc(nsteps * sizeof(double)), *w2He = malloc(nsteps * sizeof(double));
@@ -311,9 +368,9 @@ int main(int argc, char **argv) {
         fid[j] = best;
         double d2 = 0, d4 = 0;
         if (LLS_A > 0 && zj < LLS_ZMAX) {
-            double l912 = LLS_A * pow(opz / 5.0, LLS_SLOPE), s912 = sigma_HI(13.598);
-            double l2 = l912 * pow(s912 / (sigma_HI(E2 * sc) + Y_HE * sigma_HeI(E2 * sc)), LLS_BETA - 1.0);
-            double l4 = l912 * pow(s912 / (sigma_HI(E4 * sc) + Y_HE * sigma_HeI(E4 * sc)), LLS_BETA - 1.0);
+            double l912 = LLS_A * pow(opz / 5.0, LLS_SLOPE);
+            double l2 = l912 * lls_ratio(sigma_HI(E2 * sc) + Y_HE * sigma_HeI(E2 * sc));
+            double l4 = l912 * lls_ratio(sigma_HI(E4 * sc) + Y_HE * sigma_HeI(E4 * sc));
             d2 = ds / opz / l2; d4 = ds / opz / l4;                    /* proper path / lambda */
         }
         lls2[j + 1] = lls2[j] + d2; lls4[j + 1] = lls4[j] + d4;
@@ -394,7 +451,10 @@ int main(int argc, char **argv) {
     write_d(fo, "BoxSize_cMpc", BOX); write_d(fo, "R_min_cMpc", R_min);
     write_d(fo, "E_n2_eV", E2);       write_d(fo, "E_n4_eV", E4);
     write_d(fo, "N_DIR", N_DIR);      write_d(fo, "LLS_A", LLS_A);
-    write_d(fo, "LLS_SLOPE", LLS_SLOPE); write_d(fo, "LLS_BETA", LLS_BETA); write_d(fo, "LLS_ZMAX", LLS_ZMAX);
+    write_d(fo, "LLS_SLOPE", LLS_SLOPE); write_d(fo, "LLS_ZMAX", LLS_ZMAX);
+    write_d(fo, "LLS_FN_B1", LLS_FN_B1); write_d(fo, "LLS_FN_B2", LLS_FN_B2); write_d(fo, "LLS_FN_B3", LLS_FN_B3);
+    write_d(fo, "LLS_FN_LOGN1", LLS_FN_LOGN1); write_d(fo, "LLS_FN_LOGN2", LLS_FN_LOGN2);
+    write_d(fo, "sf_mask", SF_MASK > 0 ? 1.0 : 0.0);
     H5Fclose(fo);
     printf("wrote %s\n", out);
     return 0;

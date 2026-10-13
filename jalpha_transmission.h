@@ -41,6 +41,9 @@ static void trans_init(int snap, double z_obs, double box_mpc, int N, int rank) 
                 TR_FILE, z, box, z_obs, box_mpc);
         MPI_Abort(MPI_COMM_WORLD, 1);
     }
+    double sfm = 0.0, llsA = 0.0;                     /* recorded so the log says which variant is used */
+    if (H5Aexists(f, "sf_mask") > 0) { a = H5Aopen(f, "sf_mask", H5P_DEFAULT); H5Aread(a, H5T_NATIVE_DOUBLE, &sfm); H5Aclose(a); }
+    if (H5Aexists(f, "LLS_A") > 0)   { a = H5Aopen(f, "LLS_A", H5P_DEFAULT);   H5Aread(a, H5T_NATIVE_DOUBLE, &llsA); H5Aclose(a); }
     hid_t d = H5Dopen(f, "T_n2", H5P_DEFAULT), s = H5Dget_space(d);
     hsize_t dims[4]; H5Sget_simple_extent_dims(s, dims, NULL); H5Sclose(s); H5Dclose(d);
     TR_NR = (int)dims[0]; TR_No = (int)dims[1];
@@ -61,8 +64,9 @@ static void trans_init(int snap, double z_obs, double box_mpc, int N, int rank) 
     }
     TR_slice = malloc((size_t)TR_No * TR_No * TR_No * sizeof(float));
     if (rank == 0)
-        printf("  IGM transmission: %s (%d radii %.3f .. %.1f cMpc, origin grid %d^3)\n",
-               TR_FILE, TR_NR, TR_R[0], TR_R[TR_NR - 1], TR_No);
+        printf("  IGM transmission: %s (%d radii %.3f .. %.1f cMpc, origin grid %d^3; star-forming cells %s, "
+               "LLS term %s)\n", TR_FILE, TR_NR, TR_R[0], TR_R[TR_NR - 1], TR_No, sfm > 0 ? "masked" : "kept",
+               llsA > 0 ? "on" : "off");
 }
 
 /* make sure group g holds all radii up to R_need (reads a hyperslab of radii) */
