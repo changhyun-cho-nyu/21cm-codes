@@ -187,6 +187,7 @@ The totals are J_α^H = J_alpha + Jalpha_AGN_H and J_α^He = J_alpha_He + Jalpha
 | `check_sfr_eff_spectrum.py [--Z ...]` | How good is SFR_eff × lifetime spectral shape inside the band? (Section 5) |
 | `bracket_Tb_He.py --render All_NNN.hdf5 --J Jalpha_He_NNN.hdf5 --J Jalpha_AGN_He_NNN.hdf5 [--write]` | Does δT_b^He depend on J_α^He at all? It compares J as computed (no IGM absorption) with J = 0. |
 | `compare_SFR_eff.py REF TEST` | Is the SFR interpolation between snapshots converged? |
+| `remap_rsd.py --dir <render_dir> --snap NNN --validate [--out DIR]` | True redshift-space He II density: remaps Density × HeII_Fraction along +z with the `Velocities` render (CIC). First validates the remap against the render's own SpectralDensity and SpectralDensityHI, and finds the velocity unit convention. `--out` writes SpectralDensityHeII, which `PS_3cm_mpi.c` reads when built with `HE_RS_DIR`. |
 | `check_tb_choices.py --dir <render_dir> --snap NNN [--factor 2]` | How accurate is the He redshift-space approximation (tested on H I, where the exact map exists), and how large is the RSD effect on He? Does mass vs volume weighting matter (signal share in partly ionized cells, T_mass/T_vol)? |
 
 ### 4.5 IGM absorption of the He II band
