@@ -194,8 +194,8 @@ The totals are J_α^H = J_alpha + Jalpha_AGN_H and J_α^He = J_alpha_He + Jalpha
 
 | Approximation | Size | Status |
 |---|---|---|
-| SFR linear in time between snapshots (2.0–5.4 Myr apart) | Expected ~(Δt/τ_var)²/8 ≈ 0.1% | Test with `--stride` (4.2) |
-| SFR_eff uses band-integrated age weights × lifetime spectral shape | 0.1–1.6% J-weighted in a deliberately strongly tilted mock; bursts at the voxel level are larger | **Run `check_sfr_eff_spectrum.py` with the real BPASS file** |
+| SFR linear in time between snapshots (2.0–5.4 Myr apart) | **Measured** (stride 2 / 4 on 64 planes, 352 / 176 snapshots): box-mean bias ≤ 10⁻³ at z ≤ 15 (0.7% at z = 20); voxel-level L1 median 1.2% (H) / 1.6% (He) for stride 2. L1(4)/L1(2) ≈ 2.4, i.e. error ∝ Δt^0.5: snapshot-to-snapshot scatter of the voxel SFR, not smooth-interpolation error. Full-cadence error: voxel level 0.4–1.2% (H), box mean ≪ 0.1%; shell and z′ averaging in J_α reduce it further | Done |
+| SFR_eff uses band-integrated age weights × lifetime spectral shape | **Measured with BPASS:** J-weighted error +1–3% (H, box-mean history at z ≈ 10), +2–5% at z ≳ 15 (low Z); He ≲ 1%. Single voxels: +7.5% just after a burst, −11% 20–30 Myr after (H) | Accepted; state in the paper |
 | Stars stay in their birth voxel | 3–9 proper kpc drift in 30 Myr vs a 71 proper kpc voxel at z = 10 | Negligible for the H band |
 | No emission before the first render (z = 29.43) | J_α is a lower limit for z_obs ≳ 24.7 | State in the text if those z are used |
 | He II band: no IGM absorption by H I / He I | Large before overlap. After overlap J_He is reduced roughly ×0.13–0.25 at z = 6, ×0.4–0.6 at z = 5, ×0.9 at z = 4 (estimates; λ₉₁₂ numbers from memory) | **Run `bracket_Tb_He.py`**; then decide on option B (Section 6) |
@@ -207,7 +207,7 @@ The totals are J_α^H = J_alpha + Jalpha_AGN_H and J_α^He = J_alpha_He + Jalpha
 
 ### 6.1 Production
 1. **Find a disk with ≥ 600 GB free** (004 is full: 7.3 GB left). Then run `run_SFR_eff.sh` and check its log.
-2. **Convergence test** (`--stride 2/4`) and **`check_sfr_eff_spectrum.py`** with the real BPASS file.
+2. ~~Convergence test~~ (done, converged) and ~~`check_sfr_eff_spectrum.py`~~ (done: J_α^H ≲ 3%, ≲ 5% at z ≳ 15; J_α^He ≲ 1%).
 3. **J_α runs** for the needed snapshots: H stars, He stars, AGN-H and AGN-He. Check each log as in 4.3.
 4. **Compare** the new J_mean with the old outputs at a few redshifts (z ≈ 20, 15, 12, 10, 8, 6, 4).
 5. **Regenerate everything downstream:** x_α, T_S, δT_b maps, power spectra, bispectra, VIDs and bubble statistics. Every J_α made before these changes is stale. Make sure the T_b code sums stars + AGN for both species.
