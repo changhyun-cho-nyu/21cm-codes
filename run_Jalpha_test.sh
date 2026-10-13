@@ -29,21 +29,30 @@ R=/orcd/data/mvogelsb/005/mkilab001/mvogelsblab003/Lab/Thesan-XL/Flagship_new/po
 RB=/orcd/data/mvogelsb/005/mkilab001/mvogelsblab003/Lab/Thesan-XL/Flagship_below_z_4p75_new/postprocessing/ren_640
 SED=agn_sed_full.hdf5                                           # in the repository
 MIN_FREE_GB=20                                                  # ~1 GB per output, 16 outputs
+# FFTW (single precision, with OpenMP) and HDF5 install prefixes, if no module provides them:
+# the directories that contain include/fftw3.h and include/hdf5.h (same as in your Makefile).
+FFTW_DIR=
+HDF5_DIR=
 
 source ~/.bashrc
 # module load ...        # <- the same modules as your usual J_alpha jobs (MPI, FFTW, HDF5)
 set -eo pipefail
 cd "${SLURM_SUBMIT_DIR:-$PWD}"
 
-LIBS="-lfftw3f_omp -lfftw3f -lhdf5 -lm"
+INC=""; LIBS="-lfftw3f_omp -lfftw3f -lhdf5 -lm"
+for d in "$FFTW_DIR" "$HDF5_DIR"; do
+    [ -n "$d" ] || continue
+    INC="$INC -I$d/include"
+    for l in "$d/lib" "$d/lib64"; do [ -d "$l" ] && LIBS="-L$l -Wl,-rpath,$l $LIBS"; done
+done
 if [ "$1" = "compile" ]; then
     mkdir -p bin
     # no -march=native: the login node CPU may differ from the compute nodes
-    mpicc -O3 -fopenmp compute_Jalpha.c -o bin/Jalpha_H \
+    mpicc -O3 -fopenmp $INC compute_Jalpha.c -o bin/Jalpha_H \
         -DZ_WEIGHTS_FILE="\"$WEIGHTS\"" $LIBS
-    mpicc -O3 -fopenmp compute_Jalpha_He.c -o bin/Jalpha_He \
+    mpicc -O3 -fopenmp $INC compute_Jalpha_He.c -o bin/Jalpha_He \
         -DZ_WEIGHTS_FILE="\"$WEIGHTS\"" -DSFR_DIR_OLD="\"$OUT/He\"" -DSFR_DIR_NEW="\"$OUT/He\"" $LIBS
-    mpicc -O3 -fopenmp compute_Jalpha_AGN.c -o bin/Jalpha_AGN $LIBS
+    mpicc -O3 -fopenmp $INC compute_Jalpha_AGN.c -o bin/Jalpha_AGN $LIBS
     echo "built: $(ls bin)   commit $(git rev-parse --short HEAD)"
     exit 0
 fi
