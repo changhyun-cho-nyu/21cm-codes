@@ -29,23 +29,39 @@ R=/orcd/data/mvogelsb/005/mkilab001/mvogelsblab003/Lab/Thesan-XL/Flagship_new/po
 RB=/orcd/data/mvogelsb/005/mkilab001/mvogelsblab003/Lab/Thesan-XL/Flagship_below_z_4p75_new/postprocessing/ren_640
 SED=agn_sed_full.hdf5                                           # in the repository
 MIN_FREE_GB=20                                                  # ~1 GB per output, 16 outputs
-# FFTW (single precision, with OpenMP) and HDF5 install prefixes, if no module provides them:
-# the directories that contain include/fftw3.h and include/hdf5.h (same as in your Makefile).
-FFTW_DIR=
-HDF5_DIR=
+# FFTW (single precision, with OpenMP) and HDF5 install prefixes: the directories that contain
+# include/fftw3.h and include/hdf5.h. Left empty, they are found from the loaded modules
+# (FFTW_ROOT/HDF5_ROOT-style variables, pkg-config, CMAKE_PREFIX_PATH, h5cc on PATH).
+FFTW_PREFIX=
+HDF5_PREFIX=
 
 source ~/.bashrc
 # module load ...        # <- the same modules as your usual J_alpha jobs (MPI, FFTW, HDF5)
 set -eo pipefail
 cd "${SLURM_SUBMIT_DIR:-$PWD}"
 
+find_prefix() {   # $1 header, $2 name pattern, rest: candidate prefixes; prints the first that has include/$1
+    local h=$1 pat=$2 c; shift 2
+    for c in "$@"; do                                   # explicit candidates first
+        [ -n "$c" ] && [ -f "$c/include/$h" ] && { echo "$c"; return; }
+    done
+    for c in $(echo "${CMAKE_PREFIX_PATH:-}" | tr ':' ' '); do   # then module prefixes named like the library
+        case "$c" in *$pat*) [ -f "$c/include/$h" ] && { echo "$c"; return; } ;; esac
+    done
+}
+FFTW_PREFIX=${FFTW_PREFIX:-$(find_prefix fftw3.h fftw "${FFTW_ROOT:-}" "${FFTW_HOME:-}" "${FFTW_DIR:-}" \
+                             "$(pkg-config --variable=prefix fftw3f 2>/dev/null)")}
+HDF5_PREFIX=${HDF5_PREFIX:-$(find_prefix hdf5.h hdf5 "${HDF5_ROOT:-}" "${HDF5_HOME:-}" "${HDF5_DIR:-}" \
+                             "$(command -v h5cc >/dev/null && dirname "$(dirname "$(command -v h5cc)")")")}
 INC=""; LIBS="-lfftw3f_omp -lfftw3f -lhdf5 -lm"
-for d in "$FFTW_DIR" "$HDF5_DIR"; do
+for d in "$FFTW_PREFIX" "$HDF5_PREFIX"; do
     [ -n "$d" ] || continue
     INC="$INC -I$d/include"
     for l in "$d/lib" "$d/lib64"; do [ -d "$l" ] && LIBS="-L$l -Wl,-rpath,$l $LIBS"; done
 done
 if [ "$1" = "compile" ]; then
+    echo "FFTW prefix: ${FFTW_PREFIX:-not found}   HDF5 prefix: ${HDF5_PREFIX:-not found}"
+    [ -n "$FFTW_PREFIX" ] && [ -n "$HDF5_PREFIX" ] || echo "WARNING: set FFTW_PREFIX / HDF5_PREFIX at the top if the compile fails"
     mkdir -p bin
     # no -march=native: the login node CPU may differ from the compute nodes
     mpicc -O3 -fopenmp $INC compute_Jalpha.c -o bin/Jalpha_H \
