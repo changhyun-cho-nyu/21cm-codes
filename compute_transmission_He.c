@@ -289,7 +289,12 @@ int main(int argc, char **argv) {
         #pragma omp parallel for collapse(3) reduction(+:sum,nray,ncap) schedule(dynamic, 4)
         for (int a = 0; a < N_ORIG; a++) for (int b = 0; b < N_ORIG; b++) for (int c = 0; c < N_ORIG; c++) {
             double ox = (a + 0.5) * BOX / N_ORIG, oy = (b + 0.5) * BOX / N_ORIG, oz = (c + 0.5) * BOX / N_ORIG;
-            if (F.nHI[cell_of(ox, oy, oz, cell)] >= thr) continue;
+            /* ionized origin: all absorber cells touching it are below thr (origins can sit on cell corners) */
+            int neutral = 0;
+            for (int q = 0; q < 8 && !neutral; q++)
+                neutral = F.nHI[cell_of(ox + ((q & 1) ? 0.25 : -0.25) * cell, oy + ((q & 2) ? 0.25 : -0.25) * cell,
+                                        oz + ((q & 4) ? 0.25 : -0.25) * cell, cell)] >= thr;
+            if (neutral) continue;
             for (int d = 0; d < N_DIR; d++) {
                 double tau = 0.0, lam = 0.0; long j;
                 for (j = 0; j < nsteps; j++) {
@@ -321,6 +326,12 @@ int main(int argc, char **argv) {
     E4 /= wsum;
     build_lightcone(z_obs, z_max2 + 1e-6);
     double R_max = rt[NZT - 1];
+    if (z_max2 <= z_obs + 1e-6) {
+        fprintf(stderr, "ERROR: no absorber snapshot at z > z_obs = %.4f (highest: %.4f): cannot trace any path\n", z_obs, z_first);
+        return 1;
+    }
+    if (z_max2 < (1.0 + z_obs) * (1.0 - 1.0 / 9.0) / (1.0 - 1.0 / 4.0) - 1.0 - 1e-6)
+        printf("WARNING: the opacity files end at z = %.3f, before the Ly-beta horizon: T is held at its last radius beyond\n", z_first);
 
     /* absorber snapshots spanning [z_obs, z_max2], at most MAX_FIELDS */
     int cand[N_SNAPS], nc = 0, beyond = -1;
@@ -335,6 +346,15 @@ int main(int argc, char **argv) {
         while (b >= 0 && zs[cand[b]] < zs[t]) { cand[b + 1] = cand[b]; b--; }
         cand[b + 1] = t;
     }
+    {   /* gaps in the snapshot sequence (a missing opacity task) would silently stretch the nearest-z choice */
+        double gap[N_SNAPS], gmax = 0.0; int ng = 0;
+        for (int a = 1; a < nc; a++) { gap[ng] = zs[cand[a - 1]] - zs[cand[a]]; if (gap[ng] > gmax) gmax = gap[ng]; ng++; }
+        for (int a = 1; a < ng; a++) { double t = gap[a]; int b = a - 1; while (b >= 0 && gap[b] > t) { gap[b + 1] = gap[b]; b--; } gap[b + 1] = t; }
+        double gmed = ng > 0 ? gap[ng / 2] : 0.0;
+        if (ng > 2 && gmax > 2.5 * gmed)
+            printf("WARNING: largest redshift gap between opacity files on this light cone is %.3f, %.1fx the median: "
+                   "check that every run_opacity.sh task finished\n", gmax, gmax / gmed);
+    }
     int nf = nc < MAX_FIELDS ? nc : MAX_FIELDS;
     Field *F = calloc(nf, sizeof(Field));
     for (int k = 0; k < nf; k++) {
@@ -343,6 +363,11 @@ int main(int argc, char **argv) {
         load_field(dir, &F[k]);
     }
     double cell = BOX / Nk, ds = STEP_FRAC * cell, R_min = BOX / (Nk * FACTOR);
+    if (R_max <= R_min) {
+        fprintf(stderr, "ERROR: the traceable path (%.3f cMpc, to z = %.4f) is shorter than one render cell (%.3f cMpc)\n",
+                R_max, z_max2, R_min);
+        return 1;
+    }
     long nsteps = (long)ceil(R_max / ds) + 1;
     printf("absorber grid %d^3 (%.3f cMpc), %d fields z = %.3f .. %.3f; E_n2 = %.2f eV, E_n4 = %.2f eV\n",
            Nk, cell, nf, F[0].z, F[nf - 1].z, E2, E4);

@@ -32,7 +32,8 @@ set -eo pipefail
 cd "$SLURM_SUBMIT_DIR"
 FLAG=""; [ "$SF_MASK" = 1 ] && { OPA=${OPA}_sfmask; FLAG="--sf-mask"; }
 mkdir -p "$OPA"
-NT=${SLURM_ARRAY_TASK_COUNT:-8}; i=$SLURM_ARRAY_TASK_ID
+NT=8; i=$SLURM_ARRAY_TASK_ID                       # fixed split (= --array=0-7), so a single task can be
+                                                   # resubmitted on its own: sbatch --array=5 run_opacity.sh
 n=$(( (LAST - FIRST) / EVERY + 1 ))                # snapshots on the EVERY grid
 per=$(( (n + NT - 1) / NT ))
 a=$(( FIRST + i * per * EVERY )); b=$(( FIRST + ((i + 1) * per - 1) * EVERY ))
