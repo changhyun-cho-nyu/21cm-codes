@@ -16,6 +16,7 @@
 # (H stars, He stars, AGN-H, AGN-He). From the repository directory:
 #   1. bash run_Jalpha_test.sh compile      # once, on the login node (builds bin/)
 #   2. mkdir -p logs && sbatch run_Jalpha_test.sh
+#      only the AGN tasks:  sbatch --array=2,3,6,7,10,11,14,15 run_Jalpha_test.sh
 #   3. grep -A12 "=== Results" logs/Jtest_<jobid>_*.out
 #      grep -h "Input:" logs/Jtest_<jobid>_*.out
 
@@ -29,6 +30,7 @@ R=/orcd/data/mvogelsb/005/mkilab001/mvogelsblab003/Lab/Thesan-XL/Flagship_new/po
 RB=/orcd/data/mvogelsb/005/mkilab001/mvogelsblab003/Lab/Thesan-XL/Flagship_below_z_4p75_new/postprocessing/ren_640
 SED=agn_sed_full.hdf5                                           # in the repository
 MIN_FREE_GB=20                                                  # ~1 GB per output, 16 outputs
+CONDA_ENV=jupyter_env      # has hdf5plugin: its filter plugins let the C codes read the compressed renders
 # FFTW (single precision, with OpenMP) and HDF5 install prefixes: the directories that contain
 # include/fftw3.h and include/hdf5.h. Left empty, they are found from the loaded modules
 # (FFTW_ROOT/HDF5_ROOT-style variables, pkg-config, CMAKE_PREFIX_PATH, h5cc on PATH).
@@ -74,6 +76,15 @@ if [ "$1" = "compile" ]; then
 fi
 
 [ -n "$SLURM_ARRAY_TASK_ID" ] || { echo "submit with sbatch (or run: bash $0 compile)"; exit 1; }
+# The LuminosityAGN renders are compressed with a filter the cluster HDF5 does not have built in:
+# point HDF5 at the plugins shipped with the hdf5plugin Python package.
+if [ -z "${HDF5_PLUGIN_PATH:-}" ]; then
+    conda activate "$CONDA_ENV" 2>/dev/null || true
+    HDF5_PLUGIN_PATH=$(python -c 'import hdf5plugin; print(hdf5plugin.PLUGIN_PATH)' 2>/dev/null) || HDF5_PLUGIN_PATH=
+fi
+[ -n "$HDF5_PLUGIN_PATH" ] || { echo "HDF5_PLUGIN_PATH not set and hdf5plugin not found in $CONDA_ENV"; exit 1; }
+export HDF5_PLUGIN_PATH
+echo "HDF5_PLUGIN_PATH=$HDF5_PLUGIN_PATH"
 for b in bin/Jalpha_H bin/Jalpha_He bin/Jalpha_AGN; do
     [ -x "$b" ] || { echo "missing $b: run 'bash $0 compile' first"; exit 1; }
 done
@@ -91,11 +102,11 @@ export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 echo "task $i: snap $SNAP, code $CODE, host $(hostname), $(date), commit $(git rev-parse --short HEAD)"
 
 case $CODE in
-    H)      mpirun -np $SLURM_NTASKS bin/Jalpha_H  $SNAP "$OUT/H" "$OUT/H" "$J/Jalpha_H_${SNAP}.hdf5" ;;
-    He)     mpirun -np $SLURM_NTASKS bin/Jalpha_He $SNAP "$J/Jalpha_He_${SNAP}.hdf5" ;;
-    AGN_H)  mpirun -np $SLURM_NTASKS bin/Jalpha_AGN $SNAP "$R/LuminosityAGN" "$J/Jalpha_AGN_H_${SNAP}.hdf5" \
+    H)      mpirun -np $SLURM_NTASKS -x HDF5_PLUGIN_PATH bin/Jalpha_H  $SNAP "$OUT/H" "$OUT/H" "$J/Jalpha_H_${SNAP}.hdf5" ;;
+    He)     mpirun -np $SLURM_NTASKS -x HDF5_PLUGIN_PATH bin/Jalpha_He $SNAP "$J/Jalpha_He_${SNAP}.hdf5" ;;
+    AGN_H)  mpirun -np $SLURM_NTASKS -x HDF5_PLUGIN_PATH bin/Jalpha_AGN $SNAP "$R/LuminosityAGN" "$J/Jalpha_AGN_H_${SNAP}.hdf5" \
                 "$SED" "$RB/LuminosityAGN" LuminosityAGN H ;;
-    AGN_He) mpirun -np $SLURM_NTASKS bin/Jalpha_AGN $SNAP "$R/LuminosityAGN" "$J/Jalpha_AGN_He_${SNAP}.hdf5" \
+    AGN_He) mpirun -np $SLURM_NTASKS -x HDF5_PLUGIN_PATH bin/Jalpha_AGN $SNAP "$R/LuminosityAGN" "$J/Jalpha_AGN_He_${SNAP}.hdf5" \
                 "$SED" "$RB/LuminosityAGN" LuminosityAGN He ;;
 esac
 echo "done $(date)"
