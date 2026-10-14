@@ -66,6 +66,10 @@
 #ifndef HE_REDSHIFT_SPACE
 #define HE_REDSHIFT_SPACE 1
 #endif
+/* HE_RS_DIR="<dir>": the signal is the true redshift-space He II density from remap_rsd.py,
+ *   <dir>/SpectralDensityHeII/SpectralDensityHeII_NNN.hdf5 (Density x HeII_Fraction remapped
+ *   along +z with the Velocities render): x_HeII (1+delta)_s = SpectralDensityHeII / (y <Density>).
+ *   Takes precedence over HE_REDSHIFT_SPACE. */
 
 typedef long long myint;
 
@@ -146,6 +150,9 @@ static double omega_b = 0.048975;
 static double h       = 0.6766;
 #if TS_VOLUME_WEIGHTED
 static double *fHeII_sig = NULL;   /* mass-weighted HeII_Fraction, local slab, for the signal */
+#endif
+#ifdef HE_RS_DIR
+static double *heII_rs = NULL;     /* SpectralDensityHeII, local slab */
 #endif
 
 static inline double T_CMB(double z) { return 2.7255 * (1.0 + z); }
@@ -409,6 +416,10 @@ int main(int argc, char **argv)
             double Tspin  = T_spin_He(tcmb, T_K, xc, xa);
 
             double sf      = 1.0 - tcmb / Tspin;
+#ifdef HE_RS_DIR
+            double sig_rho = heII_rs[(size_t)(i*N + j)*N + k] * volume_cell;   /* He II (per H) mass, redshift space */
+            double x_sig   = 1.0 / y_frac;
+#else
 #if HE_REDSHIFT_SPACE
             double sig_rho = spec_rho;                  /* total gas, redshift space (mass per cell) */
 #else
@@ -418,6 +429,7 @@ int main(int argc, char **argv)
             double x_sig   = fHeII_sig[(size_t)(i*N + j)*N + k] / y_frac;   /* mass-weighted, for the signal */
 #else
             double x_sig   = x_HeII;                    /* mass-weighted HeII_Fraction / y */
+#endif
 #endif
             double rin_val = prefactor_He * x_sig * (sig_rho / global_gas) * sf;   /* = dT_b x V_cell */
 
@@ -608,7 +620,11 @@ int main(int argc, char **argv)
         H5Awrite(a, H5T_NATIVE_DOUBLE, &zz); H5Aclose(a);
         hid_t st = H5Tcopy(H5T_C_S1); H5Tset_size(st, 128);
         char u[128];
+#ifdef HE_RS_DIR
+        snprintf(u, sizeof u, "delta T_b^He [micro-K], redshift space (3rd axis): SpectralDensityHeII (remap_rsd.py)");
+#else
         snprintf(u, sizeof u, "delta T_b^He [micro-K], %s", HE_REDSHIFT_SPACE ? "redshift space (3rd axis): x_HeII x SpectralDensity" : "real space");
+#endif
         a = H5Acreate2(dset_out, "content", st, sc, H5P_DEFAULT, H5P_DEFAULT); H5Awrite(a, st, u); H5Aclose(a);
         H5Tclose(st); H5Sclose(sc);
     }
@@ -805,16 +821,16 @@ static void read_header(int snapnum)
 
 /*#############################################################*/
 
-static void read_single_field(const char *field, double *dest, int snapnum,
-                               ptrdiff_t local_n0, ptrdiff_t local_0_start,
-                               float *buffer, myint length_vector)
+static void read_field_from(const char *dir, const char *field, double *dest, int snapnum,
+                            ptrdiff_t local_n0, ptrdiff_t local_0_start,
+                            float *buffer, myint length_vector)
 {
     /* <dir>/<field>/<field>_NNN.hdf5, else the combined <dir>/All/All_NNN.hdf5 */
     char fname[1024], dsetname[256];
     sprintf(dsetname, "/%s", field);
-    sprintf(fname, "%s/%s/%s_%03d.hdf5", inputfilename, field, field, snapnum);
+    sprintf(fname, "%s/%s/%s_%03d.hdf5", dir, field, field, snapnum);
     if (access(fname, R_OK) != 0)
-        sprintf(fname, "%s/All/All_%03d.hdf5", inputfilename, snapnum);
+        sprintf(fname, "%s/All/All_%03d.hdf5", dir, snapnum);
 
     hid_t fapl = H5Pcreate(H5P_FILE_ACCESS);
     H5Pset_fapl_mpio(fapl, MPI_COMM_WORLD, MPI_INFO_NULL);
@@ -860,6 +876,13 @@ static void read_single_field(const char *field, double *dest, int snapnum,
     H5Dclose(dataset);  H5Fclose(hdf5_file);
 }
 
+static void read_single_field(const char *field, double *dest, int snapnum,
+                               ptrdiff_t local_n0, ptrdiff_t local_0_start,
+                               float *buffer, myint length_vector)
+{
+    read_field_from(inputfilename, field, dest, snapnum, local_n0, local_0_start, buffer, length_vector);
+}
+
 static void read_data(int snapnum, int first, int last,
                       ptrdiff_t local_n0, ptrdiff_t local_0_start)
 {
@@ -889,9 +912,27 @@ static void read_data(int snapnum, int first, int last,
     fHeII_sig = malloc(length_vector * sizeof(double));
     read_single_field("HeII_Fraction",             fHeII_sig, snapnum, local_n0, local_0_start, buffer, length_vector);
 #endif
+#ifdef HE_RS_DIR
+    heII_rs = malloc(length_vector * sizeof(double));
+    read_field_from(HE_RS_DIR, "SpectralDensityHeII", heII_rs, snapnum, local_n0, local_0_start, buffer, length_vector);
+    {   /* the remap conserves mass: its mean must equal <Density x HeII_Fraction> */
+        double l[2] = {0.0, 0.0}, g[2];
+        for (myint j = 0; j < length_vector; j++) { l[0] += heII_rs[j]; l[1] += dset2[j] * dset6[j]; }
+        MPI_Allreduce(l, g, 2, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+        if (ThisTask == 0)
+            printf("Check: <SpectralDensityHeII>/<Density x %s> = %.6f (1 expected with mass-weighted fractions)\n",
+                   F_HEII_FIELD, g[1] > 0 ? g[0] / g[1] : 0.0);
+    }
+#endif
+#ifdef HE_RS_DIR
+    if (ThisTask == 0)
+        printf("Spin-temperature fields: %s, %s, %s, %s; signal: SpectralDensityHeII from %s (redshift space)\n",
+               F_HII_FIELD, T_FIELD, F_HEII_FIELD, F_HEIII_FIELD, HE_RS_DIR);
+#else
     if (ThisTask == 0)
         printf("Spin-temperature fields: %s, %s, %s, %s; signal: %s\n", F_HII_FIELD, T_FIELD, F_HEII_FIELD, F_HEIII_FIELD,
                HE_REDSHIFT_SPACE ? "HeII_Fraction/y x SpectralDensity (redshift space)" : "HeII_Fraction/y x Density (real space)");
+#endif
 
     free(buffer);
 }

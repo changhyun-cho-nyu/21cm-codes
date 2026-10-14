@@ -15,6 +15,8 @@
 # Spin-temperature inputs and (He) the signal convention are compile-time options of PS_3cm_mpi.c:
 #   EXTRA_CFLAGS="-DTS_VOLUME_WEIGHTED=1" (volume-weighted T, fractions)
 #   EXTRA_CFLAGS="-DHE_REDSHIFT_SPACE=0" (real-space He signal; default is redshift space like H)
+# HE_RS_DIR: directory of remap_rsd.py output (SpectralDensityHeII); when set, the He signal is the
+#   true redshift-space He II density instead of HeII_Fraction x SpectralDensity. Recompile after changing it.
 
 # -------------------------
 # Environment
@@ -22,6 +24,7 @@
 FFTW_PREFIX=/orcd/software/core/001/spack/pkg/fftw/3.3.10/2qziucy
 HDF5_PREFIX=/orcd/software/community/001/spack/pkg/hdf5/1.14.3/suffu3v
 EXTRA_CFLAGS=""
+HE_RS_DIR=""               # e.g. /orcd/data/mvogelsb/004/chcho/SpectralDensityHeII_root
 export LD_LIBRARY_PATH=$FFTW_PREFIX/lib:$HDF5_PREFIX/lib:$LD_LIBRARY_PATH
 export HDF5_PLUGIN_PATH=/home/chcho/.local/lib/python3.12/site-packages/hdf5plugin/plugins
 export OMP_NUM_THREADS=1
@@ -35,6 +38,7 @@ if [ "$1" = "compile" ]; then
         for l in "$d/lib" "$d/lib64"; do [ -d "$l" ] && LIBS="-L$l -Wl,-rpath,$l $LIBS"; done
     done
     # the code uses the HDF5 1.6 API names (H5Dopen/H5Gopen with 2 arguments)
+    [ -n "$HE_RS_DIR" ] && EXTRA_CFLAGS="$EXTRA_CFLAGS -DHE_RS_DIR=\"$HE_RS_DIR\""
     mpicc -O3 -fopenmp -DH5_USE_16_API $EXTRA_CFLAGS $INC PS_3cm_mpi.c functions.c collisions.c -o bin/PS_3cm_mpi $LIBS
     echo "built bin/PS_3cm_mpi (EXTRA_CFLAGS: ${EXTRA_CFLAGS:-none})   commit $(git rev-parse --short HEAD)"
     exit 0
