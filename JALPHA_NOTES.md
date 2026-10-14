@@ -179,6 +179,8 @@ Optional `-D` overrides: `SPECTRUM_FILE`, `Z_WEIGHTS_FILE`, `N_SNAPS`, and `F_ES
 
 The totals are J_α^H = J_alpha + Jalpha_AGN_H and J_α^He = J_alpha_He + Jalpha_AGN_He, on the same snapshot.
 
+**Production** (`run_Jalpha_prod.sh`): the same binaries, for the snapshot lists of the T_b scripts. `BAND=H` runs H stars + AGN-H for `run_21cm.sh`'s SNAPS (149 snapshots, 298 tasks, ~330 GB); `BAND=He` (with `TR_TAG`) runs He stars + AGN-He for `run_3cm.sh`'s. `bash run_Jalpha_prod.sh count` prints the sbatch line, `status` lists missing outputs. Existing outputs are skipped and each is written as `.part` and renamed on success, so resubmitting redoes only what is missing. Outputs in `/orcd/data/mvogelsb/004/chcho/Jalpha`; point `J_DIR` of the T_b scripts there.
+
 ### 4.4 Check scripts
 
 | Script | Question it answers |
