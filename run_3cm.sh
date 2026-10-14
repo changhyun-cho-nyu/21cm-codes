@@ -14,16 +14,17 @@
 #   2. mkdir -p logs && sbatch run_3cm.sh
 # Spin-temperature inputs and (He) the signal convention are compile-time options of PS_3cm_mpi.c:
 #   EXTRA_CFLAGS="-DTS_VOLUME_WEIGHTED=1" (volume-weighted T, fractions)
-#   EXTRA_CFLAGS="-DHE_REDSHIFT_SPACE=0" (real-space He signal; default is redshift space like H)
-# HE_RS_DIR: directory of remap_rsd.py output (SpectralDensityHeII); when set, the He signal is the
-#   true redshift-space He II density instead of HeII_Fraction x SpectralDensity. Recompile after changing it.
+#   EXTRA_CFLAGS="-DHE_REDSHIFT_SPACE=0" (real-space He signal: the choice made here; the renders have no
+#     redshift-space He II. Empty EXTRA_CFLAGS gives the code default, HeII_Fraction x SpectralDensity)
+# HE_RS_DIR: directory of remap_rsd.py output (SpectralDensityHeII); when set, the He signal is that
+#   approximate redshift-space He II density (overrides HE_REDSHIFT_SPACE). Recompile after changing it.
 
 # -------------------------
 # Environment
 # -------------------------
 FFTW_PREFIX=/orcd/software/core/001/spack/pkg/fftw/3.3.10/2qziucy
 HDF5_PREFIX=/orcd/software/community/001/spack/pkg/hdf5/1.14.3/suffu3v
-EXTRA_CFLAGS=""
+EXTRA_CFLAGS="-DHE_REDSHIFT_SPACE=0"
 HE_RS_DIR=""               # e.g. /orcd/data/mvogelsb/004/chcho/SpectralDensityHeII_root
 export LD_LIBRARY_PATH=$FFTW_PREFIX/lib:$HDF5_PREFIX/lib:$LD_LIBRARY_PATH
 export HDF5_PLUGIN_PATH=/home/chcho/.local/lib/python3.12/site-packages/hdf5plugin/plugins

@@ -12,8 +12,9 @@
 # 21 cm delta T_b maps (RIN_NNN.hdf5) and power spectra (PS_NNN.out)
 #   1. bash run_21cm.sh compile     (needs the MPI + FFTW + HDF5 modules: mpicc, fftw3-mpi.h, parallel hdf5.h)
 #   2. mkdir -p logs && sbatch run_21cm.sh
-# Spin-temperature inputs and (He) the signal convention are compile-time options of PS_21cm_mpi.c:
+# Spin-temperature inputs and the signal convention are compile-time options of PS_21cm_mpi.c:
 #   EXTRA_CFLAGS="-DTS_VOLUME_WEIGHTED=1" (volume-weighted T, fractions)
+#   EXTRA_CFLAGS="-DH_REDSHIFT_SPACE=0"   (real-space H I signal; default is redshift space, SpectralDensityHI)
 
 # -------------------------
 # Environment

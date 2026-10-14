@@ -36,7 +36,11 @@ inside a pixel than the density does. --qtest runs two checks:
 Usage
 -----
   python remap_rsd.py --dir <render_dir> --snap 220 --validate [--write-hi hi_220.hdf5]
-  python remap_rsd.py --dir <render_dir> --snap 220 --qtest
+  python remap_rsd.py --dir <render_dir> --snap 220 --qtest [--rsd]
+--rsd reports how large the redshift-space effect is (the He signal of the T_b maps is
+real space): P_rs/P_real and r(k) for the gas and H I (exact, from the render) and for
+He II from the q method, the plain remap and the shortcut, and P_rs/P_real for modes
+across (mu < 0.3) and along (mu > 0.7) the line of sight.
   python remap_rsd.py --dir <render_dir> --snap 220 --out <dir> [--conv km_s|sqrt_a|inv_sqrt_a]
 The second form writes <dir>/SpectralDensityHeII/SpectralDensityHeII_NNN.hdf5:
 dataset SpectralDensityHeII = remap(Density x HeII_Fraction), in Density units
@@ -119,8 +123,34 @@ def wpercentiles(x, w, ps=(0.01, 0.16, 0.5, 0.84, 0.99)):
     return [float(edges[min(np.searchsorted(c, p) + 1, edges.size - 1)]) for p in ps]
 
 
-def q_test(d, s, z, box, h, n, conv, rho):
-    """the q method and its two checks (see the module docstring); all densities in Density units"""
+def mu_split(name, rs, real, box, nbins=24):
+    """P_rs/P_real for modes across (mu < 0.3) and along (mu > 0.7) the line of sight (3rd axis)"""
+    n = real.shape[0]
+    Fa = np.fft.rfftn(real - real.mean(dtype=np.float64))
+    Fb = np.fft.rfftn(rs - rs.mean(dtype=np.float64))
+    kx = np.fft.fftfreq(n, 1.0 / n) * 2 * np.pi / box
+    kz = np.arange(n // 2 + 1) * 2 * np.pi / box
+    k = np.sqrt(kx[:, None, None]**2 + kx[None, :, None]**2 + kz[None, None, :]**2)
+    mu = np.divide(np.broadcast_to(kz[None, None, :], k.shape), k, out=np.zeros_like(k), where=k > 0)
+    edges = np.logspace(np.log10(2 * np.pi / box), np.log10(np.pi * n / box), nbins + 1)
+    b = np.digitize(k, edges) - 1
+    kc = np.sqrt(edges[1:] * edges[:-1])
+    del k
+    out = []
+    for lo, hi in ((0.0, 0.3), (0.7, 1.01)):
+        m = (mu >= lo) & (mu < hi) & (b >= 0) & (b < nbins)
+        bb = b[m]
+        Pa = np.bincount(bb, np.abs(Fa[m])**2, minlength=nbins)
+        Pb = np.bincount(bb, np.abs(Fb[m])**2, minlength=nbins)
+        sel = np.flatnonzero(Pa > 0)
+        pick = sorted({int(sel[np.argmin(abs(kc[sel] - q))]) for q in (0.05, 0.1, 0.3, 1.0)})
+        out.append(f"mu {lo:.1f}-{min(hi, 1.0):.1f}: " + " ".join(f"k={kc[i]:.2f}:{Pb[i] / Pa[i]:.3f}" for i in pick))
+    print(f"    {name:44s} P_rs/P_real  " + "   ".join(out))
+
+
+def q_test(d, s, z, box, h, n, conv, rho, checks=True, rsd=False):
+    """the q method and its two checks (see the module docstring); all densities in Density units.
+    rsd: also the size of the redshift-space effect, P_rs/P_real, for gas and H I (exact) and He II"""
     dz = vz_cells(d, s, z, box, h, n, conv)
     rho_s = load(d, "SpectralDensity", s, 1)
     hi_s = load(d, "SpectralDensityHI", s, 1)
@@ -129,50 +159,68 @@ def q_test(d, s, z, box, h, n, conv, rho):
     print(f"  q method, convention {conv}: min(0.76 SpectralDensity - SpectralDensityHI)/mean = "
           f"{hii_s.min() / hii_s.mean(dtype=np.float64):.2e} (>= 0 up to rounding; clipped at 0)")
     np.maximum(hii_s, 0.0, out=hii_s)
-
-    print("  check 1, H I analogue: remapped fraction x exact redshift-space density, vs SpectralDensityHI")
     hi = 0.76 * rho * (1.0 - xhii)
-    hi_r = remap(hi, dz)
-    compare("H I: shortcut 0.76 x_HI(real) x SpectralDensity", 0.76 * (1.0 - xhii) * rho_s, hi_s, box)
-    compare("H I: plain remap(0.76 Density x_HI)", hi_r, hi_s, box)
-    compare("H I: SpectralDensity x remap(H I)/remap(gas)", ratio(hi_r, remap(rho, dz)) * rho_s, hi_s, box)
-    del hi, hi_r, hi_s
+
+    if checks:
+        print("  check 1, H I analogue: remapped fraction x exact redshift-space density, vs SpectralDensityHI")
+        hi_r = remap(hi, dz)
+        compare("H I: shortcut 0.76 x_HI(real) x SpectralDensity", 0.76 * (1.0 - xhii) * rho_s, hi_s, box)
+        compare("H I: plain remap(0.76 Density x_HI)", hi_r, hi_s, box)
+        compare("H I: SpectralDensity x remap(H I)/remap(gas)", ratio(hi_r, remap(rho, dz)) * rho_s, hi_s, box)
+        del hi_r
 
     he = rho * load(d, "HeII_Fraction", s, 1)                         # He II (per H) x Density
     hii = 0.76 * rho * xhii                                           # real-space H II mass
     del xhii
     q_re = ratio(he, hii)                                             # = HeII_Fraction / (0.76 HII_Fraction)
-    sw = hii.sum(dtype=np.float64)
-    print("  check 2, smoothness of q, shown as n_HeII/(y n_HII) = HeII_Fraction/(y HII_Fraction) "
-          "(1 = all He as He II where H is ionized):")
-    print(f"    H II-mass-weighted mean = {he.sum(dtype=np.float64) / sw * 0.76 / Y:.4f};  "
-          "percentiles 1/16/50/84/99%: "
-          + " / ".join(f"{v:.3g}" for v in wpercentiles(q_re * (0.76 / Y), hii)))
-    for lo in (0.1, 0.5):
-        m = hii < lo * 0.76 * rho
-        print(f"    He II mass in pixels with x_HII < {lo}: {he[m].sum(dtype=np.float64) / he.sum(dtype=np.float64):.4f} "
-              f"(H II mass there {hii[m].sum(dtype=np.float64) / sw:.4f})")
-    del m
-    dq = np.roll(q_re, -1, axis=2) - q_re
-    dhe = np.roll(he, -1, axis=2) - he
-    wq = 0.5 * (hii + np.roll(hii, -1, axis=2))
-    sq = np.sqrt((wq * dq**2).sum(dtype=np.float64) / wq.sum(dtype=np.float64)) / (he.sum(dtype=np.float64) / sw)
-    she = np.sqrt((dhe.astype(np.float64)**2).mean()) / he.mean(dtype=np.float64)
-    print(f"    rms change between neighbouring pixels along z, over the mean: q {sq:.3f} (H II-weighted), "
-          f"He II density {she:.3f}")
-    del dq, dhe, wq
+    if checks:
+        sw = hii.sum(dtype=np.float64)
+        print("  check 2, smoothness of q, shown as n_HeII/(y n_HII) = HeII_Fraction/(y HII_Fraction) "
+              "(1 = all He as He II where H is ionized):")
+        print(f"    H II-mass-weighted mean = {he.sum(dtype=np.float64) / sw * 0.76 / Y:.4f};  "
+              "percentiles 1/16/50/84/99%: "
+              + " / ".join(f"{v:.3g}" for v in wpercentiles(q_re * (0.76 / Y), hii)))
+        for lo in (0.1, 0.5):
+            m = hii < lo * 0.76 * rho
+            print(f"    He II mass in pixels with x_HII < {lo}: {he[m].sum(dtype=np.float64) / he.sum(dtype=np.float64):.4f} "
+                  f"(H II mass there {hii[m].sum(dtype=np.float64) / sw:.4f})")
+        del m
+        dq = np.roll(q_re, -1, axis=2) - q_re
+        dhe = np.roll(he, -1, axis=2) - he
+        wq = 0.5 * (hii + np.roll(hii, -1, axis=2))
+        sq = np.sqrt((wq * dq**2).sum(dtype=np.float64) / wq.sum(dtype=np.float64)) / (he.sum(dtype=np.float64) / sw)
+        she = np.sqrt((dhe.astype(np.float64)**2).mean()) / he.mean(dtype=np.float64)
+        print(f"    rms change between neighbouring pixels along z, over the mean: q {sq:.3f} (H II-weighted), "
+              f"He II density {she:.3f}")
+        del dq, dhe, wq
 
     he_r = remap(he, dz)
     q_rs = ratio(he_r, remap(hii, dz))
     he_q = q_rs * hii_s                                               # the q method
-    tot = he.sum(dtype=np.float64)
-    print(f"    He II mass: q method / real = {he_q.sum(dtype=np.float64) / tot:.5f}, "
-          f"q_real x exact H II_s / real = {(q_re * hii_s).sum(dtype=np.float64) / tot:.5f}, "
-          f"plain remap / real = {he_r.sum(dtype=np.float64) / tot:.5f}")
-    print("    He fields against the q method (no exact reference exists; differences show the sensitivity):")
-    compare("He: q_real x exact H II_s (q not remapped)", q_re * hii_s, he_q, box, "q")
-    compare("He: plain remap(Density x HeII_Fraction)", he_r, he_q, box, "q")
-    compare("He: shortcut HeII_Fraction x SpectralDensity", ratio(he, rho) * rho_s, he_q, box, "q")
+    del q_rs, hii
+    he_sc = ratio(he, rho) * rho_s                                    # shortcut HeII_Fraction x SpectralDensity
+    if checks:
+        tot = he.sum(dtype=np.float64)
+        print(f"    He II mass: q method / real = {he_q.sum(dtype=np.float64) / tot:.5f}, "
+              f"q_real x exact H II_s / real = {(q_re * hii_s).sum(dtype=np.float64) / tot:.5f}, "
+              f"plain remap / real = {he_r.sum(dtype=np.float64) / tot:.5f}")
+        print("    He fields against the q method (no exact reference exists; differences show the sensitivity):")
+        compare("He: q_real x exact H II_s (q not remapped)", q_re * hii_s, he_q, box, "q")
+        compare("He: plain remap(Density x HeII_Fraction)", he_r, he_q, box, "q")
+        compare("He: shortcut HeII_Fraction x SpectralDensity", he_sc, he_q, box, "q")
+    del q_re
+
+    if rsd:
+        print("  size of the redshift-space effect: redshift-space field vs the same field in real space")
+        print("   (P_rs/P_real / r(k); gas and H I exact from the render, He II from the three constructions)")
+        compare("gas:   SpectralDensity vs Density", rho_s, rho, box, "real")
+        compare("H I:   SpectralDensityHI vs 0.76 Density x_HI", hi_s, hi, box, "real")
+        compare("He II: q method vs Density x HeII_Fraction", he_q, he, box, "real")
+        compare("He II: plain remap", he_r, he, box, "real")
+        compare("He II: shortcut", he_sc, he, box, "real")
+        print("   by angle to the line of sight (mu = k_z/k):")
+        mu_split("H I (exact)", hi_s, hi, box / 1000.0)
+        mu_split("He II (q method)", he_q, he, box / 1000.0)
 
 
 def main():
@@ -181,6 +229,8 @@ def main():
     p.add_argument("--snap", type=int, required=True)
     p.add_argument("--validate", action="store_true")
     p.add_argument("--qtest", action="store_true", help="test the q method (exact H II_s x remapped He II/H II)")
+    p.add_argument("--rsd", action="store_true", help="size of the redshift-space effect, P_rs/P_real, for gas, "
+                   "H I (exact) and He II (q method, plain remap, shortcut)")
     p.add_argument("--out", help="write SpectralDensityHeII here")
     p.add_argument("--write-hi", metavar="FILE", help="also save the reproduced SpectralDensityHI (best convention) here")
     p.add_argument("--conv", choices=list(CONVS), default="sqrt_a",
@@ -221,8 +271,8 @@ def main():
             print(f"  wrote {a.write_hi} (SpectralDensityHI_remap and SpectralDensityHI_render, same units)")
             del hi_r
         del rho_s, hi, hi_s
-    if a.qtest:
-        q_test(d, s, z, box, h, n, best, rho)
+    if a.qtest or a.rsd:
+        q_test(d, s, z, box, h, n, best, rho, checks=a.qtest, rsd=a.rsd)
     if a.out:
         dz = vz_cells(d, s, z, box, h, n, best)
         he = remap(rho * load(d, "HeII_Fraction", s, 1), dz)
