@@ -10,9 +10,9 @@
 #define MAXN 200000
 #define NSNAPS 709
 #define M_PI 3.14159265358979323846
-#define T_STAR   0.068            // K
+#define T_STAR   0.0681687        // K, h nu21 / k_B
 #define F_ALPHA  0.4162           // oscillator strength
-#define A10      2.85e-15         // s^-1
+#define A10      2.86888e-15      // s^-1
 
 #define E_CHARGE 4.80320425e-10   // statC (cgs)
 #define M_E      9.10938356e-28   // g

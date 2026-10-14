@@ -42,7 +42,8 @@ Test runs: `run_Jalpha_test.sh` (snapshots 156, 300, 406, 500). Checks: `check_*
   - J_α output: proper photons s⁻¹ cm⁻² Hz⁻¹ sr⁻¹.
   - AGN `LuminosityAGN` already includes f_esc(L), checked R = 0.1949. LUM_UNIT = 6.4459e36 erg/s.
   - Cosmology everywhere is Lumina / Planck 2018: h = 0.6766, Ω_m = 0.30964144, Ω_b = 0.048975, with h read from headers where possible.
-- **x_α prefactor:** 27 for H, **9 for ³He⁺**. The 9 is correct because the hyperfine levels are inverted. δT_b^He = 1.67 µK √((1+z)/10)(…), equal to the paper's 1.3 µK ((1+z)/6)^½ to rounding.
+- **x_α prefactor:** 27 for H, **9 for ³He⁺**. The 9 is correct because the hyperfine levels are inverted (checked against McQuinn & Switzer 2009, as are x_c^He with σ̄ = (14.3 eV/kT) a₀² and S_α^He ≈ 1).
+- **δT_b prefactors (2026-10-14):** the T_b codes use the exact optically thin τ T_S with H(z) including Λ (header OmegaLambda, else 0.6902672) and exact constants (T*₂₁ = 0.0681687 K, A₁₀ = 2.86888e-15 s⁻¹, T*_He = 0.4158856 K; [³He/H] = 1e-5). The textbook 27 mK / 1.67 µK √((1+z)/10) forms (matter-only H) are +1.3% / +2.4% high at z = 3, ≤ 0.5% / ≤ 1.0% at z ≥ 6. `global_snaps_clean.ipynb` still uses the textbook forms and the old T*, A₁₀ (to update in its rerun). The optical depth stays linear (δT_b ∝ τ, the usual approximation; |δT_b| ~4% high at mean density at z ≈ 20).
 - **T_b codes, defaults:** mass-weighted spin-temperature inputs (`-DTS_VOLUME_WEIGHTED=1` for the alternative).
   - **H in redshift space** (exact, SpectralDensityHI); `-DH_REDSHIFT_SPACE=0` gives real space, 0.76 Density (1 − HII_Fraction).
   - **He in real space** (decided 2026-10-13): the renders and light-cone have no redshift-space He II, so `run_3cm.sh` sets `-DHE_REDSHIFT_SPACE=0`. The PS, BS and VID comparisons of the H/He fractions are all real space. The code default (shortcut `HeII_Fraction × SpectralDensity`) and `HE_RS_DIR` (remap) remain only for tests.

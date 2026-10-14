@@ -228,6 +228,7 @@ Changes from the reviewed versions:
 - **Spin-temperature inputs** are the mass-weighted `HII_Fraction`, `Temperature`, `HeII_Fraction` and `HeIII_Fraction`; `-DTS_VOLUME_WEIGHTED=1` restores the volume-weighted fields. A field missing as `<field>/<field>_NNN.hdf5` is read from `All/All_NNN.hdf5`.
 - **Cosmology:** h comes from the header (it was 0.6774 hard-coded, which made n_H 0.24% high). Ω_m and Ω_b come from the header, or else Lumina's 0.30964 / 0.048975; the old Planck 2015 values put the prefactor +0.53% off.
 - **He prefactor:** 1.67/√10 µK, the same as `global_snaps_clean.ipynb`. It was 0.53, labelled mK.
+- **Exact prefactors (2026-10-14), both codes:** δT_b = τ T_S (1 − T_γ/T_S)/(1 + z) with τ T_S = 3c³h A₁₀ n_HI/(32π k ν² H(z)) for H and c³h A₁₀ n_³HeII/(32π k ν² H(z)) for ³He⁺ (inverted levels: n_l g_u/g_l = n/4), [³He/H] = 1e-5, H(z) with Λ. Constants: T*₂₁ = 0.0681687 K and A₁₀ = 2.86888e-15 s⁻¹ (were 0.068 and 2.85e-15: x_α and x_c 0.41% lower now), T*_He = 0.4158856 K, m_H = 1.6735575e-24 g. Tested against an independent calculation (astropy constants): 1.000000. Change from the textbook forms: H −1.3% (z = 3) to +0.4% (z ≥ 9), He −2.4% (z = 3) to −0.7% (z ≥ 15). The optical depth is kept linear.
 - **Checks** that abort the run:
   - every read is checked, and dataset shapes must be N³;
   - the J maps must be at the render's redshift;

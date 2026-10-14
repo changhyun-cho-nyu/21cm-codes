@@ -74,7 +74,14 @@
 typedef long long myint;
 
 #define M_PI      3.14159265358979323846
-#define T_STAR_HE 0.41569        /* hc / (k_B * 3.46 cm)   [K]    */
+#define T_STAR_HE 0.4158856      /* h nu_He / k_B, nu_He = 8665.649867 MHz [K] */
+#define NU_HE     8.665649867e9  /* Hz */
+#define HE3_H     1.0e-5         /* primordial [3He/H], the paper's normalisation */
+#define H_PLANCK  6.62607015e-27 /* erg s */
+#define K_BOLTZ   1.380649e-16   /* erg/K */
+#define G_GRAV    6.6743e-8      /* cm^3 g^-1 s^-2 */
+#define MPC_CM    3.0856776e24   /* cm */
+#define M_H       1.6735575e-24  /* g, hydrogen atom */
 #define A_10_HE   1.959e-12      /* spontaneous emission    [s^-1] */
 #define F_ALPHA_HE 0.4162        /* oscillator strength             */
 
@@ -147,6 +154,7 @@ static double constK  = 47229.765;
  * OmegaBaryon when present; h is always the header's HubbleParam (read_header). */
 static double omega_m = 0.30964144;
 static double omega_b = 0.048975;
+static double omega_l = 0.6902672;   /* header OmegaLambda when present; as the J_alpha codes */
 static double h       = 0.6766;
 #if TS_VOLUME_WEIGHTED
 static double *fHeII_sig = NULL;   /* mass-weighted HeII_Fraction, local slab, for the signal */
@@ -308,7 +316,7 @@ int main(int argc, char **argv)
 
     double HYDROGEN_MASSFRAC = 0.76;
     double y_frac            = (1.0 - HYDROGEN_MASSFRAC) / (4.0 * HYDROGEN_MASSFRAC);
-    double m_p               = 1.6738e-24;
+    double m_p               = M_H;
     double msol_cgs          = 1.98847e33;
     double yr_sec            = 3.15576e7;
 
@@ -320,11 +328,15 @@ int main(int argc, char **argv)
                        * E_CHARGE * E_CHARGE * F_ALPHA_HE)
                     / (9.0 * A_10_HE * tcmb * M_E * C_LIGHT);
 
-    /* HeII 3.46 cm brightness temperature prefactor [micro-K]:
-       1.67 uK ((1+z)/10)^1/2, as global_snaps_clean.ipynb */
-    double prefactor_He = 1.67 / sqrt(10.0)
-                        * (omega_b * h * h / 0.023)
-                        * sqrt((0.15 / (omega_m * h * h)) * (1.0 + z));
+    /* HeII 3.46 cm brightness temperature prefactor [micro-K]: delta T_b^He = prefactor x_HeII (1+delta)
+       (1 - T_gamma/T_S), from the optically thin tau T_S = c^3 h_P A10 n_3HeII / (32 pi k_B nu^2 H(z)) for the
+       inverted levels (lower F = 1: n_l g_u/g_l = n/4), with [3He/H] = 1e-5 and H(z) including Lambda.
+       (The 1.67 uK ((1+z)/10)^1/2 form assumes matter domination: +1.6% at z = 4, +2.4% at z = 3.) */
+    double H0_cgs  = 100.0 * h * 1.0e5 / MPC_CM;
+    double Hz_cgs  = H0_cgs * sqrt(omega_m * oneplusz3 + omega_l);
+    double nH_mean = HYDROGEN_MASSFRAC * omega_b * 3.0 * H0_cgs * H0_cgs / (8.0 * M_PI * G_GRAV) * oneplusz3 / M_H;
+    double prefactor_He = 1.0e6 * pow(C_LIGHT, 3) * H_PLANCK * A_10_HE * HE3_H * nH_mean
+                        / (32.0 * M_PI * K_BOLTZ * NU_HE * NU_HE * Hz_cgs * (1.0 + z));
 
     /* -------------------------------------------------------------- */
     /* Load precomputed J_alpha_He field from HDF5 (stars).           */
@@ -801,6 +813,7 @@ static void read_header(int snapnum)
         H5Aread(H5Aopen(grp,"UnitVelocity_in_cm_per_s",H5P_DEFAULT),H5T_NATIVE_DOUBLE, &VEL);
         if (H5Aexists(grp, "Omega0") > 0)      H5Aread(H5Aopen(grp, "Omega0",      H5P_DEFAULT), H5T_NATIVE_DOUBLE, &omega_m);
         if (H5Aexists(grp, "OmegaBaryon") > 0) H5Aread(H5Aopen(grp, "OmegaBaryon", H5P_DEFAULT), H5T_NATIVE_DOUBLE, &omega_b);
+        if (H5Aexists(grp, "OmegaLambda") > 0) H5Aread(H5Aopen(grp, "OmegaLambda", H5P_DEFAULT), H5T_NATIVE_DOUBLE, &omega_l);
         H5Gclose(grp); H5Fclose(file);
         NumSubhalos = 0; Numfiles = 1;
     }
@@ -814,6 +827,7 @@ static void read_header(int snapnum)
     MPI_Bcast(&NumSubhalos, 1, MPI_INT,    0, MPI_COMM_WORLD);
     MPI_Bcast(&omega_m,     1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
     MPI_Bcast(&omega_b,     1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&omega_l,     1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
     h = hubble;    /* unit conversions and the T_b prefactor use the render's own h */
     if (ThisTask == 0)
         printf("Cosmology: h = %.5f (header), Omega_m = %.6f, Omega_b = %.6f\n", h, omega_m, omega_b);

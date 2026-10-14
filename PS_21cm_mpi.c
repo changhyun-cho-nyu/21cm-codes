@@ -68,9 +68,15 @@
 typedef long long myint ;
 
 #define M_PI 3.14159265358979323846
-#define T_STAR   0.068            // K
+#define T_STAR   0.0681687        // K, h nu21 / k_B (nu21 = 1420.405751768 MHz)
 #define F_ALPHA  0.4162           // oscillator strength
-#define A10      2.85e-15         // s^-1
+#define A10      2.86888e-15      // s^-1, 21 cm Einstein coefficient
+#define NU21     1.420405751768e9 // Hz
+#define H_PLANCK 6.62607015e-27   // erg s
+#define K_BOLTZ  1.380649e-16     // erg/K
+#define G_GRAV   6.6743e-8        // cm^3 g^-1 s^-2
+#define MPC_CM   3.0856776e24     // cm
+#define M_H      1.6735575e-24    // g, hydrogen atom
 
 #define E_CHARGE 4.80320425e-10   // statC (cgs)
 #define M_E      9.10938356e-28   // g
@@ -140,6 +146,7 @@ static double constK  = 47229.765 ;
  * OmegaBaryon when present; h is always the header's HubbleParam (read_header). */
 static double omega_m = 0.30964144 ;
 static double omega_b = 0.048975 ;
+static double omega_l = 0.6902672 ;   /* header OmegaLambda when present; as the J_alpha codes */
 static double h       = 0.6766 ;
 
 static inline double T_CMB(double z)
@@ -243,7 +250,7 @@ int main(int argc, char **argv)
 
   double HYDROGEN_MASSFRAC = 0.76;
   double y_frac            = (1.0 - HYDROGEN_MASSFRAC) / (4.0 * HYDROGEN_MASSFRAC);
-  double m_p               = 1.6738e-24;
+  double m_p               = M_H;
   double msol_cgs          = 1.98847e33;
   double yr_sec            = 3.15576e7;
 
@@ -256,10 +263,14 @@ int main(int argc, char **argv)
      → proper hydrogen number density (cm^-3)               */
   double mass_to_nH = HYDROGEN_MASSFRAC * density_to_cgs / volume_cell * oneplusz3 / m_p;
 
-  /* 21cm prefactor — constant for this snapshot */
-  double prefactor_21cm = 27.0
-                        * (omega_b * h * h / 0.023)
-                        * sqrt((0.15 / (omega_m * h * h)) * ((1.0 + z) / 10.0));
+  /* 21cm prefactor [mK], constant for this snapshot: delta T_b = prefactor x_HI (1+delta) (1 - T_gamma/T_S),
+     from the optically thin tau T_S = 3 c^3 h_P A10 n_HI / (32 pi k_B nu21^2 H(z)) at the mean H density,
+     with H(z) including Lambda (the textbook 27 mK form assumes matter domination). */
+  double H0_cgs   = 100.0 * h * 1.0e5 / MPC_CM;
+  double Hz_cgs   = H0_cgs * sqrt(omega_m * oneplusz3 + omega_l);
+  double nH_mean  = HYDROGEN_MASSFRAC * omega_b * 3.0 * H0_cgs * H0_cgs / (8.0 * M_PI * G_GRAV) * oneplusz3 / M_H;
+  double prefactor_21cm = 1.0e3 * 3.0 * pow(C_LIGHT, 3) * H_PLANCK * A10 * nH_mean
+                        / (32.0 * M_PI * K_BOLTZ * NU21 * NU21 * Hz_cgs * (1.0 + z));
 
   /* -------------------------------------------------------
    * Load precomputed Jalpha_H field from HDF5.
@@ -781,6 +792,7 @@ static void read_header(int snapnum)
         H5Aread(H5Aopen(grp, "UnitVelocity_in_cm_per_s", H5P_DEFAULT), H5T_NATIVE_DOUBLE, &VEL);
         if (H5Aexists(grp, "Omega0") > 0)      H5Aread(H5Aopen(grp, "Omega0",      H5P_DEFAULT), H5T_NATIVE_DOUBLE, &omega_m);
         if (H5Aexists(grp, "OmegaBaryon") > 0) H5Aread(H5Aopen(grp, "OmegaBaryon", H5P_DEFAULT), H5T_NATIVE_DOUBLE, &omega_b);
+        if (H5Aexists(grp, "OmegaLambda") > 0) H5Aread(H5Aopen(grp, "OmegaLambda", H5P_DEFAULT), H5T_NATIVE_DOUBLE, &omega_l);
 
         H5Gclose(grp);
         H5Fclose(file);
@@ -799,6 +811,7 @@ static void read_header(int snapnum)
     MPI_Bcast(&NumSubhalos, 1, MPI_INT,    0, MPI_COMM_WORLD);
     MPI_Bcast(&omega_m,     1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
     MPI_Bcast(&omega_b,     1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&omega_l,     1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
     h = hubble;    /* unit conversions and the T_b prefactor use the render's own h */
     if (ThisTask == 0)
         printf("Cosmology: h = %.5f (header), Omega_m = %.6f, Omega_b = %.6f\n", h, omega_m, omega_b);
