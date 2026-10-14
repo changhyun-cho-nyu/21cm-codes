@@ -98,8 +98,10 @@ def main():
     p.add_argument("--validate", action="store_true")
     p.add_argument("--out", help="write SpectralDensityHeII here")
     p.add_argument("--write-hi", metavar="FILE", help="also save the reproduced SpectralDensityHI (best convention) here")
-    p.add_argument("--conv", choices=list(CONVS), default=None,
-                   help="velocity convention (default: the best one from the validation)")
+    p.add_argument("--conv", choices=list(CONVS), default="sqrt_a",
+                   help="velocity convention: v_pec = Velocities x sqrt(a) km/s (AREPO internal units) is the one "
+                        "that reproduces SpectralDensity / SpectralDensityHI on Lumina (P ratio 1.000, r = 1.000 "
+                        "for k < 1 h/cMpc at z = 7.6); --validate tests all three")
     a = p.parse_args()
     d, s = a.dir, a.snap
     z, box, h, n = header(d, s)
@@ -109,7 +111,7 @@ def main():
           + ", ".join(f"{k}={vh[k]}" for k in vh if any(t in k.lower() for t in ("vel", "unit", "time", "redshift"))))
     rho = load(d, "Density", s, 1)
     best = a.conv
-    if a.validate or best is None:
+    if a.validate:
         rho_s = load(d, "SpectralDensity", s, 1)
         hi = 0.76 * rho * (1.0 - load(d, "HII_Fraction", s, 1))
         hi_s = load(d, "SpectralDensityHI", s, 1)
@@ -122,8 +124,9 @@ def main():
             score[conv] = compare("gas:  remap(Density) vs SpectralDensity", remap(rho, dz), rho_s, box)
             compare("H I: remap(0.76 Density x_HI) vs SpectralDensityHI", remap(hi, dz), hi_s, box)
             del dz
-        best = best or max(score, key=lambda c: score[c])
-        print(f"  best convention (highest r near k = 1 for the gas): {best}")
+        auto = max(score, key=lambda c: score[c])
+        print(f"  best convention (highest r near k = 1 for the gas): {auto}"
+              + ("" if auto == best else f"   WARNING: --conv is {best}"))
         if a.write_hi:
             hi_r = remap(hi, vz_cells(d, s, z, box, h, n, best))
             with h5py.File(a.write_hi, "w") as f:
