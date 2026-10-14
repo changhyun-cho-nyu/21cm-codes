@@ -2,7 +2,7 @@
 #SBATCH --job-name=rsdHe
 #SBATCH --output=logs/remapQ_%A_%a.out
 #SBATCH --error=logs/remapQ_%A_%a.err
-#SBATCH --array=0-3
+#SBATCH --array=0-5
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
@@ -21,7 +21,7 @@
 
 RA=/orcd/data/mvogelsb/005/mkilab001/mvogelsblab003/Lab/Thesan-XL/Flagship_new/postprocessing/ren_640
 RB=/orcd/data/mvogelsb/005/mkilab001/mvogelsblab003/Lab/Thesan-XL/Flagship_below_z_4p75_new/postprocessing/ren_640
-SNAPS=(220 300 406 500)
+SNAPS=(220 300 406 500 600 700)
 
 source ~/.bashrc
 conda activate jupyter_env
