@@ -24,7 +24,7 @@ Physics (what the C codes are meant to do; T_c = T_K):
 Usage
 -----
   python check_Tb_maps.py --line H  --dir <ren_640> --snap 300 --J Jalpha_H_300.hdf5 --J Jalpha_AGN_H_300.hdf5 \\
-         --rin Tb_maps_prod/H/RIN_300.hdf5 [--real-space] [--ts-volume]
+         --rin Tb_maps_prod/H/RIN_300.hdf5 [--real-space] [--ts-volume] [--tk-ref 1e-3]
   python check_Tb_maps.py --line He --dir <ren_640> --snap 500 --J Jalpha_He_500_tr_sfmask.hdf5 \\
          --J Jalpha_AGN_He_500_tr_sfmask.hdf5 --rin Tb_maps_prod/He/RIN_500.hdf5 [--he-rs] [--ts-volume]
 The switches must match how the map was made (H: H_REDSHIFT_SPACE, default redshift space;
@@ -105,6 +105,9 @@ def main():
     p.add_argument("--real-space", action="store_true", help="H: map made with -DH_REDSHIFT_SPACE=0")
     p.add_argument("--he-rs", action="store_true", help="He: map made with the code default HE_REDSHIFT_SPACE=1")
     p.add_argument("--ts-volume", action="store_true", help="map made with -DTS_VOLUME_WEIGHTED=1")
+    p.add_argument("--tk-ref", type=float, metavar="THRESH",
+                   help="H: map made with -DTK_REFERENCE -DTK_REF_XTHRESH=THRESH (no-heating reference: "
+                        "T = T_CMB,0 (1+z)^2/(1+124.8) (1+delta)^(2/3) where x_HII < THRESH)")
     p.add_argument("--slabs", type=int, nargs="+", default=[0, 317, 636], help="first plane of each 4-plane slab")
     p.add_argument("--nplanes", type=int, default=4)
     p.add_argument("--tol", type=float, default=1e-4, help="max |C - here| / |here| allowed per cell (float32 maps: ~1e-7)")
@@ -169,6 +172,12 @@ def main():
         J = sum(dd[sl].astype(np.float64) for dd in Jd)
         nH = X_H * rho * rho_unit * (1.0 + z)**3 / M_H                     # proper cm^-3
         ne = nH * (xHII + fII + 2.0 * fIII)
+        if a.tk_ref is not None:
+            if a.line != "H":
+                sys.exit("--tk-ref is an option of the 21 cm code only")
+            ref = (xHII < a.tk_ref)
+            T = np.where(ref, 2.7255 * (1.0 + z)**2 / (1.0 + 124.8) * (rho / rho_mean)**(2.0 / 3.0), T)
+            print(f"  planes {sl.start}-{sl.stop - 1}: reference T in {ref.mean():.4f} of the cells")
         if a.line == "H":
             xHI = 1.0 - xHII
             S = np.exp(-0.803 * T**(-2.0 / 3.0) * (1e-6 * 3.0e5 * xHI * ((1.0 + z) / 7.0)**1.5)**(1.0 / 3.0))

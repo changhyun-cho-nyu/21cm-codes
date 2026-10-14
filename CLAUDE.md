@@ -21,7 +21,7 @@ Lumina is a 500 cMpc (338.3 cMpc/h) radiation-hydrodynamics simulation (Zier et 
 | He-band IGM absorption | `make_opacity_fields.py` → `compute_transmission_He.c` (+ `jalpha_transmission.h`) | `transmission_He_NNN.hdf5`; J He with `TRANS_DIR`, `TR_TAG` |
 | He II density in redshift space | `remap_rsd.py` (`run_remap_He.sh`) | `SpectralDensityHeII_NNN.hdf5` |
 | δT_b maps + power spectra | `PS_21cm_mpi.c`, `PS_3cm_mpi.c` (+ `functions.c`, `collisions.c`; `run_21cm.sh`, `run_3cm.sh`) | `RIN_NNN.hdf5`, `PS_NNN.out` |
-| Global signal | volume mean of the cell-by-cell RIN maps (decided 2026-10-14); `global_snaps_clean.ipynb` (mean-field) is retired | |
+| Global signal | volume mean of the cell-by-cell RIN maps (decided 2026-10-14); `global_snaps_clean.ipynb` (mean-field) is retired. No-heating reference: `TK_REF=1e-3` in `run_21cm.sh` (Eq. 27 anchor, JALPHA_NOTES §4.6) | |
 
 Test runs: `run_Jalpha_test.sh` (snapshots 156, 300, 406, 500). Checks: `check_*.py`, `bracket_Tb_He.py`, `check_tb_choices.py`.
 

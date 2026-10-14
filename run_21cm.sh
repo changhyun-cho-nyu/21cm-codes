@@ -24,6 +24,10 @@
 FFTW_PREFIX=/orcd/software/core/001/spack/pkg/fftw/3.3.10/2qziucy
 HDF5_PREFIX=/orcd/software/community/001/spack/pkg/hdf5/1.14.3/suffu3v
 EXTRA_CFLAGS="-DH_REDSHIFT_SPACE=0"
+TK_REF=""                  # no-heating reference: an x_HII threshold, e.g. 1e-3 (the default of the code option);
+                           # cells below it get T = T_CMB,0 (1+z)^2/(1+z_dec) (1+delta)^(2/3) (Zier+26 Eq. 27).
+                           # Non-empty: compile also builds bin/PS_21cm_mpi_tkref, the run uses it and writes to
+                           # ${OUT_DIR}_tkref<threshold>. Empty: the fiducial maps.
 export LD_LIBRARY_PATH=$FFTW_PREFIX/lib:$HDF5_PREFIX/lib:$LD_LIBRARY_PATH
 export HDF5_PLUGIN_PATH=/home/chcho/.local/lib/python3.12/site-packages/hdf5plugin/plugins
 export OMP_NUM_THREADS=1
@@ -39,9 +43,20 @@ if [ "$1" = "compile" ]; then
     # the code uses the HDF5 1.6 API names (H5Dopen/H5Gopen with 2 arguments)
     mpicc -O3 -fopenmp -DH5_USE_16_API $EXTRA_CFLAGS $INC PS_21cm_mpi.c functions.c collisions.c -o bin/PS_21cm_mpi $LIBS
     echo "built bin/PS_21cm_mpi (EXTRA_CFLAGS: ${EXTRA_CFLAGS:-none})   commit $(git rev-parse --short HEAD)"
+    if [ -n "$TK_REF" ]; then
+        mpicc -O3 -fopenmp -DH5_USE_16_API $EXTRA_CFLAGS -DTK_REFERENCE -DTK_REF_XTHRESH=$TK_REF $INC \
+            PS_21cm_mpi.c functions.c collisions.c -o bin/PS_21cm_mpi_tkref $LIBS
+        echo "$TK_REF" > bin/PS_21cm_mpi_tkref.thr
+        echo "built bin/PS_21cm_mpi_tkref (no-heating reference, x_HII < $TK_REF)"
+    fi
     exit 0
 fi
-[ -x bin/PS_21cm_mpi ] || { echo "run 'bash $0 compile' first"; exit 1; }
+BIN=bin/PS_21cm_mpi
+if [ -n "$TK_REF" ]; then
+    BIN=bin/PS_21cm_mpi_tkref
+    [ "$(cat bin/PS_21cm_mpi_tkref.thr 2>/dev/null)" = "$TK_REF" ] || { echo "bin/PS_21cm_mpi_tkref was not built with TK_REF = $TK_REF: run 'bash $0 compile'"; exit 1; }
+fi
+[ -x $BIN ] || { echo "run 'bash $0 compile' first"; exit 1; }
 
 # -------------------------
 # Paths
@@ -51,6 +66,7 @@ INPUT_NEW_DIR="/orcd/data/mvogelsb/005/mkilab001/mvogelsblab003/Lab/Thesan-XL/Fl
 J_DIR=/orcd/data/mvogelsb/004/chcho/Jalpha            # run_Jalpha_prod.sh outputs (BAND=H)
 OUT_DIR=/orcd/data/mvogelsb/004/chcho/Tb_maps_prod/H_real # production maps, real space (Tb_maps/: test-J maps;
                                                           # Tb_maps_prod/H: earlier redshift-space maps, if any)
+[ -n "$TK_REF" ] && OUT_DIR=${OUT_DIR}_tkref${TK_REF}
 mkdir -p "$OUT_DIR"
 
 # -------------------------
@@ -84,7 +100,7 @@ for SNAP in "${SNAPS[@]}"; do
     # resumable: a snapshot with both outputs is skipped; outputs are written as .part and renamed on success
     if [ -f "$OUT_DIR/PS_${SNAP}.out" ] && [ -f "$OUT_DIR/RIN_${SNAP}.hdf5" ]; then echo "done already, skipped"; continue; fi
     rm -f "$OUT_DIR/PS_${SNAP}.out.part" "$OUT_DIR/RIN_${SNAP}.hdf5.part"
-    if mpirun -np 1 bin/PS_21cm_mpi $SNAP $DIR $OUT_DIR/PS_${SNAP}.out.part $OUT_DIR/RIN_${SNAP}.hdf5.part 3 "$JALPHA_FILE" "$JALPHA_AGN_FILE"; then
+    if mpirun -np 1 $BIN $SNAP $DIR $OUT_DIR/PS_${SNAP}.out.part $OUT_DIR/RIN_${SNAP}.hdf5.part 3 "$JALPHA_FILE" "$JALPHA_AGN_FILE"; then
         mv "$OUT_DIR/PS_${SNAP}.out.part" "$OUT_DIR/PS_${SNAP}.out"; mv "$OUT_DIR/RIN_${SNAP}.hdf5.part" "$OUT_DIR/RIN_${SNAP}.hdf5"
         echo "finished snapshot $SNAP"
     else

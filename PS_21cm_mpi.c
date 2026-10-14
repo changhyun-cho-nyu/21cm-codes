@@ -65,6 +65,21 @@
 #define H_REDSHIFT_SPACE 1
 #endif
 
+/* TK_REFERENCE (off by default): the no-heating reference. In cells with x_HII < TK_REF_XTHRESH
+ * (default 1e-3, the neutral-gas criterion of Zier+26 App. B) the gas temperature used for the
+ * spin temperature (x_c, S_alpha, T_S) is replaced by the adiabatic temperature of unheated gas,
+ *     T_ref = T_CMB,0 (1+z)^2 / (1+z_dec) x (1+delta)^(2/3),   z_dec = 124.8,
+ * Lumina's own initial-condition law (Zier+26 Eq. 27: 54.17 K at z_init = 49) with adiabatic
+ * compression of each cell (1+delta = Density/<Density>). Other cells keep the simulated T.
+ * x_HII is the field the spin temperature uses (F_HII_FIELD). Everything else is unchanged. */
+#ifdef TK_REFERENCE
+#ifndef TK_REF_XTHRESH
+#define TK_REF_XTHRESH 1e-3
+#endif
+#define TK_REF_ZDEC  124.8
+#define TK_REF_TCMB0 2.7255
+#endif
+
 typedef long long myint ;
 
 #define M_PI 3.14159265358979323846
@@ -322,6 +337,15 @@ int main(int argc, char **argv)
   double d_rin       = 0.0, d_rin_min   =  1e300, d_rin_max   = -1e300;
   double d_overdense = 0.0;
   long   d_ncells    = 0, d_nHI_zero = 0, d_Ts_neg = 0;
+  long   d_ref_cells = 0;                       /* TK_REFERENCE diagnostics (zero otherwise) */
+  double d_ref_HI    = 0.0, d_all_HI = 0.0;
+#ifdef TK_REFERENCE
+  const double tk_ref_mean    = TK_REF_TCMB0 * (1.0 + z) * (1.0 + z) / (1.0 + TK_REF_ZDEC); /* K, at mean density */
+  const double mean_mass_cell = global_gas * volume_cell;                                   /* sim units */
+  if (ThisTask == 0)
+    printf("TK_REFERENCE: T = %.4f K (1+delta)^(2/3) [Zier+26 Eq. 27, z_dec = %.1f] where %s < %g\n",
+           tk_ref_mean, TK_REF_ZDEC, F_HII_FIELD, (double)TK_REF_XTHRESH);
+#endif
 
   for (int i = 0; i < local_n0; ++i)
     for (int j = 0; j < N; ++j)
@@ -330,7 +354,8 @@ int main(int argc, char **argv)
         #pragma omp parallel for schedule(static) \
             reduction(+:local_totmass,local_totmass2,local_volume,nzerocells, \
                         d_nH,d_Tgas,d_fHI,d_Jalpha,d_xa,d_xc,d_Tspin, \
-                        d_sf,d_rin,d_overdense,d_ncells,d_nHI_zero,d_Ts_neg) \
+                        d_sf,d_rin,d_overdense,d_ncells,d_nHI_zero,d_Ts_neg, \
+                        d_ref_cells,d_ref_HI,d_all_HI) \
             reduction(min:d_nH_min,d_Tgas_min,d_Jalpha_min,d_xa_min, \
                           d_xc_min,d_Tspin_min,d_sf_min,d_rin_min) \
             reduction(max:d_nH_max,d_Tgas_max,d_Jalpha_max,d_xa_max, \
@@ -345,6 +370,13 @@ int main(int argc, char **argv)
 
             double value2 = input_data2(local_0_start+i, j, k); // Gas temperature
             double value4 = input_data4(local_0_start+i, j, k); // f_HII
+#ifdef TK_REFERENCE
+            if (value4 < TK_REF_XTHRESH) {             /* adiabatic reference temperature (see TK_REFERENCE) */
+                value2 = tk_ref_mean * cbrt(pow(value1 / mean_mass_cell, 2));
+                d_ref_cells++; d_ref_HI += value1 * (1.0 - value4);
+            }
+            d_all_HI += value1 * (1.0 - value4);
+#endif
 
             double f_HI        = 1.0 - value4;
             double num_HII_cgs = value4 * num_H_cgs;
@@ -411,6 +443,16 @@ int main(int argc, char **argv)
           }
       }
 
+#ifdef TK_REFERENCE
+  {
+    long gc; double gh[2], lh[2] = {d_ref_HI, d_all_HI};
+    MPI_Allreduce(&d_ref_cells, &gc, 1, MPI_LONG, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(lh, gh, 2, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    if (ThisTask == 0)
+      printf("TK_REFERENCE: replaced in %.4f of the cells, holding %.4f of the H I mass\n",
+             (double)gc / ((double)N * N * N), gh[1] > 0 ? gh[0] / gh[1] : 0.0);
+  }
+#endif
   /* --- MPI reductions for diagnostics --- */
   {
     double ls[10] = { d_nH, d_Tgas, d_fHI, d_Jalpha, d_xa,
@@ -558,8 +600,15 @@ int main(int argc, char **argv)
     hid_t a = H5Acreate2(dset, "Redshift", H5T_NATIVE_DOUBLE, sc, H5P_DEFAULT, H5P_DEFAULT);
     H5Awrite(a, H5T_NATIVE_DOUBLE, &zz); H5Aclose(a);
     hid_t st = H5Tcopy(H5T_C_S1); H5Tset_size(st, 128);
-    char u[128] = H_REDSHIFT_SPACE ? "delta T_b [mK], real-space spin factor x redshift-space H I density"
-                                   : "delta T_b [mK], real space";
+    char u[128];
+    snprintf(u, sizeof u, "%s%s", H_REDSHIFT_SPACE ? "delta T_b [mK], real-space spin factor x redshift-space H I density"
+                                                    : "delta T_b [mK], real space",
+#ifdef TK_REFERENCE
+             "; adiabatic reference T_K (Eq. 27) where x_HII < TK_REF_XTHRESH"
+#else
+             ""
+#endif
+             );
     a = H5Acreate2(dset, "content", st, sc, H5P_DEFAULT, H5P_DEFAULT); H5Awrite(a, st, u); H5Aclose(a);
     H5Tclose(st); H5Sclose(sc);
   }
