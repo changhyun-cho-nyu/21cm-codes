@@ -32,6 +32,12 @@ Test runs: `run_Jalpha_test.sh` (snapshots 156, 300, 406, 500). Checks: `check_*
   - `SpectralDensityHI` is the H I mass density (X = 0.76 included) remapped along +z, the 3rd axis. On Lumina, Σ SpectralDensityHI/0.76 = Σ Density·(1 − HII_Fraction) to 1e-5.
   - `SpectralDensity` is the gas density remapped along +z.
   - `Velocities` is (640,640,640,3) in AREPO internal units: **v_pec = Velocities × √a km/s**. Validated: the remap reproduces SpectralDensity and SpectralDensityHI.
+- **How the renders are made** (AREPO `src/reionization_movie/RT_movie_3D_rendering.cc`, in `/Users/chcho/arepo`; Zier+26 §9.3):
+  - each gas cell is a cube of its own volume, deposited by overlap (adaptive CIC); `Spectral*` fields shift each cell by its own v_pec/(aH) along +z;
+  - star-forming (Sfr > 0) gas: MassHI = Mass, He II = He III = 0, so it is neutral in both `SpectralDensityHI` and `HII_Fraction`;
+  - native grids are 1280³ (2560³ for Density, HII_Fraction and SpectralDensityHI as 8 sub-cells); `ren_640` is downsampled;
+  - there are 32 full snapshots (from z = 23), from which an exact SpectralDensityHeII could be rebuilt;
+  - below z = 4.75, H and He I come from a uniform UVB (FG09) and only AGN are RT sources.
 - **Units:**
   - J_α output: proper photons s⁻¹ cm⁻² Hz⁻¹ sr⁻¹.
   - AGN `LuminosityAGN` already includes f_esc(L), checked R = 0.1949. LUM_UNIT = 6.4459e36 erg/s.
@@ -56,6 +62,7 @@ Test runs: `run_Jalpha_test.sh` (snapshots 156, 300, 406, 500). Checks: `check_*
    - gas power is within about 1% for k ≲ 0.3 h/cMpc, a few % at k ≈ 1 (9% at z = 4), and poor at k ≳ 2.
    - It is an approximation: grid-cell mean velocities, not the render's own gas cells.
    - The exact route is to ask the render team for `SpectralDensityHeII`, the same as `SpectralDensityHI` with He II mass.
+   - Candidate better approximation, under test (`sbatch run_remap_qtest.sh`): the q method, exact redshift-space H II (0.76 SpectralDensity − SpectralDensityHI) × remapped He II/H II.
    - Otherwise run `sbatch run_remap_He.sh`, then set `HE_RS_DIR` in `run_3cm.sh`.
    - An optional improvement is a line-of-sight spread from `VelocitySquared`.
 2. **Production J_α:** opacity → transmission (`run_opacity.sh`, `run_transmission.sh`, with SF_MASK=1). Use the mfp912 lines to decide on `LLS_A`. Then the He J runs with `TRANS_DIR`.
