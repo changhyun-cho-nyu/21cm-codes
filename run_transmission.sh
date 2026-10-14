@@ -2,7 +2,6 @@
 #SBATCH --job-name=transHe
 #SBATCH --output=logs/trans_%A_%a.out
 #SBATCH --error=logs/trans_%A_%a.err
-#SBATCH --array=0-3
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=64
@@ -14,12 +13,14 @@
 #
 # He II Lyman-band IGM transmission for the J_alpha^He snapshots (needs run_opacity.sh first).
 #   1. bash run_transmission.sh compile
-#   2. mkdir -p logs && sbatch run_transmission.sh
+#   2. bash run_transmission.sh count    (prints the sbatch --array line for SNAPS)
+#   3. mkdir -p logs && sbatch --array=0-<N-1>%8 run_transmission.sh   (existing outputs are skipped)
 # Each task also prints the simulation's own mean free paths at its snapshot: at 912 A (mfp912 mode), to
 # compare with observations (Worseck+14, Becker+21), and in the He band (mfpE mode), lambda_E, which sets
 # the LLS term: 1/lambda_912,extra = 1/lambda_912,obs - r/lambda_E,sim with r = 1.59 (JALPHA_NOTES 4.5).
 
-SNAPS=(156 300 406 500)
+SNAPS=()                   # empty: the snapshot list of run_3cm.sh (its uncommented SNAPS block);
+                           # or a list, e.g. SNAPS=(156 300 406 500) for the tests
 OPA=/orcd/data/mvogelsb/004/chcho/opacity_He       # run_opacity.sh output
 TRANS=/orcd/data/mvogelsb/004/chcho/transmission_He
 HDF5_PREFIX=                                       # set if hdf5.h is not found (see run_Jalpha_test.sh)
@@ -62,7 +63,14 @@ if [ "$1" = "compile" ]; then
     exit 0
 fi
 
-[ -n "$SLURM_ARRAY_TASK_ID" ] || { echo "submit with sbatch (or run: bash $0 compile)"; exit 1; }
+[ ${#SNAPS[@]} -gt 0 ] || SNAPS=($(sed -n '/^SNAPS=(/,/)/p' run_3cm.sh | sed 's/#.*//' | tr -d 'SNAPS=()'))
+if [ "$1" = "count" ]; then
+    echo "${#SNAPS[@]} snapshots (${SNAPS[0]} .. ${SNAPS[${#SNAPS[@]}-1]}); ~1.5 GB each"
+    echo "submit:  mkdir -p logs && sbatch --array=0-$(( ${#SNAPS[@]} - 1 ))%8 run_transmission.sh"
+    exit 0
+fi
+[ -n "$SLURM_ARRAY_TASK_ID" ] || { echo "submit with sbatch --array (see 'bash $0 count'), or run: bash $0 compile"; exit 1; }
+[ "$SLURM_ARRAY_TASK_ID" -lt ${#SNAPS[@]} ] || { echo "task $SLURM_ARRAY_TASK_ID >= ${#SNAPS[@]} snapshots: nothing to do"; exit 0; }
 [ -x bin/transmission_He ] || { echo "run 'bash $0 compile' first"; exit 1; }
 [ "$(cat bin/transmission_He.LLS_A 2>/dev/null)" = "$LLS_A $LLS_SLOPE $LLS_ZMIN $LLS_ZMAX" ] || \
     { echo "bin/transmission_He was built with LLS (A slope zmin zmax) = $(cat bin/transmission_He.LLS_A 2>/dev/null || echo '?'), the script says $LLS_A $LLS_SLOPE $LLS_ZMIN $LLS_ZMAX: run 'bash $0 compile' again"; exit 1; }
@@ -77,11 +85,20 @@ SNAP=${SNAPS[$SLURM_ARRAY_TASK_ID]}
 mkdir -p "$TRANS"
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 echo "snap $SNAP  host $(hostname)  $(date)  commit $(git rev-parse --short HEAD)"
-# the target snapshot itself must have an opacity file (EVERY grid): use the nearest one if not
-if [ ! -f "$OPA/opacity_$(printf %03d $SNAP).hdf5" ]; then
-    echo "ERROR: $OPA/opacity_$(printf %03d $SNAP).hdf5 missing (run_opacity.sh with EVERY that includes it)"; exit 1
+S3=$(printf %03d $SNAP); OUTF="$TRANS/transmission_He_$S3.hdf5"
+[ -f "$OUTF" ] && { echo "$OUTF exists, skipped"; exit 0; }
+# the target snapshot itself needs an opacity file; run_opacity.sh makes every EVERY-th one, so an odd
+# snapshot of the T_b list is made here (same settings), in a private directory and then moved in, so
+# that other tasks scanning $OPA never see a half-written file
+if [ ! -f "$OPA/opacity_$S3.hdf5" ]; then
+    conda activate jupyter_env                    # h5py for make_opacity_fields.py
+    FAC=$(python -c "import h5py,glob; print(int(h5py.File(sorted(glob.glob('$OPA/opacity_*.hdf5'))[0],'r').attrs['factor']))")
+    echo "making $OPA/opacity_$S3.hdf5 (factor $FAC, sf_mask $SF_MASK)"
+    TMP="$OPA/.tmp_$S3"; rm -rf "$TMP"; mkdir -p "$TMP"
+    python -u make_opacity_fields.py --out "$TMP" --snaps $SNAP $SNAP --every 1 --factor $FAC $([ "$SF_MASK" = 1 ] && echo --sf-mask)
+    mv "$TMP/opacity_$S3.hdf5" "$OPA/opacity_$S3.hdf5" && rmdir "$TMP"
 fi
 bin/transmission_He $SNAP "$OPA" mfp912
-bin/transmission_He $SNAP "$OPA" mfpE        # He-band lambda_E: what the LLS calibration needs
-bin/transmission_He $SNAP "$OPA" "$TRANS/transmission_He_$(printf %03d $SNAP).hdf5"
+bin/transmission_He $SNAP "$OPA" mfpE        # He-band lambda_E (diagnostic; LLS_A = 0 is the choice made)
+bin/transmission_He $SNAP "$OPA" "$OUTF.part" && mv "$OUTF.part" "$OUTF"
 echo "done $(date)"
