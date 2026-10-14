@@ -82,7 +82,8 @@ typedef long long myint;
 #define G_GRAV    6.6743e-8      /* cm^3 g^-1 s^-2 */
 #define MPC_CM    3.0856776e24   /* cm */
 #define M_H       1.6735575e-24  /* g, hydrogen atom */
-#define A_10_HE   1.959e-12      /* spontaneous emission    [s^-1] */
+#define A_10_HE   1.95434e-12     /* spontaneous emission [s^-1]: 3 (nu_He/nu_21)^3 A_21 (electron-spin M1, g_u = 1);
+                                    McQuinn & Switzer 2009: 1.95e-12, Bagla & Loeb 2009: 1.96e-12 */
 #define F_ALPHA_HE 0.4162        /* oscillator strength             */
 
 #define E_CHARGE  4.80320425e-10 /* statC (cgs) */

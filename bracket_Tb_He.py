@@ -15,7 +15,8 @@ Physics as in global_snaps_clean.ipynb (compute_temperatures, He part):
     S_alpha = exp(-0.803 T_K^(-2/3) (1e-6 tau_GP)^(1/3)), tau_GP = 6e3 x_HeII ((1+z)/7)^1.5
     x_c     = T*_He kappa / (A10_He T_g),  kappa = n_e sqrt(8 k T_K / (pi m_e c^2)) c (14.3 eV / k T_K) a0^2
     T_S     = (1 + x_alpha + x_c) / (1/T_g + (x_alpha + x_c)/T_K)            (T_C = T_K)
-    dT_b    = 1.67 uK x_HeII (rho/<rho>) (Omega_b h^2/0.023) sqrt(0.15 (1+z) / (Omega_m h^2 10)) (1 - T_g/T_S)
+    dT_b    = P(z) x_HeII (rho/<rho>) (1 - T_g/T_S),  P(z) = 1e6 c^3 h A10 [3He/H] <n_H> / (32 pi k nu^2 H(z) (1+z)) uK
+              (the exact optically thin form, H(z) with Lambda, [3He/H] = 1e-5, as PS_3cm_mpi.c)
 x_HeII is per He nucleus; the render's HeII_Fraction is taken per H nucleus
 (as means_HeII in the notebook) unless its maximum exceeds 0.2.
 
@@ -39,16 +40,21 @@ try:
 except ImportError:
     pass
 
-# constants (cgs), as in the notebook
-K_B, M_E, C, E_CGS, M_P = 1.380649e-16, 9.1093837e-28, 2.99792458e10, 4.80320425e-10, 1.67262192e-24
+# constants (cgs), as in PS_3cm_mpi.c
+K_B, M_E, C, E_CGS = 1.380649e-16, 9.1093837e-28, 2.99792458e10, 4.80320425e-10
+M_P = 1.6735575e-24                          # g, hydrogen atom (as the C codes)
 H_PL = 6.62607015e-27
 A0 = 5.29177e-9
-T_STAR_HE = H_PL * C / (K_B * 3.46)          # K
-A10_HE = 1.959e-12                           # s^-1
+NU_HE = 8.665649867e9                        # Hz
+T_STAR_HE = H_PL * NU_HE / K_B               # K
+A10_HE = 1.95434e-12                         # s^-1, 3 (nu_He/nu_21)^3 A_21
+HE3_H = 1.0e-5
+G_GRAV, MPC_CM = 6.6743e-8, 3.0856776e24
+OMEGA_L = 0.6902672
 F_ALPHA = 0.4162
 X_H, Y_HE = 0.76, 0.24 / (4.0 * 0.76)        # H mass fraction, He/H by number
-RHO_CONV = 3.0991811197281837e-22            # code density -> g/cm^3 (comoving), as in the notebook
-OMEGA_M, OMEGA_B, H_LITTLE = 0.30964144, 0.04897, 0.6766
+RHO_CONV = 3.0991811197281837e-22            # code density -> g/cm^3 (comoving); used only if the header lacks the units
+OMEGA_M, OMEGA_B, H_LITTLE = 0.30964144, 0.048975, 0.6766
 
 def find_3d(f):
     names = [k for k in f if isinstance(f[k], h5py.Dataset) and f[k].ndim == 3]
@@ -66,6 +72,9 @@ def main():
 
     fr = h5py.File(args.render, "r")
     z = float(fr["Header"].attrs["Redshift"])
+    hdr = fr["Header"].attrs
+    rho_conv = (float(hdr["UnitMass_in_g"]) * float(hdr["HubbleParam"])**2 / float(hdr["UnitLength_in_cm"])**3
+                if all(k in hdr for k in ("UnitMass_in_g", "UnitLength_in_cm", "HubbleParam")) else RHO_CONV)
     N = fr["Density"].shape[0]
     Jf = [h5py.File(fn, "r") for fn in args.J]
     Jd = [f[find_3d(f)] for f in Jf]
@@ -87,9 +96,12 @@ def main():
     print(f"render {args.render}\n  z = {z:.4f}, N = {N}, max HeII_Fraction = {hemax:.3f} "
           f"-> taken per {'He' if per_he else 'H'} nucleus")
 
-    Tg = 2.725 * (1.0 + z)
+    Tg = 2.7255 * (1.0 + z)
     pre_a = 16.0 * np.pi**2 * T_STAR_HE * E_CGS**2 * F_ALPHA / (9.0 * A10_HE * Tg * M_E * C)
-    amp = 1.67 * (OMEGA_B * H_LITTLE**2 / 0.023) * np.sqrt(0.15 * (1.0 + z) / (OMEGA_M * H_LITTLE**2 * 10.0))
+    H0 = 100.0 * H_LITTLE * 1e5 / MPC_CM
+    Hz = H0 * np.sqrt(OMEGA_M * (1.0 + z)**3 + OMEGA_L)
+    nH_mean = X_H * OMEGA_B * 3.0 * H0**2 / (8.0 * np.pi * G_GRAV) * (1.0 + z)**3 / M_P
+    amp = 1e6 * C**3 * H_PL * A10_HE * HE3_H * nH_mean / (32.0 * np.pi * K_B * NU_HE**2 * Hz * (1.0 + z))   # uK
 
     out = h5py.File(args.write, "w") if args.write else None
     if out:
@@ -111,7 +123,7 @@ def main():
         J = sum(d[sl].astype(np.float64) for d in Jd)
         J = np.maximum(J, 0.0)
 
-        n_H = X_H * rho * RHO_CONV * (1.0 + z)**3 / M_P          # proper cm^-3
+        n_H = X_H * rho * rho_conv * (1.0 + z)**3 / M_P          # proper cm^-3
         n_e = n_H * (xHII + fII + 2.0 * fIII)
         kappa = n_e * np.sqrt(8.0 * K_B * T / (np.pi * M_E * C**2)) * C * (2.291112e-11 / (K_B * T)) * A0**2
         x_c = T_STAR_HE * kappa / (A10_HE * Tg)
