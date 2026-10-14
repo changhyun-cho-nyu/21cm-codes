@@ -224,7 +224,8 @@ Changes from the reviewed versions:
   - There is no He II density in redshift space, so this multiplies the real-space fraction by the redshift-space gas density. That is exact where x_HeII is uniform over the velocity displacement (~1–3 cells).
   - `check_tb_choices.py` measures the error using the H I analogue, for which the exact map exists.
   - `-DHE_REDSHIFT_SPACE=0` gives real space. **Decided (2026-10-13): He is real space**, set in `run_3cm.sh`; the renders and light-cone have no redshift-space He II. The paper's real-space sentence stays. `remap_rsd.py --rsd` measures how large the redshift-space effect on He would be.
-- **H signal switch:** `-DH_REDSHIFT_SPACE=0` in `PS_21cm_mpi.c` gives real-space H, 0.76 Density (1 − HII_Fraction) (mass-weighted). The default is redshift space (SpectralDensityHI).
+- **H signal switch:** `-DH_REDSHIFT_SPACE=0` in `PS_21cm_mpi.c` gives real-space H, 0.76 Density (1 − HII_Fraction) (mass-weighted). The code default is redshift space (SpectralDensityHI).
+  - **Decided 2026-10-14: real space** (`run_21cm.sh`, maps in `Tb_maps_prod/H_real`). The default puts the spin factor (1 − T_γ/T_S) of the real-space pixel on the H I that the velocity shift moved there from 1–3 pixels away, so it is neither exact nor consistent; real space is exact and matches the real-space He maps.
 - **He S_α** uses the He II Gunn–Peterson depth 6×10³ x_HeII((1+z)/7)^1.5, as in the paper. It was the H I depth.
 - **Spin-temperature inputs** are the mass-weighted `HII_Fraction`, `Temperature`, `HeII_Fraction` and `HeIII_Fraction`; `-DTS_VOLUME_WEIGHTED=1` restores the volume-weighted fields. A field missing as `<field>/<field>_NNN.hdf5` is read from `All/All_NNN.hdf5`.
 - **Cosmology:** h comes from the header (it was 0.6774 hard-coded, which made n_H 0.24% high). Ω_m and Ω_b come from the header, or else Lumina's 0.30964 / 0.048975; the old Planck 2015 values put the prefactor +0.53% off.

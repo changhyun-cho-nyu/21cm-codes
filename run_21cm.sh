@@ -14,14 +14,16 @@
 #   2. mkdir -p logs && sbatch run_21cm.sh   (resumable: resubmit to finish snapshots a 24 h job did not reach)
 # Spin-temperature inputs and the signal convention are compile-time options of PS_21cm_mpi.c:
 #   EXTRA_CFLAGS="-DTS_VOLUME_WEIGHTED=1" (volume-weighted T, fractions)
-#   EXTRA_CFLAGS="-DH_REDSHIFT_SPACE=0"   (real-space H I signal; default is redshift space, SpectralDensityHI)
+#   EXTRA_CFLAGS="-DH_REDSHIFT_SPACE=0"   (real-space H I signal: the choice made here, 2026-10-14, so that every
+#     factor of delta T_b belongs to the same gas and H matches the real-space He maps. Empty EXTRA_CFLAGS gives
+#     the code default: SpectralDensityHI (redshift space) x the spin factor of the real-space pixel)
 
 # -------------------------
 # Environment
 # -------------------------
 FFTW_PREFIX=/orcd/software/core/001/spack/pkg/fftw/3.3.10/2qziucy
 HDF5_PREFIX=/orcd/software/community/001/spack/pkg/hdf5/1.14.3/suffu3v
-EXTRA_CFLAGS=""
+EXTRA_CFLAGS="-DH_REDSHIFT_SPACE=0"
 export LD_LIBRARY_PATH=$FFTW_PREFIX/lib:$HDF5_PREFIX/lib:$LD_LIBRARY_PATH
 export HDF5_PLUGIN_PATH=/home/chcho/.local/lib/python3.12/site-packages/hdf5plugin/plugins
 export OMP_NUM_THREADS=1
@@ -47,7 +49,8 @@ fi
 INPUT_DIR="/orcd/data/mvogelsb/005/mkilab001/mvogelsblab003/Lab/Thesan-XL/Flagship_new/postprocessing/ren_640/"
 INPUT_NEW_DIR="/orcd/data/mvogelsb/005/mkilab001/mvogelsblab003/Lab/Thesan-XL/Flagship_below_z_4p75_new/postprocessing/ren_640/"
 J_DIR=/orcd/data/mvogelsb/004/chcho/Jalpha            # run_Jalpha_prod.sh outputs (BAND=H)
-OUT_DIR=/orcd/data/mvogelsb/004/chcho/Tb_maps_prod/H      # production maps (Tb_maps/ holds the test-J maps)
+OUT_DIR=/orcd/data/mvogelsb/004/chcho/Tb_maps_prod/H_real # production maps, real space (Tb_maps/: test-J maps;
+                                                          # Tb_maps_prod/H: earlier redshift-space maps, if any)
 mkdir -p "$OUT_DIR"
 
 # -------------------------
