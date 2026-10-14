@@ -51,15 +51,23 @@ fi
 # -------------------------
 INPUT_DIR="/orcd/data/mvogelsb/005/mkilab001/mvogelsblab003/Lab/Thesan-XL/Flagship_new/postprocessing/ren_640/"
 INPUT_NEW_DIR="/orcd/data/mvogelsb/005/mkilab001/mvogelsblab003/Lab/Thesan-XL/Flagship_below_z_4p75_new/postprocessing/ren_640/"
-J_DIR=/orcd/data/mvogelsb/004/chcho/Jalpha_test       # compute_Jalpha_He.c / compute_Jalpha_AGN.c outputs
-TR_TAG=tr                  # attenuated maps Jalpha_*He_NNN_<TR_TAG>.hdf5 (run_Jalpha_test.sh TR_TAG); empty = no absorption
+J_DIR=/orcd/data/mvogelsb/004/chcho/Jalpha            # run_Jalpha_prod.sh outputs (BAND=He)
+TR_TAG=tr_sfmask           # attenuated maps Jalpha_*He_NNN_<TR_TAG>.hdf5 (run_Jalpha_test.sh TR_TAG); empty = no absorption
 OUT_DIR=/orcd/data/mvogelsb/004/chcho/Tb_maps_prod/He     # production maps (Tb_maps/ holds the test-J maps)
 mkdir -p "$OUT_DIR"
 
 # -------------------------
 # Snapshots List
 # -------------------------
-SNAPS=(425 454 458 469 473 498 512 516 520 523 527 532 538 542 547 552 556 560 563 567 572 576 580 587 594 599 602 604 607 612 615 618 622 625 628 632 635 638 642 645 648 652 655 658 662 665 668 672 675 678 682 685 688 692 695 698)
+SNAPS=(156 159 162 165 168 171 174 177 181 184 187 190 193 196 200 203 209 212 215 218 220 224 227 230
+       234 237 242 250 255 260 264 269 273 278 283 289 295 300 304 309 314 318 320 321 323 325 328 331
+       332 334 337 338 340 343 346 349 350 353 356 359 361 364 366 370 373 376 379 382 385 389 392 395
+       398 400 403 405 406 408 411 414 417 420 423 425 427 430 431 433 434 436 437 440 443 444 446 448
+       450 452 454 456 458 460 463 464 467 469 471 473 475 476 478 481 482 484 487 490 491 493 496 498
+       500 501 504 507 510 512 514 516 518 520 523 525 527 529 532 535 538 540 542 545 547 549 552 554
+       556 558 560 563 565 567 569 572 574 576 578 580 582 585 587 589 592 594 596 599 602 604 607 610
+       612 615 618 620 622 625 628 630 632 635 638 640 642 645 648 650 652 655 658 660 662 665 668 670
+       672 675 678 680 682 685 688 690 692 695 698 700 705)
 #(156 159 162 165 168 171 174 177 181 184 187 190 193 196 200 203 209 255 283 289 295 300 304 309
 #       314 318 320 321 323 325 328 331 332 334 337 338 340 343 346 349 350 353 356 359 361 364 366 370
 #       373 376 379 382 385 389 392 395 398 400 403 405 406 408 411 414 417 420 423 427 430 431 433 434
