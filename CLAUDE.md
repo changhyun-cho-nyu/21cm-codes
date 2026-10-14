@@ -7,7 +7,7 @@ Read this first. The full record is **`JALPHA_NOTES.md`**: what was fixed and wh
 - When asked to *check* a calculation, check it. Don't make physics or modelling choices on the user's behalf: present the options with numbers and let them decide.
 - They run everything on the MIT ORCD cluster and paste logs back. Give exact commands. Never assume a job ran.
 - They edit the manuscript (`21cm_manuscript/oja_template.tex`) themselves. Show locations and suggested text with inline change marks; don't edit it.
-- Work on a feature branch, push, and the user merges the PR into `main`. Commit only what is asked. `logs/` is git-ignored.
+- Work directly on `main` (no feature branches; user instruction 2026-10-13). Commit only what is asked; the user pushes. `logs/` is git-ignored.
 
 ## What the code does
 Lumina is a 500 cMpc (338.3 cMpc/h) radiation-hydrodynamics simulation (Zier et al. 2026, arXiv:2605.15310). Renders are 640³ grids (0.78 cMpc cells), 709 snapshots. The H/He switch is at z = 4.75, snapshot 428: later snapshots come from a second render directory.
