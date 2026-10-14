@@ -200,12 +200,14 @@ The physics, the derivations and the references are in the doc "How the He II Ly
 | Step | Script | Output |
 |---|---|---|
 | 1 | `run_opacity.sh` → `make_opacity_fields.py` | `opacity_NNN.hdf5`: n_HI and n_HeI (comoving cm⁻³) at 320³, every second snapshot. Logs, for star-forming cells, the H I / He I share, `self_T` (fraction of a source cell's 40.8 eV photons that survive their own cell) and the share of ionized-cell H I. |
-| 2 | `bash run_transmission.sh compile`, then `sbatch run_transmission.sh` → `compute_transmission_He` | the `lambda_912 (simulation …)` line (mfp912 mode), then `transmission_He_NNN.hdf5` holding T_n2 and T_n4 on 48 radii × 160³ origins |
+| 2 | `bash run_transmission.sh compile`, then `sbatch run_transmission.sh` → `compute_transmission_He` | the `lambda_912 (simulation …)` line (mfp912 mode), the `lambda_E` lines (mfpE mode), then `transmission_He_NNN.hdf5` holding T_n2 and T_n4 on 48 radii × 160³ origins |
 | 3 | `run_Jalpha_test.sh` with `TRANS_DIR` and `TR_TAG` set | `Jalpha_He_NNN_<TR_TAG>.hdf5` and `Jalpha_AGN_He_NNN_<TR_TAG>.hdf5` |
 
 Variants are kept in separate directories:
 - **`SF_MASK=1`** (the default since the measurements below) in `run_opacity.sh` and `run_transmission.sh` makes star-forming cells transparent, as in Lumina's own RT. Otherwise their absorption would be counted on top of f_esc. Outputs go to `*_sfmask`; set `TR_TAG=tr_sfmask` for the J runs. The ray tracer refuses a directory that mixes masked and unmasked opacity files.
-- **`LLS_A > 0`** adds unresolved absorbers, with outputs in `*_lls`. Use it only if λ₉₁₂,sim > λ₉₁₂,obs, and then calibrate it with 1/λ_extra = 1/λ_obs − 1/λ_sim.
+- **`LLS_A > 0`** adds unresolved absorbers, with outputs in `*_lls`.
+  - **Calibrate it in the He band, not at 912 Å** (corrected 2026-10-14). The simulation's absorbers (SF cells masked) are close to a uniform fog: λ₉₁₂,sim is within 5% of the uniform-IGM value at z = 4 on 160³, 320³ and 640³ grids, so its λ_E/λ₉₁₂ ≈ 13 (uniform H I + He I), while clumpy absorbers have λ_E/λ₉₁₂ = r = 1.59. A simulation can then be too opaque at 912 Å and too transparent in the He band at once (z = 4: λ₉₁₂,sim = 13.9 vs ≈ 36 observed; λ_E,sim ≈ 180 vs r × 36 ≈ 57 proper Mpc).
+  - Match the He-band opacity: 1/(r λ₉₁₂,obs) = 1/λ_E,sim + 1/(r λ₉₁₂,extra), i.e. 1/λ₉₁₂,extra = 1/λ₉₁₂,obs − r/λ_E,sim, with λ_E,sim from `compute_transmission_He <snap> <dir> mfpE` (n = 2 line, L/(−ln⟨T(L)⟩)). λ₉₁₂,extra(z) is then fitted by LLS_A [(1+z)/5]^LLS_SLOPE.
   - The conversion from 912 Å to the band is the effective opacity of a broken power-law f(N): slope 1.5 below 10¹⁷·⁵, 0.8 up to 10¹⁹ (Prochaska+10) and 1.5 above. This gives λ_E/λ₉₁₂ = 1.59 (n = 2) and 1.82 (n ≥ 4).
   - The earlier single power law with β = 1.5 gave 3.5 and 4.8, about 2× too transparent.
   - `-DLLS_FN_B1/B2/B3/LOGN1/LOGN2` change the f(N) slopes and break columns; `-DLLS_BETA=b` restores a single power law.

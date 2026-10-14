@@ -15,8 +15,9 @@
 # He II Lyman-band IGM transmission for the J_alpha^He snapshots (needs run_opacity.sh first).
 #   1. bash run_transmission.sh compile
 #   2. mkdir -p logs && sbatch run_transmission.sh
-# Each task also prints the simulation's own 912 A mean free path at its snapshot (mfp912 mode),
-# to compare with observations (Worseck+14, Becker+21) before deciding on the LLS term.
+# Each task also prints the simulation's own mean free paths at its snapshot: at 912 A (mfp912 mode), to
+# compare with observations (Worseck+14, Becker+21), and in the He band (mfpE mode), lambda_E, which sets
+# the LLS term: 1/lambda_912,extra = 1/lambda_912,obs - r/lambda_E,sim with r = 1.59 (JALPHA_NOTES 4.5).
 
 SNAPS=(156 300 406 500)
 OPA=/orcd/data/mvogelsb/004/chcho/opacity_He       # run_opacity.sh output
@@ -77,5 +78,6 @@ if [ ! -f "$OPA/opacity_$(printf %03d $SNAP).hdf5" ]; then
     echo "ERROR: $OPA/opacity_$(printf %03d $SNAP).hdf5 missing (run_opacity.sh with EVERY that includes it)"; exit 1
 fi
 bin/transmission_He $SNAP "$OPA" mfp912
+bin/transmission_He $SNAP "$OPA" mfpE        # He-band lambda_E: what the LLS calibration needs
 bin/transmission_He $SNAP "$OPA" "$TRANS/transmission_He_$(printf %03d $SNAP).hdf5"
 echo "done $(date)"

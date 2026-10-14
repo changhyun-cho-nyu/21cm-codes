@@ -41,10 +41,22 @@
  * snapshot, lambda_912 = < Int exp(-tau_912(r)) dl_proper > over rays from
  * ionized origins, to compare with observations (e.g. Worseck+14, Becker+21).
  *
+ * Mode mfpE: the same at the band energies E_n2 = 40.8 eV and E_n4 (~52.5 eV),
+ * with H I and He I, at the fixed target redshift (as mfp912). That is the
+ * quantity the LLS calibration needs: unresolved absorbers have
+ * lambda_E = r lambda_912 with r = lls_ratio (1.59 / 1.82), so matching the
+ * observed He-band opacity, 1/(r lambda_912,obs) = 1/lambda_E,sim + 1/(r lambda_912,extra), gives
+ *     1/lambda_912,extra = 1/lambda_912,obs - r/lambda_E,sim.
+ * lambda_E,sim is usually longer than a box, so three estimators are printed:
+ * <Int_0^L exp(-tau) dl> (a lower limit when rays reach L), L/(-ln <exp(-tau(L))>)
+ * (the attenuation length of the mean transmission, the definition that matches
+ * Poisson absorbers, T = exp(-L/lambda)), and L/<tau(L)> (opacity-weighted).
+ *
  * Usage
  * -----
  *   ./compute_transmission_He <snap> <opacity_dir> <output.hdf5>
  *   ./compute_transmission_He <snap> <opacity_dir> mfp912
+ *   ./compute_transmission_He <snap> <opacity_dir> mfpE
  * opacity_dir holds opacity_NNN.hdf5 from make_opacity_fields.py.
  *
  * Compile
@@ -151,6 +163,16 @@ static double lls_I(double sigma) {
 /* lambda_E / lambda_912 for unresolved absorbers, with sigma_E the cross section per H atom */
 static double lls_ratio(double sigma_E) { return lls_I(sigma_HI(13.598)) / lls_I(sigma_E); }
 
+/* group energies: E_n2 = He II Ly-alpha; E_n4 = the n >= 4 lines weighted by f_rec x their redshift window */
+static void group_energies(double *E2, double *E4) {
+    double e4 = 0.0, wsum = 0.0;
+    for (int n = 4; n <= 30; n++) {
+        double win = (1.0 - 1.0 / ((n + 1.0) * (n + 1.0))) / (1.0 - 1.0 / ((double)n * n)) - 1.0;
+        e4 += F_REC[n] * win * E_LL_HE * (1.0 - 1.0 / (n * n)); wsum += F_REC[n] * win;
+    }
+    *E2 = E_LL_HE * 0.75; *E4 = e4 / wsum;
+}
+
 static double H_cgs(double z) { return H_0_CGS * sqrt(OMEGA_M * pow(1 + z, 3) + OMEGA_L); }
 
 /* ------------------------------------------------------------------ fields */
@@ -244,12 +266,12 @@ static void write_d(hid_t f, const char *n, double v) {
 
 int main(int argc, char **argv) {
     if (argc < 4) {
-        fprintf(stderr, "Usage: %s <snap> <opacity_dir> <output.hdf5 | mfp912>\n", argv[0]);
+        fprintf(stderr, "Usage: %s <snap> <opacity_dir> <output.hdf5 | mfp912 | mfpE>\n", argv[0]);
         return 1;
     }
     int snap = atoi(argv[1]);
     const char *dir = argv[2], *out = argv[3];
-    int mfp_mode = strcmp(out, "mfp912") == 0;
+    int mfp_mode = strcmp(out, "mfp912") == 0, mfpE_mode = strcmp(out, "mfpE") == 0;
     H5Eset_auto(H5E_DEFAULT, NULL, NULL);
 
     /* available absorber snapshots and their redshifts */
@@ -315,15 +337,77 @@ int main(int argc, char **argv) {
         return 0;
     }
 
+    double E2, E4;
+    group_energies(&E2, &E4);
+
+    /* ---------------------------------------------------------- mfpE mode */
+    if (mfpE_mode) {
+        Field F = {snap, z_obs, NULL, NULL};
+        load_field(dir, &F);
+        double cell = BOX / Nk, ds = STEP_FRAC * cell, opz = 1.0 + z_obs;
+        double fac = opz * opz * ds * CMPC_CGS, dlp = ds / opz;
+        long nsteps = (long)(BOX / ds);
+        double L = nsteps * dlp;                                  /* proper Mpc, one box length */
+        const double E[2] = {E2, E4};
+        double wH[2], wHe[2], r[2];
+        for (int e = 0; e < 2; e++) {
+            wH[e] = sigma_HI(E[e]) * fac; wHe[e] = sigma_HeI(E[e]) * fac;
+            r[e] = lls_ratio(sigma_HI(E[e]) + Y_HE * sigma_HeI(E[e]));
+        }
+        double thr = 1e-2 * NH_MEAN_COM;
+        double slam0 = 0, slam1 = 0, sT0 = 0, sT1 = 0, stau0 = 0, stau1 = 0, sHI = 0, sHeI = 0;
+        long nray = 0, ncap = 0;
+        #pragma omp parallel for collapse(3) reduction(+:slam0,slam1,sT0,sT1,stau0,stau1,sHI,sHeI,nray,ncap) schedule(dynamic, 4)
+        for (int a = 0; a < N_ORIG; a++) for (int b = 0; b < N_ORIG; b++) for (int c = 0; c < N_ORIG; c++) {
+            double ox = (a + 0.5) * BOX / N_ORIG, oy = (b + 0.5) * BOX / N_ORIG, oz = (c + 0.5) * BOX / N_ORIG;
+            int neutral = 0;                                      /* same ionized-origin test as mfp912 */
+            for (int q = 0; q < 8 && !neutral; q++)
+                neutral = F.nHI[cell_of(ox + ((q & 1) ? 0.25 : -0.25) * cell, oy + ((q & 2) ? 0.25 : -0.25) * cell,
+                                        oz + ((q & 4) ? 0.25 : -0.25) * cell, cell)] >= thr;
+            if (neutral) continue;
+            for (int d = 0; d < N_DIR; d++) {
+                double tau[2] = {0, 0}, lam[2] = {0, 0}, cH = 0, cHe = 0; long j;
+                for (j = 0; j < nsteps; j++) {
+                    double rr = (j + 0.5) * ds;
+                    long ic = cell_of(ox + rr * dirs[d][0], oy + rr * dirs[d][1], oz + rr * dirs[d][2], cell);
+                    double nH = F.nHI[ic], nHe = F.nHeI[ic];
+                    cH += nH * wH[0]; cHe += nHe * wHe[0];
+                    for (int e = 0; e < 2; e++) {
+                        double t = tau[e] + 0.5 * (nH * wH[e] + nHe * wHe[e]);
+                        lam[e] += exp(-t) * dlp;
+                        tau[e] = 2 * t - tau[e];
+                    }
+                    if (tau[0] > TAU_STOP) break;                 /* E_n2 has the larger cross sections */
+                }
+                if (j == nsteps) ncap++;
+                slam0 += lam[0]; slam1 += lam[1];
+                sT0 += exp(-tau[0]); sT1 += exp(-tau[1]);         /* ~0 for a ray stopped at TAU_STOP */
+                stau0 += tau[0]; stau1 += tau[1];                 /* opacity-weighted: meaningful when ncap = nray */
+                sHI += cH; sHeI += cHe;
+                nray++;
+            }
+        }
+        if (nray == 0) { printf("no ionized origins at this snapshot\n"); return 0; }
+        const double sl[2] = {slam0, slam1}, sT[2] = {sT0, sT1}, st[2] = {stau0, stau1};
+        printf("lambda_E (simulation, z = %.3f, H I + He I, star-forming cells %s) from %ld rays over one box length "
+               "L = %.2f proper Mpc; %.2f%% of rays reached L with tau(E_n2) < %g:\n",
+               z_obs, SF_MASK > 0 ? "masked" : "kept", nray, L, 100.0 * ncap / nray, TAU_STOP);
+        for (int e = 0; e < 2; e++) {
+            double Tm = sT[e] / nray;
+            printf("  %-4s E = %5.2f eV: <Int_0^L e^-tau dl> = %.4g, L/(-ln<T(L)>) = %.4g, L/<tau(L)> = %.4g proper Mpc;"
+                   "  <T(L)> = %.4f;  unresolved-absorber ratio r = lambda_E/lambda_912 = %.3f\n",
+                   e ? "n>=4" : "n=2", E[e], sl[e] / nray, Tm > 0 && Tm < 1 ? -L / log(Tm) : INFINITY,
+                   st[e] > 0 ? L * nray / st[e] : INFINITY, Tm, r[e]);
+        }
+        printf("  share of the E_n2 opacity from He I: %.1f%%\n", 100.0 * sHeI / (sHI + sHeI));
+        printf("  LLS calibration: 1/lambda_912,extra = 1/lambda_912,obs - r/lambda_E,sim  (use the n=2 line, "
+               "L/(-ln<T(L)>))\n");
+        return 0;
+    }
+
     /* --------------------------------------------------- transmission mode */
     double z_max2 = (1.0 + z_obs) * (1.0 - 1.0 / 9.0) / (1.0 - 1.0 / 4.0) - 1.0;   /* Ly-beta horizon */
     if (z_max2 > z_first) z_max2 = z_first;
-    double E2 = E_LL_HE * 0.75, E4 = 0.0, wsum = 0.0;
-    for (int n = 4; n <= 30; n++) {          /* weight: f_rec x the line's redshift window (its share of J) */
-        double win = (1.0 - 1.0 / ((n + 1.0) * (n + 1.0))) / (1.0 - 1.0 / ((double)n * n)) - 1.0;
-        E4 += F_REC[n] * win * E_LL_HE * (1.0 - 1.0 / (n * n)); wsum += F_REC[n] * win;
-    }
-    E4 /= wsum;
     build_lightcone(z_obs, z_max2 + 1e-6);
     double R_max = rt[NZT - 1];
     if (z_max2 <= z_obs + 1e-6) {

@@ -48,7 +48,7 @@ Test runs: `run_Jalpha_test.sh` (snapshots 156, 300, 406, 500). Checks: `check_*
   - **He in real space** (decided 2026-10-13): the renders and light-cone have no redshift-space He II, so `run_3cm.sh` sets `-DHE_REDSHIFT_SPACE=0`. The PS, BS and VID comparisons of the H/He fractions are all real space. The code default (shortcut `HeII_Fraction × SpectralDensity`) and `HE_RS_DIR` (remap) remain only for tests.
   - The size of the redshift-space effect on He is measured by `remap_rsd.py --rsd` (`run_remap_qtest.sh`), as a caveat for the paper.
 - **Power-spectrum `.out` files:** Δ² = column 2 × (line 3 / line 4)², as `load_ps` in the notebooks does.
-- **Absorption:** star-forming cells are transparent (`SF_MASK=1`, as in Lumina's RT and f_esc). The unresolved-absorber term (`LLS_A`) is off unless λ₉₁₂,sim > λ₉₁₂,obs. It uses the broken-power-law f(N) conversion (1.59 and 1.82, not 3.5 and 4.8).
+- **Absorption:** star-forming cells are transparent (`SF_MASK=1`, as in Lumina's RT and f_esc). The unresolved-absorber term (`LLS_A`) uses the broken-power-law f(N) conversion (1.59 and 1.82, not 3.5 and 4.8). It is calibrated in the He band (`mfpE` mode), not at 912 Å: the masked simulation is a near-uniform fog, too opaque at 912 Å (z = 4: 13.9 vs ≈ 36 proper Mpc, converged in resolution) yet too transparent at 40.8 eV (JALPHA_NOTES §4.5).
 
 ## Cluster
 - Renders: `/orcd/data/mvogelsb/005/mkilab001/mvogelsblab003/Lab/Thesan-XL/Flagship_new/postprocessing/ren_640` (snapshots ≤ 428) and `.../Flagship_below_z_4p75_new/postprocessing/ren_640` (> 428). Each has per-field directories and `All/All_NNN.hdf5`.
@@ -64,7 +64,7 @@ Test runs: `run_Jalpha_test.sh` (snapshots 156, 300, 406, 500). Checks: `check_*
    - It is an approximation: grid-cell mean velocities, not the render's own gas cells.
    - The exact route is to ask the render team for `SpectralDensityHeII`, the same as `SpectralDensityHI` with He II mass.
    - Better approximation, tested in the same job: the q method, exact redshift-space H II (0.76 SpectralDensity − SpectralDensityHI) × remapped He II/H II.
-2. **Production J_α:** opacity → transmission (`run_opacity.sh`, `run_transmission.sh`, with SF_MASK=1). Use the mfp912 lines to decide on `LLS_A`. Then the He J runs with `TRANS_DIR`.
+2. **Production J_α:** SFR_eff is complete (`/orcd/data/mvogelsb/004/chcho/SFR_eff`, 2026-10-12). H band running with `run_Jalpha_prod.sh` (BAND=H, outputs in `.../chcho/Jalpha`). He band waits for the absorption: opacity and transmission done for 156/300/406/500 (SF_MASK=1); next `mfpE` → LLS_A calibration (user's decision) → transmission for the He snapshots → BAND=He.
 3. **T_b maps** with the new J files, then regenerate the PS, bispectra, VIDs and bubble statistics.
 4. **Manuscript edits** (the user does them; list in `JALPHA_NOTES.md` §6.3):
    - the He "real space" sentence at line 236 stays (He is real space); the LIM paper's "peculiar velocities down to the particle resolution" (§2.4) must say H only, and add the measured He redshift-space size;
