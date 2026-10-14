@@ -35,7 +35,7 @@ Test runs: `run_Jalpha_test.sh` (snapshots 156, 300, 406, 500). Checks: `check_*
 - **How the renders are made** (AREPO `src/reionization_movie/RT_movie_3D_rendering.cc`, in `/Users/chcho/arepo`; Zier+26 §9.3):
   - each gas cell is a cube of its own volume, deposited by overlap (adaptive CIC); `Spectral*` fields shift each cell by its own v_pec/(aH) along +z;
   - star-forming (Sfr > 0) gas: MassHI = Mass, He II = He III = 0, so it is neutral in both `SpectralDensityHI` and `HII_Fraction`;
-  - native grids are 1280³ (2560³ for Density, HII_Fraction and SpectralDensityHI as 8 sub-cells); `ren_640` is downsampled;
+  - the renders were made at 1280³ (Density, HII_Fraction and SpectralDensityHI with 2×2×2 sub-cells in the code, but no 2560³ files exist); 1280³ renders are available (Oliver Zier, 2026-10-14; location to be added), `ren_640` is downsampled from them;
   - there are 32 full snapshots (from z = 23), from which an exact SpectralDensityHeII could be rebuilt;
   - below z = 4.75, H and He I come from a uniform UVB (FG09) and only AGN are RT sources.
 - **Units:**
