@@ -605,10 +605,13 @@ static void get_offsets_and_data(void)
 
   /* Self-checks on the raw fields:
    *  - SpectralDensityHI is the H I mass density remapped along +z, with X = 0.76 and
-   *    star-forming (equation-of-state) gas counted as fully neutral; the remapping conserves
-   *    mass, so sum(SpectralDensityHI)/0.76 / sum(Density (1 - x_HII)) is 1 plus the extra H I
-   *    of EoS gas (whose HII_Fraction comes from the equilibrium network). Reported only:
-   *    ~1 before overlap, > 1 once ISM gas holds much of the H I. A missing X would give 1/0.76.
+   *    star-forming (equation-of-state) gas counted as fully neutral. The render
+   *    (AREPO RT_movie_3D_rendering.cc, set_partout) sets MassHI = Mass for that gas and builds
+   *    HII_Fraction from Mass - MassHI, so the EoS gas is neutral in HII_Fraction too. The
+   *    remapping conserves mass, so sum(SpectralDensityHI)/0.76 / sum(Density (1 - x_HII)) = 1
+   *    for the mass-weighted HII_Fraction (measured to 1e-5 on Lumina); with TS_VOLUME_WEIGHTED
+   *    it differs from 1 only by the mass vs volume weighting. Reported only. A missing X would
+   *    give 1/0.76.
    *  - the He fractions must be per H nucleus (<= y). */
   {
     double ls[2] = {0.0, 0.0}, gs[2], lmax = 0.0, gmax;
@@ -622,7 +625,7 @@ static void get_offsets_and_data(void)
     MPI_Allreduce(&lmax, &gmax, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
     double ratio = (gs[1] > 0.0) ? gs[0] / 0.76 / gs[1] : 1.0;
     if (ThisTask == 0)
-      printf("Check: sum(SpectralDensityHI)/0.76 / sum(Density x_HI%s) = %.5f (1 + EoS-gas H I excess; "
+      printf("Check: sum(SpectralDensityHI)/0.76 / sum(Density x_HI%s) = %.5f (1 if mass-weighted; "
              "1/0.76 = 1.316 would mean no X); max He fraction = %.4f (<= %.4f)\n",
              TS_VOLUME_WEIGHTED ? ", volume-weighted x" : "", ratio, gmax, 0.24 / (4.0 * 0.76));
     if (gmax > 1.05 * 0.24 / (4.0 * 0.76)) {
