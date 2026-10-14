@@ -11,7 +11,7 @@
 #
 # 21 cm delta T_b maps (RIN_NNN.hdf5) and power spectra (PS_NNN.out)
 #   1. bash run_21cm.sh compile     (needs the MPI + FFTW + HDF5 modules: mpicc, fftw3-mpi.h, parallel hdf5.h)
-#   2. mkdir -p logs && sbatch run_21cm.sh
+#   2. mkdir -p logs && sbatch run_21cm.sh   (resumable: resubmit to finish snapshots a 24 h job did not reach)
 # Spin-temperature inputs and the signal convention are compile-time options of PS_21cm_mpi.c:
 #   EXTRA_CFLAGS="-DTS_VOLUME_WEIGHTED=1" (volume-weighted T, fractions)
 #   EXTRA_CFLAGS="-DH_REDSHIFT_SPACE=0"   (real-space H I signal; default is redshift space, SpectralDensityHI)
@@ -46,8 +46,8 @@ fi
 # -------------------------
 INPUT_DIR="/orcd/data/mvogelsb/005/mkilab001/mvogelsblab003/Lab/Thesan-XL/Flagship_new/postprocessing/ren_640/"
 INPUT_NEW_DIR="/orcd/data/mvogelsb/005/mkilab001/mvogelsblab003/Lab/Thesan-XL/Flagship_below_z_4p75_new/postprocessing/ren_640/"
-J_DIR=/orcd/data/mvogelsb/004/chcho/Jalpha_test       # compute_Jalpha.c / compute_Jalpha_AGN.c outputs
-OUT_DIR=/orcd/data/mvogelsb/004/chcho/Tb_maps/H            # new maps: keep them apart from the old ones
+J_DIR=/orcd/data/mvogelsb/004/chcho/Jalpha            # run_Jalpha_prod.sh outputs (BAND=H)
+OUT_DIR=/orcd/data/mvogelsb/004/chcho/Tb_maps_prod/H      # production maps (Tb_maps/ holds the test-J maps)
 mkdir -p "$OUT_DIR"
 
 # -------------------------
@@ -71,7 +71,11 @@ for SNAP in "${SNAPS[@]}"; do
     for f in "$JALPHA_FILE" "$JALPHA_AGN_FILE"; do
         [ -f "$f" ] || { echo "WARNING: $f not found, skipping snapshot $SNAP"; continue 2; }
     done
-    if mpirun -np 1 bin/PS_21cm_mpi $SNAP $DIR $OUT_DIR/PS_${SNAP}.out $OUT_DIR/RIN_${SNAP}.hdf5 3 "$JALPHA_FILE" "$JALPHA_AGN_FILE"; then
+    # resumable: a snapshot with both outputs is skipped; outputs are written as .part and renamed on success
+    if [ -f "$OUT_DIR/PS_${SNAP}.out" ] && [ -f "$OUT_DIR/RIN_${SNAP}.hdf5" ]; then echo "done already, skipped"; continue; fi
+    rm -f "$OUT_DIR/PS_${SNAP}.out.part" "$OUT_DIR/RIN_${SNAP}.hdf5.part"
+    if mpirun -np 1 bin/PS_21cm_mpi $SNAP $DIR $OUT_DIR/PS_${SNAP}.out.part $OUT_DIR/RIN_${SNAP}.hdf5.part 3 "$JALPHA_FILE" "$JALPHA_AGN_FILE"; then
+        mv "$OUT_DIR/PS_${SNAP}.out.part" "$OUT_DIR/PS_${SNAP}.out"; mv "$OUT_DIR/RIN_${SNAP}.hdf5.part" "$OUT_DIR/RIN_${SNAP}.hdf5"
         echo "finished snapshot $SNAP"
     else
         echo "FAILED snapshot $SNAP"; nfail=$((nfail + 1))
