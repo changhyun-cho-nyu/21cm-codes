@@ -256,7 +256,7 @@ Test, on a mock render (N = 32) against an independent Python calculation:
 | Stars stay in their birth voxel | 3–9 proper kpc drift in 30 Myr vs a 71 proper kpc voxel at z = 10 | Negligible for the H band |
 | No emission before the first render (z = 29.43) | J_α is a lower limit for z_obs ≳ 24.7 | State in the text if those z are used |
 | He II band: IGM absorption by H I / He I | **Implemented** (4.5). Bracket J vs J = 0: mean δT_b^He changes by 7.7% (z = 6.35) and 21% (z = 4.01) at most. Open: λ₉₁₂ calibration, the star-forming-gas mask, the angular-covariance and resolution tests | Run steps 1–3 of 4.5 |
-| AGN f_esc applied in the H band too | The factor is the Hopkins-type obscured fraction (dust affects the UV), so it is kept | Confirm the meaning with Oliver Zier |
+| AGN f_esc applied in the H band too | Zier+26 §3.2.2, Eq. 15: L_bol,obs/L_bol = 0.3 (L_bol/10⁴⁶ erg s⁻¹)^0.07 (Hopkins+07 form, Vogelsberger+13 parameters), applied to L_bol, with the SED integrated over the bins afterwards: one frequency-independent factor, no further source-level f_esc. Our grey f_esc(L) in both bands is what Lumina did (R = 0.1949 luminosity-weighted fits 0.16–0.30 for 10⁴²–10⁴⁶ erg s⁻¹) | Confirmed from the paper (2026-10-14) |
 
 ---
 
@@ -274,7 +274,7 @@ Test, on a mock render (N = 32) against an independent Python calculation:
   - compare λ₉₁₂,sim with Becker+21, Zhu+23 and Worseck+14 to decide on `LLS_A`;
   - `SF_MASK`: decided ON. Measured at snapshot 300 (z = 6.35): star-forming cells hold 15% of all H I and 52% of the H I in ionized cells, with self_T = 0.10. At snapshot 500 (z = 4.01) they hold 98% of all H I, with self_T = 0.08. Unmasked, the sources' own cells would absorb about 90% of their photons on top of f_esc. At z < 4.75 the opacity would also be almost entirely galaxy ISM smeared over 1.56 cMpc cells, an artifact.
   - rerun `bracket_Tb_He.py` on the `_<TR_TAG>` maps.
-- **AGN factor.** Confirm with Oliver Zier that f_esc(L) is the Hopkins/Vogelsberger obscuration factor (one factor for all frequencies).
+- ~~**AGN factor.**~~ Resolved from Zier+26 §3.2.2 (Eq. 15): one luminosity-dependent obscuration factor on L_bol, independent of frequency; the paper also joins the 600 Å EUV and 50 Å X-ray SEDs by a power law, as our SED interpolation does.
 
 ### 6.3 Manuscript edits (drafts with inline marks were given in the conversation)
 - **f_rec citation** (l. ~1451): Pritchard2007 → Pritchard & Furlanetto 2006.

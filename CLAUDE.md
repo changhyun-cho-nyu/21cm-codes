@@ -40,7 +40,7 @@ Test runs: `run_Jalpha_test.sh` (snapshots 156, 300, 406, 500). Checks: `check_*
   - below z = 4.75, H and He I come from a uniform UVB (FG09) and only AGN are RT sources.
 - **Units:**
   - J_α output: proper photons s⁻¹ cm⁻² Hz⁻¹ sr⁻¹.
-  - AGN `LuminosityAGN` already includes f_esc(L), checked R = 0.1949. LUM_UNIT = 6.4459e36 erg/s.
+  - AGN `LuminosityAGN` already includes f_esc(L), checked R = 0.1949. It is Lumina's obscuration correction L_obs/L_bol = 0.3 (L_bol/10⁴⁶)^0.07 on L_bol, frequency-independent (Zier+26 Eq. 15), so applying it in both bands is consistent. LUM_UNIT = 6.4459e36 erg/s.
   - Cosmology everywhere is Lumina / Planck 2018: h = 0.6766, Ω_m = 0.30964144, Ω_b = 0.048975, with h read from headers where possible.
 - **x_α prefactor:** 27 for H, **9 for ³He⁺**. The 9 is correct because the hyperfine levels are inverted (checked against McQuinn & Switzer 2009, as are x_c^He with σ̄ = (14.3 eV/kT) a₀² and S_α^He ≈ 1).
 - **δT_b prefactors (2026-10-14):** the T_b codes use the exact optically thin τ T_S with H(z) including Λ (header OmegaLambda, else 0.6902672) and exact constants (T*₂₁ = 0.0681687 K, A₁₀ = 2.86888e-15 s⁻¹, T*_He = 0.4158856 K, A₁₀(³He⁺) = 3(ν_He/ν₂₁)³A₂₁ = 1.95434e-12 s⁻¹; [³He/H] = 1e-5). `check_Tb_maps.py` checks a C map cell by cell against independent code. The textbook 27 mK / 1.67 µK √((1+z)/10) forms (matter-only H) are +1.3% / +2.4% high at z = 3, ≤ 0.5% / ≤ 1.0% at z ≥ 6. `global_snaps_clean.ipynb` still uses the textbook forms and the old T*, A₁₀ (to update in its rerun). The optical depth stays linear (δT_b ∝ τ, the usual approximation; |δT_b| ~4% high at mean density at z ≈ 20).
