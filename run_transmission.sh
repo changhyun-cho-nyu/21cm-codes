@@ -26,6 +26,9 @@ HDF5_PREFIX=                                       # set if hdf5.h is not found 
 # Modules: load the same MPI + HDF5 modules as for the J_alpha jobs before compiling AND before sbatch
 # (sbatch passes the loaded environment to the job; the binary needs the MPI/HDF5 libraries at run time).
 LLS_A=0                                            # extra lambda_912 at (1+z)/5 = 1 [proper Mpc]; 0 = off
+LLS_SLOPE=-5.4                                     # lambda_912,extra = LLS_A [(1+z)/5]^LLS_SLOPE
+LLS_ZMIN=0                                         # applied for LLS_ZMIN <= z < LLS_ZMAX
+LLS_ZMAX=5.5
 SF_MASK=1                                          # 1 (default): read ${OPA}_sfmask, write ${TRANS}_sfmask
                                                    # (run_opacity.sh with SF_MASK=1 first)
 
@@ -52,16 +55,17 @@ if [ "$1" = "compile" ]; then
         CC=mpicc
     fi
     mkdir -p bin
-    $CC -O3 -fopenmp $INC -DLLS_A=$LLS_A compute_transmission_He.c -o bin/transmission_He $LIB -lhdf5 -lm
-    echo "$LLS_A" > bin/transmission_He.LLS_A     # the run step checks that the script's LLS_A matches the binary
-    echo "built bin/transmission_He with $CC (HDF5 prefix: ${HDF5_PREFIX:-default}, LLS_A = $LLS_A)"
+    $CC -O3 -fopenmp $INC -DLLS_A=$LLS_A "-DLLS_SLOPE=($LLS_SLOPE)" -DLLS_ZMIN=$LLS_ZMIN -DLLS_ZMAX=$LLS_ZMAX \
+        compute_transmission_He.c -o bin/transmission_He $LIB -lhdf5 -lm
+    echo "$LLS_A $LLS_SLOPE $LLS_ZMIN $LLS_ZMAX" > bin/transmission_He.LLS_A   # the run step checks these match the binary
+    echo "built bin/transmission_He with $CC (HDF5 prefix: ${HDF5_PREFIX:-default}, LLS_A = $LLS_A, slope $LLS_SLOPE, $LLS_ZMIN <= z < $LLS_ZMAX)"
     exit 0
 fi
 
 [ -n "$SLURM_ARRAY_TASK_ID" ] || { echo "submit with sbatch (or run: bash $0 compile)"; exit 1; }
 [ -x bin/transmission_He ] || { echo "run 'bash $0 compile' first"; exit 1; }
-[ "$(cat bin/transmission_He.LLS_A 2>/dev/null)" = "$LLS_A" ] || \
-    { echo "bin/transmission_He was built with LLS_A = $(cat bin/transmission_He.LLS_A 2>/dev/null || echo '?'), the script says $LLS_A: run 'bash $0 compile' again"; exit 1; }
+[ "$(cat bin/transmission_He.LLS_A 2>/dev/null)" = "$LLS_A $LLS_SLOPE $LLS_ZMIN $LLS_ZMAX" ] || \
+    { echo "bin/transmission_He was built with LLS (A slope zmin zmax) = $(cat bin/transmission_He.LLS_A 2>/dev/null || echo '?'), the script says $LLS_A $LLS_SLOPE $LLS_ZMIN $LLS_ZMAX: run 'bash $0 compile' again"; exit 1; }
 if [ -z "${HDF5_PLUGIN_PATH:-}" ]; then     # the opacity files use gzip only; kept for safety
     conda activate jupyter_env 2>/dev/null || true
     HDF5_PLUGIN_PATH=$(python -c 'import hdf5plugin; print(hdf5plugin.PLUGIN_PATH)' 2>/dev/null) || HDF5_PLUGIN_PATH=

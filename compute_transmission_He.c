@@ -23,7 +23,7 @@
  *
  * Optional unresolved absorbers (Lyman-limit systems below the render
  * resolution), off by default (LLS_A = 0):
- *     lambda_912,extra(z) = LLS_A [(1+z)/5]^LLS_SLOPE  proper Mpc,  z < LLS_ZMAX,
+ *     lambda_912,extra(z) = LLS_A [(1+z)/5]^LLS_SLOPE  proper Mpc,  LLS_ZMIN <= z < LLS_ZMAX,
  * converted to the group energy with the effective opacity of Poisson clouds,
  *     dtau_eff/dl ~ Int f(N) (1 - exp(-N sigma)) dN,
  *     lambda_E = lambda_912 * I(sigma_912) / I(sigma_E),
@@ -116,6 +116,9 @@
 #endif
 #ifndef LLS_FN_LOGN2
 #define LLS_FN_LOGN2 19.0
+#endif
+#ifndef LLS_ZMIN
+#define LLS_ZMIN   0.0       /* e.g. 3.35: Lumina's Rahmati self-shielding below it already over-absorbs */
 #endif
 #ifndef LLS_ZMAX
 #define LLS_ZMAX   5.5
@@ -457,6 +460,9 @@ int main(int argc, char **argv) {
            Nk, cell, nf, F[0].z, F[nf - 1].z, E2, E4);
     printf("R = %.3f .. %.1f cMpc (z' up to %.3f), %ld steps of %.3f cMpc; star-forming cells %s\n",
            R_min, R_max, z_max2, nsteps, ds, SF_MASK > 0 ? "MASKED (transparent)" : "kept");
+    if (LLS_A > 0)
+        printf("LLS term: lambda_912,extra = %g [(1+z)/5]^%g proper Mpc for %g <= z < %g\n", (double)LLS_A, (double)LLS_SLOPE,
+               (double)LLS_ZMIN, (double)LLS_ZMAX);
     printf("LLS term: %s; f(N) slopes %.2f / %.2f / %.2f (breaks 10^%.2f, 10^%.2f): lambda_E/lambda_912 = "
            "%.3f (n=2, at the target), %.3f (n>=4)\n", LLS_A > 0 ? "ON" : "off", LLS_FN_B1, LLS_FN_B2, LLS_FN_B3,
            LLS_FN_LOGN1, LLS_FN_LOGN2, lls_ratio(sigma_HI(E2) + Y_HE * sigma_HeI(E2)),
@@ -476,7 +482,7 @@ int main(int argc, char **argv) {
         for (int k = 1; k < nf; k++) if (fabs(F[k].z - zj) < fabs(F[best].z - zj)) best = k;
         fid[j] = best;
         double d2 = 0, d4 = 0;
-        if (LLS_A > 0 && zj < LLS_ZMAX) {
+        if (LLS_A > 0 && zj < LLS_ZMAX && zj >= LLS_ZMIN) {
             double l912 = LLS_A * pow(opz / 5.0, LLS_SLOPE);
             double l2 = l912 * lls_ratio(sigma_HI(E2 * sc) + Y_HE * sigma_HeI(E2 * sc));
             double l4 = l912 * lls_ratio(sigma_HI(E4 * sc) + Y_HE * sigma_HeI(E4 * sc));
@@ -560,7 +566,7 @@ int main(int argc, char **argv) {
     write_d(fo, "BoxSize_cMpc", BOX); write_d(fo, "R_min_cMpc", R_min);
     write_d(fo, "E_n2_eV", E2);       write_d(fo, "E_n4_eV", E4);
     write_d(fo, "N_DIR", N_DIR);      write_d(fo, "LLS_A", LLS_A);
-    write_d(fo, "LLS_SLOPE", LLS_SLOPE); write_d(fo, "LLS_ZMAX", LLS_ZMAX);
+    write_d(fo, "LLS_SLOPE", LLS_SLOPE); write_d(fo, "LLS_ZMAX", LLS_ZMAX); write_d(fo, "LLS_ZMIN", LLS_ZMIN);
     write_d(fo, "LLS_FN_B1", LLS_FN_B1); write_d(fo, "LLS_FN_B2", LLS_FN_B2); write_d(fo, "LLS_FN_B3", LLS_FN_B3);
     write_d(fo, "LLS_FN_LOGN1", LLS_FN_LOGN1); write_d(fo, "LLS_FN_LOGN2", LLS_FN_LOGN2);
     write_d(fo, "sf_mask", SF_MASK > 0 ? 1.0 : 0.0);
