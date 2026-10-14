@@ -19,6 +19,8 @@
 # compare with observations (Worseck+14, Becker+21), and in the He band (mfpE mode), lambda_E, which sets
 # the LLS term: 1/lambda_912,extra = 1/lambda_912,obs - r/lambda_E,sim with r = 1.59 (JALPHA_NOTES 4.5).
 
+PER_TASK=8                 # snapshots per array task, run one after another (keeps the array small for the
+                           # job-submit limit; ~2 min per snapshot at z ~ 10, ~30 min at z ~ 4)
 SNAPS=()                   # empty: the snapshot list of run_3cm.sh (its uncommented SNAPS block);
                            # or a list, e.g. SNAPS=(156 300 406 500) for the tests
 OPA=/orcd/data/mvogelsb/004/chcho/opacity_He       # run_opacity.sh output
@@ -64,41 +66,45 @@ if [ "$1" = "compile" ]; then
 fi
 
 [ ${#SNAPS[@]} -gt 0 ] || SNAPS=($(sed -n '/^SNAPS=(/,/)/p' run_3cm.sh | sed 's/#.*//' | tr -d 'SNAPS=()'))
+NTASK=$(( (${#SNAPS[@]} + PER_TASK - 1) / PER_TASK ))
 if [ "$1" = "count" ]; then
-    echo "${#SNAPS[@]} snapshots (${SNAPS[0]} .. ${SNAPS[${#SNAPS[@]}-1]}); ~1.5 GB each"
-    echo "submit:  mkdir -p logs && sbatch --array=0-$(( ${#SNAPS[@]} - 1 ))%8 run_transmission.sh"
+    echo "${#SNAPS[@]} snapshots (${SNAPS[0]} .. ${SNAPS[${#SNAPS[@]}-1]}), $PER_TASK per task = $NTASK tasks; ~1.5 GB each"
+    echo "submit:  mkdir -p logs && sbatch --array=0-$(( NTASK - 1 ))%8 run_transmission.sh"
     exit 0
 fi
 [ -n "$SLURM_ARRAY_TASK_ID" ] || { echo "submit with sbatch --array (see 'bash $0 count'), or run: bash $0 compile"; exit 1; }
-[ "$SLURM_ARRAY_TASK_ID" -lt ${#SNAPS[@]} ] || { echo "task $SLURM_ARRAY_TASK_ID >= ${#SNAPS[@]} snapshots: nothing to do"; exit 0; }
+[ "$SLURM_ARRAY_TASK_ID" -lt $NTASK ] || { echo "task $SLURM_ARRAY_TASK_ID >= $NTASK tasks: nothing to do"; exit 0; }
 [ -x bin/transmission_He ] || { echo "run 'bash $0 compile' first"; exit 1; }
 [ "$(cat bin/transmission_He.LLS_A 2>/dev/null)" = "$LLS_A $LLS_SLOPE $LLS_ZMIN $LLS_ZMAX" ] || \
     { echo "bin/transmission_He was built with LLS (A slope zmin zmax) = $(cat bin/transmission_He.LLS_A 2>/dev/null || echo '?'), the script says $LLS_A $LLS_SLOPE $LLS_ZMIN $LLS_ZMAX: run 'bash $0 compile' again"; exit 1; }
-if [ -z "${HDF5_PLUGIN_PATH:-}" ]; then     # the opacity files use gzip only; kept for safety
-    conda activate jupyter_env 2>/dev/null || true
+conda activate jupyter_env                        # h5py for make_opacity_fields.py, hdf5plugin
+if [ -z "${HDF5_PLUGIN_PATH:-}" ]; then           # the opacity files use gzip only; kept for safety
     HDF5_PLUGIN_PATH=$(python -c 'import hdf5plugin; print(hdf5plugin.PLUGIN_PATH)' 2>/dev/null) || HDF5_PLUGIN_PATH=
     [ -n "$HDF5_PLUGIN_PATH" ] && export HDF5_PLUGIN_PATH
 fi
-SNAP=${SNAPS[$SLURM_ARRAY_TASK_ID]}
 [ "$SF_MASK" = 1 ] && { OPA=${OPA}_sfmask; TRANS=${TRANS}_sfmask; }
 [ "$LLS_A" != 0 ] && TRANS=${TRANS}_lls                 # keep the LLS variant apart (attribute LLS_A records it)
 mkdir -p "$TRANS"
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
-echo "snap $SNAP  host $(hostname)  $(date)  commit $(git rev-parse --short HEAD)"
-S3=$(printf %03d $SNAP); OUTF="$TRANS/transmission_He_$S3.hdf5"
-[ -f "$OUTF" ] && { echo "$OUTF exists, skipped"; exit 0; }
-# the target snapshot itself needs an opacity file; run_opacity.sh makes every EVERY-th one, so an odd
-# snapshot of the T_b list is made here (same settings), in a private directory and then moved in, so
-# that other tasks scanning $OPA never see a half-written file
-if [ ! -f "$OPA/opacity_$S3.hdf5" ]; then
-    conda activate jupyter_env                    # h5py for make_opacity_fields.py
-    FAC=$(python -c "import h5py,glob; print(int(h5py.File(sorted(glob.glob('$OPA/opacity_*.hdf5'))[0],'r').attrs['factor']))")
-    echo "making $OPA/opacity_$S3.hdf5 (factor $FAC, sf_mask $SF_MASK)"
-    TMP="$OPA/.tmp_$S3"; rm -rf "$TMP"; mkdir -p "$TMP"
-    python -u make_opacity_fields.py --out "$TMP" --snaps $SNAP $SNAP --every 1 --factor $FAC $([ "$SF_MASK" = 1 ] && echo --sf-mask)
-    mv "$TMP/opacity_$S3.hdf5" "$OPA/opacity_$S3.hdf5" && rmdir "$TMP"
-fi
-bin/transmission_He $SNAP "$OPA" mfp912
-bin/transmission_He $SNAP "$OPA" mfpE        # He-band lambda_E (diagnostic; LLS_A = 0 is the choice made)
-bin/transmission_He $SNAP "$OPA" "$OUTF.part" && mv "$OUTF.part" "$OUTF"
+K0=$(( SLURM_ARRAY_TASK_ID * PER_TASK )); K1=$(( K0 + PER_TASK )); [ $K1 -gt ${#SNAPS[@]} ] && K1=${#SNAPS[@]}
+echo "task $SLURM_ARRAY_TASK_ID: snapshots ${SNAPS[@]:$K0:$((K1 - K0))}  host $(hostname)  $(date)  commit $(git rev-parse --short HEAD)"
+for ((k = K0; k < K1; k++)); do
+    SNAP=${SNAPS[$k]}
+    S3=$(printf %03d $SNAP); OUTF="$TRANS/transmission_He_$S3.hdf5"
+    echo "=== snap $SNAP  $(date)"
+    [ -f "$OUTF" ] && { echo "$OUTF exists, skipped"; continue; }
+    # the target snapshot itself needs an opacity file; run_opacity.sh makes every EVERY-th one, so an odd
+    # snapshot of the T_b list is made here (same settings), in a private directory and then moved in, so
+    # that other tasks scanning $OPA never see a half-written file
+    if [ ! -f "$OPA/opacity_$S3.hdf5" ]; then
+        FAC=$(python -c "import h5py,glob; print(int(h5py.File(sorted(glob.glob('$OPA/opacity_*.hdf5'))[0],'r').attrs['factor']))")
+        echo "making $OPA/opacity_$S3.hdf5 (factor $FAC, sf_mask $SF_MASK)"
+        TMP="$OPA/.tmp_$S3"; rm -rf "$TMP"; mkdir -p "$TMP"
+        python -u make_opacity_fields.py --out "$TMP" --snaps $SNAP $SNAP --every 1 --factor $FAC $([ "$SF_MASK" = 1 ] && echo --sf-mask)
+        mv "$TMP/opacity_$S3.hdf5" "$OPA/opacity_$S3.hdf5" && rmdir "$TMP"
+    fi
+    bin/transmission_He $SNAP "$OPA" mfp912
+    bin/transmission_He $SNAP "$OPA" mfpE        # He-band lambda_E (diagnostic; LLS_A = 0 is the choice made)
+    bin/transmission_He $SNAP "$OPA" "$OUTF.part" && mv "$OUTF.part" "$OUTF"
+done
 echo "done $(date)"
