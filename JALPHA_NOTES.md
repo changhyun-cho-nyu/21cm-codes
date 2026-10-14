@@ -256,7 +256,7 @@ Test, on a mock render (N = 32) against an independent Python calculation:
 | SFR_eff uses band-integrated age weights × lifetime spectral shape | **Measured with BPASS:** J-weighted error +1–3% (H, box-mean history at z ≈ 10), +2–5% at z ≳ 15 (low Z); He ≲ 1%. Single voxels: +7.5% just after a burst, −11% 20–30 Myr after (H) | Accepted; state in the paper |
 | Stars stay in their birth voxel | 3–9 proper kpc drift in 30 Myr vs a 71 proper kpc voxel at z = 10 | Negligible for the H band |
 | No emission before the first render (z = 29.43) | J_α is a lower limit for z_obs ≳ 24.7 | State in the text if those z are used |
-| He II band: IGM absorption by H I / He I | **Implemented** (4.5). Bracket J vs J = 0: mean δT_b^He changes by 7.7% (z = 6.35) and 21% (z = 4.01) at most. Open: λ₉₁₂ calibration, the star-forming-gas mask, the angular-covariance and resolution tests | Run steps 1–3 of 4.5 |
+| He II band: IGM absorption by H I / He I | **Implemented** (4.5). Bracket J vs J = 0: mean δT_b^He changes by 7.7% (z = 6.35) and 21% (z = 4.01) at most. Resolved: λ₉₁₂/λ_E calibration (LLS_A = 0 chosen), the star-forming-gas mask (on), resolution (converged 160³–640³), angular covariance (J^He low by ≤ 30% at z = 6.3, ≤ 3% at z ≤ 5; ≤ 0.3% on δT_b^He) | Run steps 1–3 of 4.5 |
 | AGN f_esc applied in the H band too | Zier+26 §3.2.2, Eq. 15: L_bol,obs/L_bol = 0.3 (L_bol/10⁴⁶ erg s⁻¹)^0.07 (Hopkins+07 form, Vogelsberger+13 parameters), applied to L_bol, with the SED integrated over the bins afterwards: one frequency-independent factor, no further source-level f_esc. Our grey f_esc(L) in both bands is what Lumina did (R = 0.1949 luminosity-weighted fits 0.16–0.30 for 10⁴²–10⁴⁶ erg s⁻¹) | Confirmed from the paper (2026-10-14) |
 
 ---
@@ -327,6 +327,7 @@ Its AGN-SED finding (#3) is fixed (2.3 above). Its helium-coupling finding (#10,
 | `check_agn_luminosity.py` | recovers an injected factor 0.25 exactly; on Lumina R = 0.1949 |
 | `bracket_Tb_He.py` | one voxel vs independent formula 2×10⁻⁹; J = 0 → ratio 1 |
 | `check_angular_covariance.py` (mocks) | uniform absorber: J_dir/J_avg = 1.0000 exactly; sources only in a transparent half-box: 1.027 (> 1, rising with R), the expected sign |
+| `check_angular_covariance.py` on Lumina (2026-10-14, 1000 points, 192 directions, ionized points, SF masked) | J_dir/J_avg, J-weighted: z = 6.35: stars 1.34, AGN 1.47 (covariance rising from 1.04 at R < 5 to 1.8–2.2 at 20–50 cMpc); z = 5.0: 1.024 / 1.030; z = 4.01: 0.992 / 0.993. Spectral slope 0–3 changes it by ≤ 0.006. So the product-of-averages J^He is biased low by ~25–30% mid-reionization, ≤ 3% at z ≤ 5. Effect on δT_b^He (× the Lyα share 0.9% / 7% / 18%): +0.3%, +0.2%, −0.1% — negligible; not corrected |
 | `check_Tb_maps.py` (2026-10-14, 24³ mock with Lumina units) | He: vs `bracket_Tb_He.py` (separate code), per cell ≤ 3.0×10⁻⁵; H: vs a hand calculation, ≤ 2.2×10⁻⁵ (both the m_H difference); wrong switch (`--he-rs`) → MISMATCH (rel 1.0) |
 | `check_sfr_eff_spectrum.py` | flat-spectrum mock gives 1.0000 for every history |
 | Transmission: uniform absorber vs analytic exp(−τ); ionized sphere | 3×10⁻⁷; T = 1.0000 inside, 0 outside |
