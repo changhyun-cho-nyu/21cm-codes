@@ -32,14 +32,21 @@ Test runs: `run_Jalpha_test.sh` (snapshots 156, 300, 406, 500). Checks: `check_*
   - `SpectralDensityHI` is the H I mass density (X = 0.76 included) remapped along +z, the 3rd axis. On Lumina, Σ SpectralDensityHI/0.76 = Σ Density·(1 − HII_Fraction) to 1e-5.
   - `SpectralDensity` is the gas density remapped along +z.
   - `Velocities` is (640,640,640,3) in AREPO internal units: **v_pec = Velocities × √a km/s**. Validated: the remap reproduces SpectralDensity and SpectralDensityHI.
+- **How the renders are made** (AREPO `src/reionization_movie/RT_movie_3D_rendering.cc`, in `/Users/chcho/arepo`; Zier+26 §9.3):
+  - each gas cell is a cube of its own volume, deposited by overlap (adaptive CIC); `Spectral*` fields shift each cell by its own v_pec/(aH) along +z;
+  - star-forming (Sfr > 0) gas: MassHI = Mass, He II = He III = 0, so it is neutral in both `SpectralDensityHI` and `HII_Fraction`;
+  - native grids are 1280³ (2560³ for Density, HII_Fraction and SpectralDensityHI as 8 sub-cells); `ren_640` is downsampled;
+  - there are 32 full snapshots (from z = 23), from which an exact SpectralDensityHeII could be rebuilt;
+  - below z = 4.75, H and He I come from a uniform UVB (FG09) and only AGN are RT sources.
 - **Units:**
   - J_α output: proper photons s⁻¹ cm⁻² Hz⁻¹ sr⁻¹.
   - AGN `LuminosityAGN` already includes f_esc(L), checked R = 0.1949. LUM_UNIT = 6.4459e36 erg/s.
   - Cosmology everywhere is Lumina / Planck 2018: h = 0.6766, Ω_m = 0.30964144, Ω_b = 0.048975, with h read from headers where possible.
 - **x_α prefactor:** 27 for H, **9 for ³He⁺**. The 9 is correct because the hyperfine levels are inverted. δT_b^He = 1.67 µK √((1+z)/10)(…), equal to the paper's 1.3 µK ((1+z)/6)^½ to rounding.
-- **T_b codes, defaults:** mass-weighted spin-temperature inputs (`-DTS_VOLUME_WEIGHTED=1` for the alternative); He signal in redshift space.
-  - Exact for H via SpectralDensityHI.
-  - For He, `HE_RS_DIR` (remapped He II) is preferred over the shortcut `HeII_Fraction × SpectralDensity`. On hydrogen the shortcut is 5–30% off in power (×2–3 at z = 5).
+- **T_b codes, defaults:** mass-weighted spin-temperature inputs (`-DTS_VOLUME_WEIGHTED=1` for the alternative).
+  - **H in redshift space** (exact, SpectralDensityHI); `-DH_REDSHIFT_SPACE=0` gives real space, 0.76 Density (1 − HII_Fraction).
+  - **He in real space** (decided 2026-10-13): the renders and light-cone have no redshift-space He II, so `run_3cm.sh` sets `-DHE_REDSHIFT_SPACE=0`. The PS, BS and VID comparisons of the H/He fractions are all real space. The code default (shortcut `HeII_Fraction × SpectralDensity`) and `HE_RS_DIR` (remap) remain only for tests.
+  - The size of the redshift-space effect on He is measured by `remap_rsd.py --rsd` (`run_remap_qtest.sh`), as a caveat for the paper.
 - **Power-spectrum `.out` files:** Δ² = column 2 × (line 3 / line 4)², as `load_ps` in the notebooks does.
 - **Absorption:** star-forming cells are transparent (`SF_MASK=1`, as in Lumina's RT and f_esc). The unresolved-absorber term (`LLS_A`) is off unless λ₉₁₂,sim > λ₉₁₂,obs. It uses the broken-power-law f(N) conversion (1.59 and 1.82, not 3.5 and 4.8).
 
@@ -51,17 +58,16 @@ Test runs: `run_Jalpha_test.sh` (snapshots 156, 300, 406, 500). Checks: `check_*
 - Partition: `sched_mit_mvogelsb`.
 
 ## State (2026-10-14) and next steps
-1. **He redshift-space remap**, validated at snapshots 220, 300, 406 and 500:
+1. **He redshift space, for the caveat only** (the He maps are real space): `sbatch run_remap_qtest.sh` gives P_rs/P_real for gas, H I and He II at snapshots 220, 300, 406, 500. Background, the remap validated at those snapshots:
    - √a is best everywhere;
    - gas power is within about 1% for k ≲ 0.3 h/cMpc, a few % at k ≈ 1 (9% at z = 4), and poor at k ≳ 2.
    - It is an approximation: grid-cell mean velocities, not the render's own gas cells.
    - The exact route is to ask the render team for `SpectralDensityHeII`, the same as `SpectralDensityHI` with He II mass.
-   - Otherwise run `sbatch run_remap_He.sh`, then set `HE_RS_DIR` in `run_3cm.sh`.
-   - An optional improvement is a line-of-sight spread from `VelocitySquared`.
+   - Better approximation, tested in the same job: the q method, exact redshift-space H II (0.76 SpectralDensity − SpectralDensityHI) × remapped He II/H II.
 2. **Production J_α:** opacity → transmission (`run_opacity.sh`, `run_transmission.sh`, with SF_MASK=1). Use the mfp912 lines to decide on `LLS_A`. Then the He J runs with `TRANS_DIR`.
 3. **T_b maps** with the new J files, then regenerate the PS, bispectra, VIDs and bubble statistics.
 4. **Manuscript edits** (the user does them; list in `JALPHA_NOTES.md` §6.3):
-   - the He "real space" sentence at line 236;
+   - the He "real space" sentence at line 236 stays (He is real space); the LIM paper's "peculiar velocities down to the particle resolution" (§2.4) must say H only, and add the measured He redshift-space size;
    - the flowchart's hot ISM and HMXB;
    - the AGN shell count of 400 → 200;
    - escape fractions, SFR_eff and absorption.

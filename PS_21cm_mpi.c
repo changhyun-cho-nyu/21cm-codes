@@ -57,6 +57,14 @@
 #define F_HEIII_FIELD "HeIII_Fraction"
 #endif
 
+/* H_REDSHIFT_SPACE = 1 (default): the signal is the render's SpectralDensityHI, the H I density in
+ *   redshift space along the 3rd axis (each gas cell shifted by its own velocity in the render: exact).
+ * = 0: real space, 0.76 Density (1 - HII_Fraction), with the mass-weighted HII_Fraction whatever
+ *   TS_VOLUME_WEIGHTED is (it is the H I mass). The spin factor is real space in both cases. */
+#ifndef H_REDSHIFT_SPACE
+#define H_REDSHIFT_SPACE 1
+#endif
+
 typedef long long myint ;
 
 #define M_PI 3.14159265358979323846
@@ -539,7 +547,8 @@ int main(int argc, char **argv)
     hid_t a = H5Acreate2(dset, "Redshift", H5T_NATIVE_DOUBLE, sc, H5P_DEFAULT, H5P_DEFAULT);
     H5Awrite(a, H5T_NATIVE_DOUBLE, &zz); H5Aclose(a);
     hid_t st = H5Tcopy(H5T_C_S1); H5Tset_size(st, 128);
-    char u[128] = "delta T_b [mK], real-space spin factor x redshift-space H I density";
+    char u[128] = H_REDSHIFT_SPACE ? "delta T_b [mK], real-space spin factor x redshift-space H I density"
+                                   : "delta T_b [mK], real space";
     a = H5Acreate2(dset, "content", st, sc, H5P_DEFAULT, H5P_DEFAULT); H5Awrite(a, st, u); H5Aclose(a);
     H5Tclose(st); H5Sclose(sc);
   }
@@ -605,10 +614,13 @@ static void get_offsets_and_data(void)
 
   /* Self-checks on the raw fields:
    *  - SpectralDensityHI is the H I mass density remapped along +z, with X = 0.76 and
-   *    star-forming (equation-of-state) gas counted as fully neutral; the remapping conserves
-   *    mass, so sum(SpectralDensityHI)/0.76 / sum(Density (1 - x_HII)) is 1 plus the extra H I
-   *    of EoS gas (whose HII_Fraction comes from the equilibrium network). Reported only:
-   *    ~1 before overlap, > 1 once ISM gas holds much of the H I. A missing X would give 1/0.76.
+   *    star-forming (equation-of-state) gas counted as fully neutral. The render
+   *    (AREPO RT_movie_3D_rendering.cc, set_partout) sets MassHI = Mass for that gas and builds
+   *    HII_Fraction from Mass - MassHI, so the EoS gas is neutral in HII_Fraction too. The
+   *    remapping conserves mass, so sum(SpectralDensityHI)/0.76 / sum(Density (1 - x_HII)) = 1
+   *    for the mass-weighted HII_Fraction (measured to 1e-5 on Lumina); with TS_VOLUME_WEIGHTED
+   *    it differs from 1 only by the mass vs volume weighting. Reported only. A missing X would
+   *    give 1/0.76.
    *  - the He fractions must be per H nucleus (<= y). */
   {
     double ls[2] = {0.0, 0.0}, gs[2], lmax = 0.0, gmax;
@@ -622,7 +634,7 @@ static void get_offsets_and_data(void)
     MPI_Allreduce(&lmax, &gmax, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
     double ratio = (gs[1] > 0.0) ? gs[0] / 0.76 / gs[1] : 1.0;
     if (ThisTask == 0)
-      printf("Check: sum(SpectralDensityHI)/0.76 / sum(Density x_HI%s) = %.5f (1 + EoS-gas H I excess; "
+      printf("Check: sum(SpectralDensityHI)/0.76 / sum(Density x_HI%s) = %.5f (1 if mass-weighted; "
              "1/0.76 = 1.316 would mean no X); max He fraction = %.4f (<= %.4f)\n",
              TS_VOLUME_WEIGHTED ? ", volume-weighted x" : "", ratio, gmax, 0.24 / (4.0 * 0.76));
     if (gmax > 1.05 * 0.24 / (4.0 * 0.76)) {
@@ -859,7 +871,7 @@ static void read_data(int snapnum,
     myint length_vector = local_n0 * N * N;
     dset_length_task    = length_vector;
 
-    dset  = malloc(length_vector*sizeof(double)); // SpectralDensityHI
+    dset  = malloc(length_vector*sizeof(double)); // SpectralDensityHI (or its real-space equivalent)
     dset2 = malloc(length_vector*sizeof(double)); // Density
     dset3 = malloc(length_vector*sizeof(double)); // F_HII_FIELD
     dsetT = malloc(length_vector*sizeof(double)); // T_FIELD
@@ -870,7 +882,11 @@ static void read_data(int snapnum,
 
     float *buffer = malloc(length_vector*sizeof(float));
 
+#if H_REDSHIFT_SPACE
     read_single_field("SpectralDensityHI",       dset,  snapnum, local_n0, local_0_start, buffer, length_vector);
+#else
+    read_single_field("HII_Fraction",            dset,  snapnum, local_n0, local_0_start, buffer, length_vector);
+#endif
     read_single_field("Density",                 dset2, snapnum, local_n0, local_0_start, buffer, length_vector);
     read_single_field(F_HII_FIELD,               dset3, snapnum, local_n0, local_0_start, buffer, length_vector);
     read_single_field(T_FIELD,                   dsetT, snapnum, local_n0, local_0_start, buffer, length_vector);
@@ -878,8 +894,13 @@ static void read_data(int snapnum,
     read_single_field("SpectralDensity",         dset5, snapnum, local_n0, local_0_start, buffer, length_vector);
     read_single_field(F_HEII_FIELD,              dset6, snapnum, local_n0, local_0_start, buffer, length_vector);
     read_single_field(F_HEIII_FIELD,             dset7, snapnum, local_n0, local_0_start, buffer, length_vector);
+#if !H_REDSHIFT_SPACE
+    for (myint i = 0; i < length_vector; i++)
+        dset[i] = 0.76 * dset2[i] * (1.0 - dset[i]);   /* real-space H I density, in SpectralDensityHI units */
+#endif
     if (ThisTask == 0)
-        printf("Spin-temperature fields: %s, %s, %s, %s\n", F_HII_FIELD, T_FIELD, F_HEII_FIELD, F_HEIII_FIELD);
+        printf("Spin-temperature fields: %s, %s, %s, %s; signal: %s\n", F_HII_FIELD, T_FIELD, F_HEII_FIELD, F_HEIII_FIELD,
+               H_REDSHIFT_SPACE ? "SpectralDensityHI (redshift space, 3rd axis)" : "0.76 Density (1 - HII_Fraction) (real space)");
 
     free(buffer);
 }
