@@ -299,6 +299,7 @@ Test, on a mock render (N = 32) against an independent Python calculation:
   - SFR linear in time between snapshots;
   - the convergence numbers.
 - **J_α^He absorption:** replace "upper limit" wording with the bracket result.
+- **Angular covariance (decided 2026-10-14: state, do not correct):** the product of the shell-averaged emissivity and the direction-averaged transmission underestimates J_α^He by ≈ 25–35% at z ≈ 6.3–8.3 (stars; AGN up to ≈ 47%), falling to ≤ 7% by z ≈ 5.3 and ≈ 0 by z ≈ 5; this changes δT_b^He by ≲ 1% because collisions dominate the ³He⁺ coupling. Not measurable at z ≳ 8 (too few ionized points), where there is little He II.
 - **l. ~433–435:** says T_S^He ≈ T_K ≫ T_γ for helium, which contradicts the weak He coupling stated elsewhere. Check whether that paragraph is still rendered.
 
 ### 6.4 Outside J_α (from `21cm_manuscript/audit_report_2026-10-06.md`, not addressed here)
