@@ -2,7 +2,7 @@
 #SBATCH --job-name=cellTb
 #SBATCH --output=logs/cellTb_%A_%a.out
 #SBATCH --error=logs/cellTb_%A_%a.err
-#SBATCH --array=0-0
+#SBATCH --array=0-4
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
@@ -18,7 +18,11 @@
 # (from test_cells_Tb.py inspect). Set --array=0-(number of TASKS - 1), then
 #   mkdir -p logs && sbatch run_cells_Tb.sh
 
-TASKS=("He below 0 500")              # placeholder: fill in from the inspect output
+# full snapshot <-> render snapshot from inspect (2026-10-15; dz = 0 for all of these).
+# He: z = 6.29, 5.50 now; when the He J production has them, add z = 5.00, 4.50, 4.00:
+#   "He above 116 406"  "He below 126 452"  "He below 136 501"
+# H: z = 11.9 and 10.0 (temperature mixing), z = 8.0 as the control (render test: <= 2% there)
+TASKS=("He above 92 304" "He above 106 364" "H above 36 114" "H above 48 156" "H above 66 209")
 BLOCKS=32
 BLOCK_SIZE=40000000
 SNAP_ABOVE=/orcd/data/mvogelsb/005/Lumina/Lumina_above_z_4p75/snapshots
