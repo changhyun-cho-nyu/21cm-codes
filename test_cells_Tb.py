@@ -79,7 +79,23 @@ class Snapshot:
             sys.exit(f"ERROR: no PartType0 fields in {cands}")
         missing = [k for k in GAS_FIELDS if k not in self.g]
         if missing:
-            sys.exit(f"ERROR: {self.gas_path} lacks {missing}")
+            print(f"ERROR: {self.gas_path} lacks {missing}. What is there:")
+            print(f"  {self.gas_path} [{self.g.name}]: " + ", ".join(
+                f"{k} {self.g[k].shape if isinstance(self.g[k], h5py.Dataset) else '(group)'}" for k in self.g))
+            d0 = os.path.join(snapdir, "PartType0")
+            if os.path.isdir(d0):
+                ents = sorted(os.listdir(d0))
+                mine = [e for e in ents if f"{snap:03d}" in e] or ents[:20]
+                print(f"  {d0}: {len(ents)} entries; for snapshot {snap}: {mine[:40]}")
+                for e in mine[:3]:
+                    q = os.path.join(d0, e)
+                    if os.path.isfile(q) and e.endswith(".hdf5"):
+                        with h5py.File(q, "r") as f:
+                            f.visititems(lambda n, o: print(f"    {e}:{n} {o.shape} {o.dtype}")
+                                         if isinstance(o, h5py.Dataset) else None)
+                    elif os.path.isdir(q):
+                        print(f"    {e}/: {sorted(os.listdir(q))[:10]}")
+            sys.exit(1)
         self.n = self.g["Density"].shape[0]
         self.z = float(self.hd["Redshift"]) if "Redshift" in self.hd else 1.0 / float(self.hd["Time"]) - 1.0
         self.box = float(self.hd["BoxSize"])
