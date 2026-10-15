@@ -87,7 +87,7 @@ typedef long long myint;
 #define F_ALPHA_HE 0.4162        /* oscillator strength             */
 
 #define E_CHARGE  4.80320425e-10 /* statC (cgs) */
-#define M_E       9.10938356e-28 /* g           */
+#define M_ELEC       9.10938356e-28 /* g           */
 #define C_LIGHT   2.99792458e10  /* cm/s        */
 
 #define BINS_PS 2000
@@ -327,7 +327,7 @@ int main(int argc, char **argv)
     /* xa_const for HeII: denominator 9 (not 27 as in HI) */
     double xa_const = (16.0 * M_PI * M_PI * T_STAR_HE
                        * E_CHARGE * E_CHARGE * F_ALPHA_HE)
-                    / (9.0 * A_10_HE * tcmb * M_E * C_LIGHT);
+                    / (9.0 * A_10_HE * tcmb * M_ELEC * C_LIGHT);
 
     /* HeII 3.46 cm brightness temperature prefactor [micro-K]: delta T_b^He = prefactor x_HeII (1+delta)
        (1 - T_gamma/T_S), from the optically thin tau T_S = c^3 h_P A10 n_3HeII / (32 pi k_B nu^2 H(z)) for the

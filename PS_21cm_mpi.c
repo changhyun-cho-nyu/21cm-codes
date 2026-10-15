@@ -94,7 +94,7 @@ typedef long long myint ;
 #define M_H      1.6735575e-24    // g, hydrogen atom
 
 #define E_CHARGE 4.80320425e-10   // statC (cgs)
-#define M_E      9.10938356e-28   // g
+#define M_ELEC      9.10938356e-28   // g
 #define C_LIGHT  2.99792458e10    // cm/s
 
 #define BINS_PS 2000
@@ -272,7 +272,7 @@ int main(int argc, char **argv)
 
   double xa_const          = (16.0 * M_PI * M_PI * T_STAR
                               * E_CHARGE * E_CHARGE * F_ALPHA)
-                              / (27.0 * A10 * tcmb * M_E * C_LIGHT);
+                              / (27.0 * A10 * tcmb * M_ELEC * C_LIGHT);
 
   /* Combined factor: value1 (gas mass per cell, sim units)
      → proper hydrogen number density (cm^-3)               */

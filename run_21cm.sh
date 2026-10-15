@@ -41,11 +41,15 @@ if [ "$1" = "compile" ]; then
         for l in "$d/lib" "$d/lib64"; do [ -d "$l" ] && LIBS="-L$l -Wl,-rpath,$l $LIBS"; done
     done
     # the code uses the HDF5 1.6 API names (H5Dopen/H5Gopen with 2 arguments)
-    mpicc -O3 -fopenmp -DH5_USE_16_API $EXTRA_CFLAGS $INC PS_21cm_mpi.c functions.c collisions.c -o bin/PS_21cm_mpi $LIBS
+    mpicc -O3 -fopenmp -DH5_USE_16_API $EXTRA_CFLAGS $INC PS_21cm_mpi.c functions.c collisions.c -o bin/PS_21cm_mpi.new $LIBS \
+        && mv bin/PS_21cm_mpi.new bin/PS_21cm_mpi \
+        || { echo "COMPILE FAILED: bin/PS_21cm_mpi was not rebuilt; do not submit"; exit 1; }
     echo "built bin/PS_21cm_mpi (EXTRA_CFLAGS: ${EXTRA_CFLAGS:-none})   commit $(git rev-parse --short HEAD)"
     if [ -n "$TK_REF" ]; then
         mpicc -O3 -fopenmp -DH5_USE_16_API $EXTRA_CFLAGS -DTK_REFERENCE -DTK_REF_XTHRESH=$TK_REF $INC \
-            PS_21cm_mpi.c functions.c collisions.c -o bin/PS_21cm_mpi_tkref $LIBS
+            PS_21cm_mpi.c functions.c collisions.c -o bin/PS_21cm_mpi_tkref.new $LIBS \
+            && mv bin/PS_21cm_mpi_tkref.new bin/PS_21cm_mpi_tkref \
+            || { echo "COMPILE FAILED: bin/PS_21cm_mpi_tkref was not rebuilt; do not submit"; exit 1; }
         echo "$TK_REF" > bin/PS_21cm_mpi_tkref.thr
         echo "built bin/PS_21cm_mpi_tkref (no-heating reference, x_HII < $TK_REF)"
     fi
@@ -57,6 +61,9 @@ if [ -n "$TK_REF" ]; then
     [ "$(cat bin/PS_21cm_mpi_tkref.thr 2>/dev/null)" = "$TK_REF" ] || { echo "bin/PS_21cm_mpi_tkref was not built with TK_REF = $TK_REF: run 'bash $0 compile'"; exit 1; }
 fi
 [ -x $BIN ] || { echo "run 'bash $0 compile' first"; exit 1; }
+for f in PS_21cm_mpi.c functions.c collisions.c; do    # a binary older than its source was not rebuilt
+    [ $BIN -nt $f ] || { echo "$BIN is older than $f: run 'bash $0 compile' (and check it succeeds)"; exit 1; }
+done
 
 # -------------------------
 # Paths

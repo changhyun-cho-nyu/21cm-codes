@@ -15,7 +15,7 @@
 #define A10      2.86888e-15      // s^-1
 
 #define E_CHARGE 4.80320425e-10   // statC (cgs)
-#define M_E      9.10938356e-28   // g
+#define M_ELEC      9.10938356e-28   // g
 #define C_LIGHT  2.99792458e10    // cm/s
 
 /* Function prototypes */
@@ -89,7 +89,7 @@ double x_alpha(double z,
     /* prefactor */
     double prefactor =
         (16.0 * M_PI * M_PI * T_STAR * E_CHARGE * E_CHARGE * F_ALPHA) /
-        (27.0 * A10 * Tcmb * M_E * C_LIGHT);
+        (27.0 * A10 * Tcmb * M_ELEC * C_LIGHT);
 
     return prefactor * S * J;
 }
@@ -694,7 +694,7 @@ void precompute_Jalpha_weights(double z, double *weights)
     double prefac_J    = pow(1.0 + z, 2.0) / (4.0 * M_PI);
     double xa_const    = (16.0 * M_PI * M_PI * T_STAR
                           * E_CHARGE * E_CHARGE * F_ALPHA)
-                       / (27.0 * A10 * Tcmb * M_E * C_LIGHT);
+                       / (27.0 * A10 * Tcmb * M_ELEC * C_LIGHT);
     double full_prefac = prefac_J * xa_const;
 
     for (int n = 2; n <= 30; n++)

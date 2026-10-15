@@ -40,11 +40,16 @@ if [ "$1" = "compile" ]; then
     done
     # the code uses the HDF5 1.6 API names (H5Dopen/H5Gopen with 2 arguments)
     [ -n "$HE_RS_DIR" ] && EXTRA_CFLAGS="$EXTRA_CFLAGS -DHE_RS_DIR=\"$HE_RS_DIR\""
-    mpicc -O3 -fopenmp -DH5_USE_16_API $EXTRA_CFLAGS $INC PS_3cm_mpi.c functions.c collisions.c -o bin/PS_3cm_mpi $LIBS
+    mpicc -O3 -fopenmp -DH5_USE_16_API $EXTRA_CFLAGS $INC PS_3cm_mpi.c functions.c collisions.c -o bin/PS_3cm_mpi.new $LIBS \
+        && mv bin/PS_3cm_mpi.new bin/PS_3cm_mpi \
+        || { echo "COMPILE FAILED: bin/PS_3cm_mpi was not rebuilt; do not submit"; exit 1; }
     echo "built bin/PS_3cm_mpi (EXTRA_CFLAGS: ${EXTRA_CFLAGS:-none})   commit $(git rev-parse --short HEAD)"
     exit 0
 fi
 [ -x bin/PS_3cm_mpi ] || { echo "run 'bash $0 compile' first"; exit 1; }
+for f in PS_3cm_mpi.c functions.c collisions.c; do    # a binary older than its source was not rebuilt
+    [ bin/PS_3cm_mpi -nt $f ] || { echo "bin/PS_3cm_mpi is older than $f: run 'bash $0 compile' (and check it succeeds)"; exit 1; }
+done
 
 # -------------------------
 # Paths
