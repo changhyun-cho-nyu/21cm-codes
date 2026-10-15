@@ -178,6 +178,16 @@ def inspect(a):
         d = S.g[k]
         print(f"  {k:18s} {str(d.shape):22s} {str(d.dtype):8s} chunks {d.chunks} compression {d.compression} "
               f"virtual {d.is_virtual}")
+    for k in ("MultipleDomains", "TopNodeFactor", "NTask", "NumFilesPerSnapshot", "BITS_FOR_POSITIONS",
+              "OUTPUT_COORDINATES_AS_INTEGERS"):
+        if k in S.hd:
+            print(f"  {k}: {S.hd[k]}")
+    pa = dict(S.g[S.pos_name].attrs)
+    if pa:
+        print(f"  {S.pos_name} attributes: {pa}")
+        if "to_cgs" in pa:
+            fac = float(pa["to_cgs"]) / S.unit("UnitLength_in_cm", 3.085678e21)
+            print(f"    to_cgs / UnitLength = {fac:.6e} code length per integer; BoxSize / 2^32 = {S.box / 2**32:.6e}")
     B = a.block_size
     print(f"\ncompactness of blocks of {B:,} consecutive cells (a Peano-Hilbert ordered file gives compact regions):")
     for i0 in (0, S.n // 3, 2 * S.n // 3):
@@ -195,6 +205,19 @@ def inspect(a):
         side = (B * S.box**3 / S.n)**(1.0 / 3.0)
         print(f"  cells {i0:,}+: extent {ext[0] / 1e3:.1f} x {ext[1] / 1e3:.1f} x {ext[2] / 1e3:.1f} cMpc/h "
               f"(a cube of the same mean volume: {side / 1e3:.1f}); read {raw.nbytes / dt / 1e9:.2f} GB/s")
+        # file order: steps between consecutive cells (minimum image); a jump starts a new compact piece
+        dx = np.diff(x, axis=0)
+        dx -= S.box * np.round(dx / S.box)
+        step = np.sqrt((dx**2).sum(1))
+        spacing = (S.box**3 / S.n)**(1.0 / 3.0)
+        for jump in (10 * spacing, 1000.0):
+            cut = np.flatnonzero(step > jump)
+            lens = np.diff(np.concatenate([[0], cut + 1, [len(x)]]))
+            print(f"    pieces split at steps > {jump / 1e3:.3f} cMpc/h: {len(lens):,}; cells per piece "
+                  f"median {np.median(lens):.0f}, 90% {np.percentile(lens, 90):.0f}, max {lens.max():,}; "
+                  f"cells in pieces >= 1e5: {lens[lens >= 100000].sum() / len(x):.3f}")
+        print(f"    step percentiles 50/90/99%: {np.percentile(step, [50, 90, 99]).round(2).tolist()} ckpc/h "
+              f"(mean cell spacing {spacing:.1f})")
         # what the test needs: are the cells in whole 320^3 pixels (compact patches), or scattered?
         V = S.read("Masses", i0, i0 + B) / S.read("Density", i0, i0 + B)
         for Ng in (40, 320):
