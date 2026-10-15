@@ -48,8 +48,12 @@ from tb_physics import SRC, X_H, Y_HE, M_H, G, MPC, OMEGA_L_DEFAULT, Line
 
 # AREPO constants (RT_movie_3D_rendering.cc uses them for the render temperature)
 GAMMA_MINUS1, BOLTZMANN, PROTONMASS, HYDROGEN_MASSFRAC = 2.0 / 3.0, 1.38065e-16, 1.67262178e-24, 0.76
-GAS_FIELDS = ("Coordinates", "Masses", "Density", "InternalEnergy", "ElectronAbundance", "HII_Fraction",
-              "HeII_Fraction", "HeIII_Fraction", "StarFormationRate")
+GAS_FIELDS = ("Coordinates", "Masses", "Density", "InternalEnergy", "HII_Fraction", "HeII_Fraction", "HeIII_Fraction",
+              "StarFormationRate")
+# Lumina's repackaged snapshots store IntCoordinates (32-bit integers, x = int * BoxSize / 2^32, Zier+26 Sec. 9.1)
+# and no ElectronAbundance. AREPO-RT always sets Ne = HII + HeII + 2 HeIII (MRT/RT_update_primitive_variables.cc,
+# MRT/RT.cc; star-forming gas: set_full_ionization_mrt, Ne = (1+X)/2X = 1 + 2y), so Ne is rebuilt from the stored
+# fractions (before the render's neutral convention for star-forming gas), as the render used it for T.
 LEVELS = (320, 640, 1280, 2560, 5120, 10240)
 SCALES = (320, 640)
 
@@ -77,7 +81,11 @@ class Snapshot:
                 f.close()
         if self.g is None:
             sys.exit(f"ERROR: no PartType0 fields in {cands}")
-        missing = [k for k in GAS_FIELDS if k not in self.g]
+        self.pos_name = "Coordinates" if "Coordinates" in self.g else "IntCoordinates"
+        self.has_ne = "ElectronAbundance" in self.g
+        missing = [k for k in GAS_FIELDS if k != "Coordinates" and k not in self.g]
+        if self.pos_name not in self.g:
+            missing.append("Coordinates / IntCoordinates")
         if missing:
             print(f"ERROR: {self.gas_path} lacks {missing}. What is there:")
             print(f"  {self.gas_path} [{self.g.name}]: " + ", ".join(
@@ -100,16 +108,25 @@ class Snapshot:
         self.z = float(self.hd["Redshift"]) if "Redshift" in self.hd else 1.0 / float(self.hd["Time"]) - 1.0
         self.box = float(self.hd["BoxSize"])
         self.h = float(self.hd["HubbleParam"])
+        pd = self.g[self.pos_name]
+        if np.issubdtype(pd.dtype, np.integer) and not np.issubdtype(pd.dtype, np.unsignedinteger):
+            sys.exit(f"STOP: {self.pos_name} is {pd.dtype} (signed); the int -> position mapping for signed integers is "
+                     f"not documented. Report the dtype and min/max of a few rows before going on.")
 
     def unit(self, name, default):
         return float(self.hd.get(name, default))
 
     def read(self, name, i0, i1):
-        d = self.g[name]
-        a = d[i0:i1]
-        if name == "Coordinates" and np.issubdtype(d.dtype, np.integer):
-            return a.astype(np.float64) * (self.box / 2.0**32)       # stored as 32-bit integers (Zier+26 Sec. 9.1)
-        return a.astype(np.float64)
+        if name == "Coordinates":
+            d = self.g[self.pos_name]
+            a = d[i0:i1].astype(np.float64)
+            if np.issubdtype(d.dtype, np.integer):
+                a *= self.box / 2.0**int(8 * d.dtype.itemsize)        # unsigned 32-bit: int * BoxSize / 2^32
+            return a
+        if name == "ElectronAbundance" and not self.has_ne:
+            return (self.g["HII_Fraction"][i0:i1].astype(np.float64) + self.g["HeII_Fraction"][i0:i1].astype(np.float64)
+                    + 2.0 * self.g["HeIII_Fraction"][i0:i1].astype(np.float64))
+        return self.g[name][i0:i1].astype(np.float64)
 
 
 def first_3d(f):
@@ -155,7 +172,9 @@ def inspect(a):
     for k in ("Omega0", "OmegaBaryon", "OmegaLambda", "UnitLength_in_cm", "UnitMass_in_g", "UnitVelocity_in_cm_per_s",
               "NumFilesPerSnapshot"):
         print(f"  {k}: {S.hd.get(k, '(absent)')}")
-    for k in GAS_FIELDS:
+    print(f"  positions: {S.pos_name}; ElectronAbundance stored: {S.has_ne}"
+          + ("" if S.has_ne else " (rebuilt as HII + HeII + 2 HeIII)"))
+    for k in [S.pos_name] + [f for f in GAS_FIELDS if f != "Coordinates"]:
         d = S.g[k]
         print(f"  {k:18s} {str(d.shape):22s} {str(d.dtype):8s} chunks {d.chunks} compression {d.compression} "
               f"virtual {d.is_virtual}")
@@ -163,8 +182,11 @@ def inspect(a):
     print(f"\ncompactness of blocks of {B:,} consecutive cells (a Peano-Hilbert ordered file gives compact regions):")
     for i0 in (0, S.n // 3, 2 * S.n // 3):
         t0 = time.time()
-        x = S.read("Coordinates", i0, i0 + B)
+        raw = S.g[S.pos_name][i0:i0 + B]
         dt = time.time() - t0
+        x = S.read("Coordinates", i0, i0 + B)
+        print(f"  {S.pos_name} rows {i0:,}+: raw min {raw.min(axis=0)}, max {raw.max(axis=0)}; "
+              f"as positions {x.min():.4g}-{x.max():.4g} (BoxSize {S.box})")
         ext = []
         for ax in range(3):                                        # periodic extent: largest gap complement
             c = np.sort(x[:, ax])
@@ -245,7 +267,7 @@ def run(a):
     t0 = time.time()
     for ib, s0 in enumerate(starts):
         tb0 = time.time()
-        F = {k: S.read(k, s0, s0 + B) for k in GAS_FIELDS}
+        F = {k: S.read(k, s0, s0 + B) for k in GAS_FIELDS + ("ElectronAbundance",)}
         pos, m, rho = F["Coordinates"], F["Masses"], F["Density"]
         sf = F["StarFormationRate"] > 0
         xHII = np.where(sf, 0.0, F["HII_Fraction"])
@@ -341,7 +363,10 @@ def run(a):
     if not acc.blk:
         sys.exit("no usable block")
     print(f"\nsnapshot {a.snap}, z = {z:.4f}, line {a.line}: {len(acc.blk)} blocks, {time.time() - t0:.0f} s")
-    print(f"  median |ElectronAbundance - (x_HII + f_HeII + 2 f_HeIII)| (non-SF cells) = {np.median(ne_chk):.2e}")
+    if S.has_ne:
+        print(f"  median |ElectronAbundance - (x_HII + f_HeII + 2 f_HeIII)| (non-SF cells) = {np.median(ne_chk):.2e}")
+    else:
+        print("  ElectronAbundance not stored: Ne = HII + HeII + 2 HeIII (the render Temperature check below tests it)")
     tot = {lv: sum(b[lv][0] for b in acc.blk) / sum(b[lv][1] for b in acc.blk) for lv in names}
     rat = np.array([[b[lv][0] / b["cell"][0] for lv in names] for b in acc.blk])
     nb = len(acc.blk)
