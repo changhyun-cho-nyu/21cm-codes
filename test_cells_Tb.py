@@ -194,7 +194,16 @@ def inspect(a):
             ext.append(S.box - gaps.max())
         side = (B * S.box**3 / S.n)**(1.0 / 3.0)
         print(f"  cells {i0:,}+: extent {ext[0] / 1e3:.1f} x {ext[1] / 1e3:.1f} x {ext[2] / 1e3:.1f} cMpc/h "
-              f"(a cube of the same mean volume: {side / 1e3:.1f}); read {x.nbytes / dt / 1e9:.2f} GB/s")
+              f"(a cube of the same mean volume: {side / 1e3:.1f}); read {raw.nbytes / dt / 1e9:.2f} GB/s")
+        # what the test needs: are the cells in whole 320^3 pixels (compact patches), or scattered?
+        V = S.read("Masses", i0, i0 + B) / S.read("Density", i0, i0 + B)
+        for Ng in (40, 320):
+            _, inv, _ = group(x, S.box, Ng)
+            cover = np.bincount(inv, V) / (S.box / Ng)**3
+            full = np.abs(cover - 1.0) < a.complete
+            print(f"    {Ng}^3 pixels ({S.box / Ng / 1e3:.2f} cMpc/h): {len(cover):,} touched, {full.sum():,} complete "
+                  f"(|gas volume / pixel - 1| < {a.complete}); cells in complete pixels {full[inv].mean():.3f}; "
+                  f"cover quartiles {np.percentile(cover, [25, 50, 75]).round(3).tolist()}")
 
 
 class Acc:
@@ -406,6 +415,7 @@ def main():
         q.add_argument("--block-size", type=int, default=40_000_000)
     q = sub.choices["inspect"]
     q.add_argument("--snap", type=int)
+    q.add_argument("--complete", type=float, default=0.05)
     q.add_argument("--renders", nargs="*", help="ren_640 directories, to match render snapshots by z")
     q.add_argument("--jdir", help="J_alpha directory, to say which matched snapshots have J files")
     q.add_argument("--tr-tag", default="tr_sfmask")
