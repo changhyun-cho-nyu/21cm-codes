@@ -24,6 +24,8 @@
 FFTW_PREFIX=/orcd/software/core/001/spack/pkg/fftw/3.3.10/2qziucy
 HDF5_PREFIX=/orcd/software/community/001/spack/pkg/hdf5/1.14.3/suffu3v
 EXTRA_CFLAGS="-DH_REDSHIFT_SPACE=0"
+TK_REF_SNAPMAX=330         # reference runs only: snapshots <= this (z >~ 6; the reference means little after)
+TK_REF_STRIDE=2            # reference runs only: every n-th snapshot of SNAPS (disk: ~1 GB per map)
 TK_REF=""                  # no-heating reference: an x_HII threshold, e.g. 1e-3 (the default of the code option);
                            # cells below it get T = T_CMB,0 (1+z)^2/(1+z_dec) (1+delta)^(2/3) (Zier+26 Eq. 27).
                            # Non-empty: compile also builds bin/PS_21cm_mpi_tkref, the run uses it and writes to
@@ -93,6 +95,16 @@ SNAPS=(0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23
        452 456 460 463 464 467 471 475 476 478 481 482 484 487 490 491 493 496 500 501 504 507 510 514
        518 525 529 535 540 545 549 554 558 565 569 574 578 582 585 589 592 596 610 620 630 640 650 660
        670 680 690 700 705)
+
+if [ -n "$TK_REF" ]; then              # the reference: a subset of SNAPS (TK_REF_SNAPMAX, TK_REF_STRIDE)
+    SUB=(); n=0
+    for S in "${SNAPS[@]}"; do
+        [ "$S" -le "$TK_REF_SNAPMAX" ] || continue
+        [ $((n % TK_REF_STRIDE)) -eq 0 ] && SUB+=("$S"); n=$((n + 1))
+    done
+    SNAPS=("${SUB[@]}")
+    echo "no-heating reference (x_HII < $TK_REF): ${#SNAPS[@]} snapshots, ${SNAPS[0]} .. ${SNAPS[${#SNAPS[@]}-1]}"
+fi
 
 nfail=0
 echo "commit $(git rev-parse --short HEAD), host $(hostname), $(date)"
