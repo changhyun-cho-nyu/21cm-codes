@@ -87,17 +87,19 @@ def write_vid(pos, neg, path):
 
 
 def snaps_in(maps):
-    out = []
+    """{snapshot: number string as in the file names}; run_21cm.sh / run_3cm.sh do not zero-pad (RIN_17.hdf5)"""
+    out = {}
     for f in glob.glob(os.path.join(maps, "RIN_*.hdf5")):
         m = re.search(r"RIN_(\d+)\.hdf5$", f)
         if m:
-            out.append(int(m.group(1)))
-    return sorted(out)
+            out[int(m.group(1))] = m.group(1)
+    return out
 
 
 def vid(a):
     os.makedirs(a.out, exist_ok=True)
-    snaps = [s for s in snaps_in(a.maps) if a.smin <= s <= a.smax][a.task::a.ntask]
+    names = snaps_in(a.maps)
+    snaps = [s for s in sorted(names) if a.smin <= s <= a.smax][a.task::a.ntask]
     print(f"{a.line}: {len(snaps)} snapshots for task {a.task}/{a.ntask} from {a.maps}")
     nfail = 0
     for s in snaps:
@@ -105,11 +107,11 @@ def vid(a):
         f_st = os.path.join(a.out, f"VID_{a.line}_{s:03d}_stats.csv")
         if os.path.exists(f_vid) and os.path.exists(f_st):
             continue
-        ps = os.path.join(a.maps, f"PS_{s:03d}.out")
+        ps = os.path.join(a.maps, f"PS_{names[s]}.out")
         if not os.path.exists(ps):
             print(f"  snap {s:03d}: no {ps}, skipped"); nfail += 1; continue
         z = get_redshift(ps)
-        with h5py.File(os.path.join(a.maps, f"RIN_{s:03d}.hdf5"), "r") as f:
+        with h5py.File(os.path.join(a.maps, f"RIN_{names[s]}.hdf5"), "r") as f:
             m = f["rin"][()]
         N = m.shape[0]
         pos, neg, st = vid_logbins(m.ravel(), BOX_CMPC / N, a.bins)
