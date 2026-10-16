@@ -1,34 +1,39 @@
 """
 test_cells_Tb.py
 ================
-delta T_b from the Voronoi gas cells of a full Lumina snapshot, against the same gas averaged in pixels:
-the resolution (clumping) test of the 3.46 cm signal, and of 21 cm at high z, at the simulation's own resolution.
+delta T_b from the Voronoi gas cells of a full Lumina snapshot, against the production calculation from the
+640^3 render: the resolution (clumping) test of the 3.46 cm signal, and of 21 cm at high z, at the simulation's
+own resolution.
 
 Why. The maps compute delta T_b from pixel averages (mass-weighted T and fractions, mean density). delta T_b^He
 ~ n_e n_HeII f(T) is two-body, so the average of the cell values exceeds the value of the averages; the render
 test (test_resolution_Tb.py) found no convergence up to 2560^3. Here the limit is the gas cells themselves.
 
-Method. A full snapshot has ~2e11 gas cells, so it reads K blocks of B consecutive cells spread through the
-file (AREPO writes cells in Peano-Hilbert domain order, so a block is a compact region; `inspect` checks it).
-In each block, for every cell (render conventions: star-forming gas neutral with He II = He III = 0; T from u
-and Ne as in RT_movie_3D_rendering.cc; J_alpha of the 640^3 file at the cell's pixel):
-  cell   delta T_b of each cell (tb_physics.py, the physics of the C codes)
-  Ng     cells grouped by their centre into Ng^3 pixels (Ng = 320 ... 10240); per pixel the gas density
-         sum(m)/sum(V), mass-weighted T, x_HII, f_HeII, f_HeIII, volume-weighted J; delta T_b of those averages,
-         given to every cell of the pixel. Ng = 640 is the production calculation; Ng -> infinity is `cell`.
-Only cells in complete 320^3 pixels (gas volume within --complete of the pixel volume) are used, so every
-pixel at every level is a whole pixel. Reported, for each level: the volume-weighted <dT_b> and its ratio to
-the cell level (jackknife over blocks), and the variance of the map smoothed to 320^3 and 640^3 pixels
-(~ the power-spectrum amplitude at k <~ 2 and 4 h/cMpc) with its correlation with the cell-level map.
-With --render: the 640^3 render at the same pixels (axis order, Density, T, fractions, and dT_b from the
-render, which is the production map) against the cells grouped at 640, as a check of the whole mapping.
+Cells (render conventions, RT_movie_3D_rendering.cc): star-forming gas neutral with He II = He III = 0; T from u
+and Ne (Ne = HII + HeII + 2 HeIII, as AREPO-RT sets it); J_alpha of the 640^3 file at the cell's pixel; delta T_b
+with tb_physics.py (the physics of the C codes). The repackaged snapshots are not in spatial order (inspect), so:
+
+  scan   (array job) each task reads all fields of its share of the rows and
+         - adds the cells into 640^3 sums (volume, volume x dT_b, mass, mass x T, x_HII, f_HeII), whole box;
+         - keeps the cells of --n-cube random cubes (--cube-side^3 of the 320^3 pixels, aligned, no overlap).
+         The render axis order is found from the data (corr of cell density with the render Density).
+  merge  sums the tasks and reports
+         - checks: the cells deposited at 640^3 against the render Density, T, x_HII, f_HeII;
+         - WHOLE BOX: <dT_b> of the production calculation (render inputs) vs the cell level (exact: volume-
+           weighted mean over all cells), and P(k), r(k) of the production map vs the cell-level map at 640^3
+           (each pixel the volume-weighted mean of its cells' dT_b);
+         - CUBES: the ladder, cells grouped by centre into 320^3 ... 10240^3 pixels (density sum(m)/sum(V),
+           mass-weighted T and fractions, volume-weighted J), dT_b of the averages; ratio to the cell level with a
+           jackknife over cubes; variance of the maps smoothed to 320^3 and 640^3 pixels.
 
 Usage
 -----
-  python test_cells_Tb.py inspect --snapdir <.../snapshots> [--snap 20] [--renders A B] [--jdir <Jalpha>]
-  python test_cells_Tb.py run --snapdir <.../snapshots> --snap 20 --line He --J <J stars> --J <J AGN> \\
-         [--render <ren_640> --render-snap 406] [--blocks 32 --block-size 40000000]
-Memory: ~12 GB per 4e7-cell block plus the 640^3 J (1 GB).
+  python test_cells_Tb.py inspect --snapdir <.../snapshots> [--snap 92] [--renders A B] [--jdir <Jalpha>]
+  python test_cells_Tb.py scan  --snapdir D --snap 136 --line He --J <J stars> --J <J AGN> --render <ren_640> \
+         --render-snap 501 --out <dir> --task 0 --ntask 16
+  python test_cells_Tb.py merge --snapdir D --snap 136 --line He --J ... --J ... --render ... --render-snap 501 --out <dir>
+Memory: scan ~20 GB (six 640^3 float64 sums, J, chunk); merge ~40 GB. Disk: ~6 GB per task plus the cube cells
+(~45 B per cell; 64 cubes of 16^3 pixels ~ 0.8% of the cells, ~75 GB).
 """
 import argparse
 import glob
@@ -45,6 +50,7 @@ except ImportError:
     pass
 
 from tb_physics import SRC, X_H, Y_HE, M_H, G, MPC, OMEGA_L_DEFAULT, Line
+from check_tb_choices import spectra
 
 # AREPO constants (RT_movie_3D_rendering.cc uses them for the render temperature)
 GAMMA_MINUS1, BOLTZMANN, PROTONMASS, HYDROGEN_MASSFRAC = 2.0 / 3.0, 1.38065e-16, 1.67262178e-24, 0.76
@@ -54,8 +60,11 @@ GAS_FIELDS = ("Coordinates", "Masses", "Density", "InternalEnergy", "HII_Fractio
 # and no ElectronAbundance. AREPO-RT always sets Ne = HII + HeII + 2 HeIII (MRT/RT_update_primitive_variables.cc,
 # MRT/RT.cc; star-forming gas: set_full_ionization_mrt, Ne = (1+X)/2X = 1 + 2y), so Ne is rebuilt from the stored
 # fractions (before the render's neutral convention for star-forming gas), as the render used it for T.
-LEVELS = (320, 640, 1280, 2560, 5120, 10240)
-SCALES = (320, 640)
+LEVEL_FACTORS = (0.5, 1, 2, 4, 8, 16)   # ladder grids in units of the render grid N: 320^3 ... 10240^3 for N = 640
+
+
+def levels(N):
+    return [int(f * N) for f in LEVEL_FACTORS]
 
 
 class Snapshot:
@@ -229,14 +238,6 @@ def inspect(a):
                   f"cover quartiles {np.percentile(cover, [25, 50, 75]).round(3).tolist()}")
 
 
-class Acc:
-    """volume-weighted sums per level, per block; and smoothed-map pixel values"""
-    def __init__(self, names):
-        self.names = names
-        self.blk = []                                   # per block: {name: (sum V tb, sum V)}
-        self.maps = {S: {n: [] for n in names} for S in SCALES}
-
-
 def group(pos, box, Ng):
     ix = np.floor(pos * (Ng / box)).astype(np.int64) % Ng
     key = (ix[:, 0] * Ng + ix[:, 1]) * Ng + ix[:, 2]
@@ -244,216 +245,325 @@ def group(pos, box, Ng):
     return uk, inv.ravel(), ix
 
 
-def run(a):
+ORDERS = ((0, 1, 2), (2, 1, 0))
+GRIDS = ("V", "V_tb", "m", "m_T", "m_xHII", "m_fHeII")       # 640^3 sums of the cells, in render index order
+
+
+class Phys:
+    """constants and delta T_b of one line for a snapshot (tb_physics.py, the C-code physics)"""
+    def __init__(self, S, line):
+        self.z, self.box, h = S.z, S.box, S.h
+        om = float(S.hd.get("Omega0", 0.30964144)); ob = float(S.hd.get("OmegaBaryon", 0.048975))
+        ol = float(S.hd.get("OmegaLambda", OMEGA_L_DEFAULT))
+        self.UL, UM, self.UV = S.unit("UnitLength_in_cm", 3.085678e21), S.unit("UnitMass_in_g", 1.989e43), S.unit("UnitVelocity_in_cm_per_s", 1e5)
+        self.rho_unit = UM * h**2 / self.UL**3                    # code density -> g cm^-3 comoving
+        H0 = 100.0 * h * 1e5 / MPC
+        self.rho_mean = ob * 3.0 * H0**2 / (8.0 * np.pi * G) / self.rho_unit
+        self.line = line
+        self.L = Line(line, self.z, h, om, ob, ol)
+
+    def tb(self, rho, T, xHII, fII, fIII, J):
+        nH = X_H * rho * self.rho_unit * (1.0 + self.z)**3 / M_H
+        sig = rho * (1.0 - xHII) / self.rho_mean if self.line == "H" else (fII / Y_HE) * rho / self.rho_mean
+        return self.L.tb(sig, nH, T, xHII, fII, fIII, J)[0]
+
+
+def prep_cells(S, i0, i1):
+    """the cells of rows i0:i1 with the render conventions: positions, m, rho, V, T, x_HII, f_HeII, f_HeIII"""
+    F = {k: S.read(k, i0, i1) for k in GAS_FIELDS + ("ElectronAbundance",)}
+    sf = F["StarFormationRate"] > 0
+    mu = 4.0 / (1.0 + 3.0 * HYDROGEN_MASSFRAC + 4.0 * HYDROGEN_MASSFRAC * F["ElectronAbundance"]) * PROTONMASS
+    c = {"pos": F["Coordinates"], "m": F["Masses"], "rho": F["Density"],
+         "T": GAMMA_MINUS1 * F["InternalEnergy"] * S.unit("UnitVelocity_in_cm_per_s", 1e5)**2 / BOLTZMANN * mu,
+         "xHII": np.where(sf, 0.0, F["HII_Fraction"]), "fII": np.where(sf, 0.0, F["HeII_Fraction"]),
+         "fIII": np.where(sf, 0.0, F["HeIII_Fraction"])}
+    c["V"] = c["m"] / c["rho"]
+    return c
+
+
+def render_index(pos, box, N, order):
+    ix = np.floor(pos * (N / box)).astype(np.int64) % N
+    return ix[:, order[0]], ix[:, order[1]], ix[:, order[2]]
+
+
+def choose_order(S, rows, Rd, box):
+    """render axis order from the data: corr(log rho_cell, log render Density at the cell's pixel) for each order"""
+    c = prep_cells(S, rows[0], rows[1])
+    N = Rd.shape[0]
+    res = []
+    for o in ORDERS:
+        i, j, k = render_index(c["pos"], box, N, o)
+        rr = Rd[i, j, k].astype(np.float64)
+        ok = rr > 0
+        res.append((np.corrcoef(np.log(c["rho"][ok]), np.log(rr[ok]))[0, 1], o))
+    for cc, o in res:
+        print(f"  axis order render[i0,i1,i2] = coords {o}: corr(log rho_cell, log render Density) = {cc:.4f}")
+    res.sort(reverse=True)
+    if not (res[0][0] > 0.3 and res[0][0] - res[1][0] > 0.1):
+        sys.exit("STOP: the render axis order is not clear from the data (see the correlations above)")
+    return res[0][1]
+
+
+def cube_origins(n_cube, side, seed, Nc):
+    """n_cube distinct cubes of side^3 pixels of the Nc^3 grid (Nc = N/2, 320 for Lumina), aligned, no overlap"""
+    if Nc % side:
+        sys.exit(f"--cube-side must divide {Nc}")
+    nl = Nc // side
+    if n_cube > nl**3:
+        sys.exit(f"--n-cube {n_cube} > {nl**3} lattice cubes")
+    pick = np.random.default_rng(seed).choice(nl**3, size=n_cube, replace=False)
+    return nl, {int(p): i for i, p in enumerate(pick)}
+
+
+def scan(a):
+    """one task: rows task::ntask blocks of the snapshot -> 640^3 sums (whole box) and the cells of the cubes"""
     S = Snapshot(a.snapdir, a.snap, a.gas_file)
-    z, box, h = S.z, S.box, S.h
-    om = float(S.hd.get("Omega0", 0.30964144)); ob = float(S.hd.get("OmegaBaryon", 0.048975))
-    ol = float(S.hd.get("OmegaLambda", OMEGA_L_DEFAULT))
-    UL, UM, UV = S.unit("UnitLength_in_cm", 3.085678e21), S.unit("UnitMass_in_g", 1.989e43), S.unit("UnitVelocity_in_cm_per_s", 1e5)
-    rho_unit = UM * h**2 / UL**3                                     # code density -> g cm^-3 comoving
-    H0 = 100.0 * h * 1e5 / MPC
-    rho_mean = ob * 3.0 * H0**2 / (8.0 * np.pi * G) / rho_unit       # mean baryon density, code units
-    L = Line(a.line, z, h, om, ob, ol)
-    print(f"constants: {SRC}; snapshot {a.snap}, z = {z:.5f}, line {a.line}, {S.n:,} gas cells, prefactor {L.P:.6e} {L.unit}")
-    print(f"  units: length {UL:.6e} cm, mass {UM:.6e} g, velocity {UV:.3e} cm/s; <rho_b> = {rho_mean:.6e} (cosmology)")
-
-    R = None
-    if a.render:
-        R = {}
-        with h5py.File(os.path.join(a.render, "All", f"All_{a.render_snap:03d}.hdf5"), "r") as f:
-            zr = float(f["Header"].attrs["Redshift"])
-        print(f"  render {a.render} snapshot {a.render_snap}: z = {zr:.5f} (dz = {z - zr:+.2e})")
-        for k in ("Density", "Temperature", "HII_Fraction", "HeII_Fraction", "HeIII_Fraction"):
-            p = os.path.join(a.render, k, f"{k}_{a.render_snap:03d}.hdf5")
-            if not os.path.exists(p):
-                p = os.path.join(a.render, "All", f"All_{a.render_snap:03d}.hdf5")
-            R[k] = h5py.File(p, "r")[k]
-        m6 = 0.0
-        for i0 in range(0, R["Density"].shape[0], 32):
-            m6 += R["Density"][i0:i0 + 32].astype(np.float64).sum()
-        m6 /= float(R["Density"].shape[0])**3
-        print(f"  <Density> of the render = {m6:.6e} ({m6 / rho_mean - 1:+.2e} vs the cosmological mean, which is used here)")
-
+    P = Phys(S, a.line)
+    box = S.box
+    os.makedirs(a.out, exist_ok=True)
+    out = os.path.join(a.out, f"scan_{a.line}_{a.snap:03d}_{a.task:03d}.hdf5")
+    if os.path.exists(out):
+        print(f"{out} exists: task done"); return
+    with h5py.File(os.path.join(a.render, "All", f"All_{a.render_snap:03d}.hdf5"), "r") as f:
+        zr = float(f["Header"].attrs["Redshift"])
+    if abs(zr - S.z) > 1e-4:
+        sys.exit(f"ERROR: render snapshot {a.render_snap} z = {zr} vs snapshot z = {S.z}")
+    p = os.path.join(a.render, "Density", f"Density_{a.render_snap:03d}.hdf5")
+    Rd = h5py.File(p if os.path.exists(p) else os.path.join(a.render, "All", f"All_{a.render_snap:03d}.hdf5"), "r")["Density"][()]
+    N = Rd.shape[0]
     Jf = [h5py.File(fn, "r") for fn in a.J]
     J = sum(first_3d(f)[()].astype(np.float32) for f in Jf)
-    NJ = J.shape[0]
-    print(f"  J_alpha: {a.J}, {NJ}^3, mean {J.astype(np.float64).mean():.4e}")
+    if J.shape != (N,) * 3:
+        sys.exit(f"ERROR: J is {J.shape}, render {Rd.shape}")
+    edges = np.linspace(0, S.n, a.ntask + 1).astype(np.int64)
+    r0, r1 = int(edges[a.task]), int(edges[a.task + 1])
+    print(f"snapshot {a.snap} z = {S.z:.5f}, line {a.line}, task {a.task}/{a.ntask}: rows {r0:,}-{r1:,} of {S.n:,}")
+    order = choose_order(S, (r0, min(r1, r0 + 5_000_000)), Rd, box)
+    del Rd
+    Nc = N // 2
+    nl, cubes = cube_origins(a.n_cube, a.cube_side, a.seed, Nc)
+    G_ = {g: np.zeros(N**3, np.float64) for g in GRIDS}
+    part = out + ".part"
+    fo = h5py.File(part, "w")
+    fo.attrs.update({"snap": a.snap, "z": S.z, "line": a.line, "order": order, "rows": (r0, r1), "n_cube": a.n_cube,
+                     "cube_side": a.cube_side, "seed": a.seed, "render_snap": a.render_snap})
+    cg = {}
+    CF = ("pos", "m", "rho", "V", "T", "xHII", "fII", "fIII", "J", "tb")
+    t0, sV, sVtb, ncell = time.time(), 0.0, 0.0, 0
+    for i0 in range(r0, r1, a.chunk):
+        i1 = min(r1, i0 + a.chunk)
+        c = prep_cells(S, i0, i1)
+        i, j, k = render_index(c["pos"], box, N, order)
+        c["J"] = J[i, j, k].astype(np.float64)
+        c["tb"] = P.tb(c["rho"], c["T"], c["xHII"], c["fII"], c["fIII"], c["J"])
+        lin = (i * N + j) * N + k
+        del i, j, k
+        for g, w in (("V", c["V"]), ("V_tb", c["V"] * c["tb"]), ("m", c["m"]), ("m_T", c["m"] * c["T"]),
+                     ("m_xHII", c["m"] * c["xHII"]), ("m_fHeII", c["m"] * c["fII"])):
+            G_[g] += np.bincount(lin, w, minlength=N**3)
+        sV += c["V"].sum(); sVtb += (c["V"] * c["tb"]).sum(); ncell += i1 - i0
+        # cells of the cubes (cube lattice in coordinate axes)
+        cl = np.floor(c["pos"] * (Nc / box)).astype(np.int64) % Nc // a.cube_side
+        ul, inv = np.unique((cl[:, 0] * nl + cl[:, 1]) * nl + cl[:, 2], return_inverse=True)
+        cidc = np.array([cubes.get(int(q), -1) for q in ul])[inv.ravel()]
+        for q in np.unique(cidc[cidc >= 0]):
+            s = cidc == q
+            if q not in cg:
+                cg[q] = fo.create_group(f"cube_{q:03d}")
+                for f_ in CF:
+                    shp = (0, 3) if f_ == "pos" else (0,)
+                    cg[q].create_dataset(f_, shp, np.float64 if f_ == "pos" else np.float32,
+                                         maxshape=(None,) + shp[1:], chunks=True)
+            g_ = cg[q]
+            n0 = g_["m"].shape[0]; n1 = n0 + int(s.sum())
+            for f_ in CF:
+                g_[f_].resize(n1, axis=0)
+                g_[f_][n0:n1] = c[f_][s]
+        if (i0 - r0) // a.chunk % 20 == 0:
+            el = time.time() - t0
+            print(f"  rows {i1 - r0:,}/{r1 - r0:,}: {el / 60:.1f} min, ~{el * (r1 - r0) / (i1 - r0) / 3600:.1f} h total", flush=True)
+    for g in GRIDS:
+        fo.create_dataset(g, data=G_[g].reshape(N, N, N).astype(np.float32 if g != "V_tb" else np.float64))
+    fo.attrs.update({"sum_V": sV, "sum_V_tb": sVtb, "n_cells": ncell})
+    fo.close()
+    os.replace(part, out)
+    print(f"done: {ncell:,} cells, <dT_b>_cell (these rows) = {sVtb / sV:+.5e} {P.L.unit}, {(time.time() - t0) / 3600:.2f} h")
 
-    def tb(rho, T, xHII, fII, fIII, Jx):
-        nH = X_H * rho * rho_unit * (1.0 + z)**3 / M_H
-        sig = rho * (1.0 - xHII) / rho_mean if a.line == "H" else (fII / Y_HE) * rho / rho_mean
-        return L.tb(sig, nH, T, xHII, fII, fIII, Jx)[0]
 
-    names = [str(n) for n in LEVELS] + ["cell"]
-    acc = Acc(names)
-    order = None if R is not None else (0, 1, 2)
-    if order is not None:
-        print("  no --render: J sampled with the render axes = (x, y, z), unchecked")
-    val = {"n": 0, "rho": [], "T": [], "fII": [], "xHII": [], "tb_r": 0.0, "tb_640": 0.0, "tb_cell": 0.0}
-    dshare_edges = [0, 1, 10, 100, np.inf]
-    dshare = np.zeros(len(dshare_edges) - 1)
-    ne_chk = []
-    K, B = a.blocks, a.block_size
-    starts = ((np.arange(K) + 0.5) * S.n / K - B / 2).astype(np.int64).clip(0, S.n - B)
-    vpix320 = (box / 320)**3
-    t0 = time.time()
-    for ib, s0 in enumerate(starts):
-        tb0 = time.time()
-        F = {k: S.read(k, s0, s0 + B) for k in GAS_FIELDS + ("ElectronAbundance",)}
-        pos, m, rho = F["Coordinates"], F["Masses"], F["Density"]
-        sf = F["StarFormationRate"] > 0
-        xHII = np.where(sf, 0.0, F["HII_Fraction"])
-        fII = np.where(sf, 0.0, F["HeII_Fraction"])
-        fIII = np.where(sf, 0.0, F["HeIII_Fraction"])
-        mu = 4.0 / (1.0 + 3.0 * HYDROGEN_MASSFRAC + 4.0 * HYDROGEN_MASSFRAC * F["ElectronAbundance"]) * PROTONMASS
-        T = GAMMA_MINUS1 * F["InternalEnergy"] * UV**2 / BOLTZMANN * mu
-        nsf = ~sf
-        ne_chk.append(np.median(np.abs(F["ElectronAbundance"][nsf] - (F["HII_Fraction"] + F["HeII_Fraction"]
-                                                                       + 2 * F["HeIII_Fraction"])[nsf])))
-        V = m / rho
-        del F
-        # complete 320^3 pixels
-        uk, inv, _ = group(pos, box, 320)
-        cover = np.bincount(inv, V) / vpix320
-        keep = (np.abs(cover - 1.0) < a.complete)[inv]
-        frac_keep = keep.mean()
-        pos, m, rho, xHII, fII, fIII, T, V = (q[keep] for q in (pos, m, rho, xHII, fII, fIII, T, V))
-        if len(m) == 0:
-            print(f"  block {ib}: no complete 320^3 pixel (block not compact?), skipped"); continue
-        # render validation and axis order (first block decides the order)
-        g640 = group(pos, box, 640)
-        if R is not None:
-            uk6, inv6, ix6 = g640
-            M6 = np.bincount(inv6, m)
-            V6 = np.bincount(inv6, V)
-            first = np.zeros(len(uk6), np.int64); first[inv6[::-1]] = np.arange(len(inv6))[::-1]
-            pix = ix6[first]                                          # (x, y, z) pixel of each group
-            vp6 = (box / 640)**3
-            full6 = np.abs(V6 / vp6 - 1.0) < a.complete
-            cand = [(0, 1, 2), (2, 1, 0)] if order is None else [order]
-            best = None
-            for o in cand:
-                ia = pix[:, o[0]]
-                ua = np.unique(ia)
-                Rd = R["Density"][ua.tolist()]
-                rd = Rd[np.searchsorted(ua, ia), pix[:, o[1]], pix[:, o[2]]]
-                with np.errstate(invalid="ignore", divide="ignore"):
-                    cc = np.corrcoef(np.log(M6[full6] / vp6), np.log(np.maximum(rd[full6], 1e-30)))[0, 1]
-                cc = -1.0 if not np.isfinite(cc) else cc
-                if best is None or cc > best[1]:
-                    best = (o, cc)
-                if order is None:
-                    print(f"  axis order render[i0,i1,i2] = coords {o}: corr(log rho) = {cc:.4f}")
-            order = best[0]
-            o = order
-            ia = pix[:, o[0]]; ua = np.unique(ia); sel = np.searchsorted(ua, ia)
-            rf = {k: R[k][ua.tolist()][sel, pix[:, o[1]], pix[:, o[2]]].astype(np.float64) for k in R}
-            avg = lambda q: np.bincount(inv6, m * q) / M6
-            Tm, xm, f2, f3 = avg(T), avg(xHII), avg(fII), avg(fIII)
-            w = full6
-            val["n"] += int(w.sum())
-            val["rho"].append(np.median(rf["Density"][w] / (M6[w] / vp6)))
-            val["T"].append(np.median(rf["Temperature"][w] / Tm[w]))
-            val["fII"].append(np.median(np.abs(rf["HeII_Fraction"][w] - f2[w])) / Y_HE)
-            val["xHII"].append(np.median(np.abs(rf["HII_Fraction"][w] - xm[w])))
-            Jp = J[pix[:, o[0]] * NJ // 640, pix[:, o[1]] * NJ // 640, pix[:, o[2]] * NJ // 640].astype(np.float64)
-            tr = tb(rf["Density"], rf["Temperature"], rf["HII_Fraction"], rf["HeII_Fraction"], rf["HeIII_Fraction"], Jp)
-            val["tb_r"] += tr[w].sum()
-            val["_w"] = w
-        # J at each cell (render axes)
-        ixJ = np.floor(pos * (NJ / box)).astype(np.int64) % NJ
-        Jc = J[ixJ[:, order[0]], ixJ[:, order[1]], ixJ[:, order[2]]].astype(np.float64)
-        del ixJ
-        tbc = tb(rho, T, xHII, fII, fIII, Jc)
-        # density shares of the cell-level mean
-        dlt = rho / rho_mean
-        dshare += np.bincount(np.clip(np.digitize(dlt, dshare_edges) - 1, 0, len(dshare) - 1), V * tbc, minlength=len(dshare))
-        sinv = {Sg: (g640[1] if Sg == 640 else group(pos, box, Sg)[1]) for Sg in SCALES}
-        res = {}
-        for lv in names:
-            if lv == "cell":
-                v = tbc
+def ladder(c, P, box, R_tb, order, N):
+    """one cube: cell level vs the cells grouped into 320^3 ... 10240^3 pixels, and the production map"""
+    names = [str(n) for n in levels(N)] + ["cell"]
+    scales = (N // 2, N)
+    V = c["V"]
+    res, maps = {}, {S_: {} for S_ in scales}
+    sinv = {S_: group(c["pos"], box, S_)[1] for S_ in scales}
+    for lv in names:
+        if lv == "cell":
+            v = c["tb"]
+        else:
+            inv = group(c["pos"], box, int(lv))[1]
+            Mp, Vp = np.bincount(inv, c["m"]), np.bincount(inv, V)
+            avg = lambda q: np.bincount(inv, c["m"] * q) / Mp
+            v = P.tb(Mp / Vp, avg(c["T"]), avg(c["xHII"]), avg(c["fII"]), avg(c["fIII"]), np.bincount(inv, V * c["J"]) / Vp)[inv]
+        res[lv] = (V * v).sum() / V.sum()
+        for S_ in scales:
+            maps[S_][lv] = np.bincount(sinv[S_], V * v) / np.bincount(sinv[S_], V)
+    # production map on the cube's 640^3 pixels (volume of the cube = whole pixels)
+    uk, inv6, ix6 = group(c["pos"], box, N)
+    first = np.zeros(len(uk), np.int64); first[inv6[::-1]] = np.arange(len(inv6))[::-1]
+    pix = ix6[first]
+    res["production"] = float(R_tb[pix[:, order[0]], pix[:, order[1]], pix[:, order[2]]].astype(np.float64).mean())
+    return res, maps
+
+
+def merge(a):
+    S = Snapshot(a.snapdir, a.snap, a.gas_file)
+    P = Phys(S, a.line)
+    box, z, unit = S.box, S.z, P.L.unit
+    files = sorted(glob.glob(os.path.join(a.out, f"scan_{a.line}_{a.snap:03d}_*.hdf5")))
+    files = [f for f in files if not f.endswith(".part")]
+    print(f"snapshot {a.snap} z = {z:.5f}, line {a.line}: {len(files)} task files")
+    with h5py.File(files[0], "r") as f:
+        A = dict(f.attrs)
+    order, ntask = tuple(int(x) for x in A["order"]), None
+    rows = sorted(tuple(int(x) for x in h5py.File(fn, "r").attrs["rows"]) for fn in files)
+    covered = sum(r1 - r0 for r0, r1 in rows)
+    gaps = [(rows[i][1], rows[i + 1][0]) for i in range(len(rows) - 1) if rows[i][1] != rows[i + 1][0]]
+    print(f"  rows covered {covered:,} of {S.n:,}" + (f"; GAPS {gaps[:5]}" if gaps or covered != S.n else ""))
+    if covered != S.n:
+        print("  WARNING: not the whole snapshot (some tasks missing): whole-box numbers are partial")
+    G_ = None
+    sV = sVtb = 0.0
+    for fn in files:
+        with h5py.File(fn, "r") as f:
+            if tuple(int(x) for x in f.attrs["order"]) != order:
+                sys.exit(f"ERROR: axis order differs in {fn}")
+            if G_ is None:
+                G_ = {g: f[g][()].astype(np.float64) for g in GRIDS}
             else:
-                Ng = int(lv)
-                inv = g640[1] if Ng == 640 else group(pos, box, Ng)[1]
-                Mp, Vp = np.bincount(inv, m), np.bincount(inv, V)
-                avg = lambda q: np.bincount(inv, m * q) / Mp
-                v = tb(Mp / Vp, avg(T), avg(xHII), avg(fII), avg(fIII), np.bincount(inv, V * Jc) / Vp)[inv]
-            res[lv] = ((V * v).sum(), V.sum())
-            for Sg in SCALES:
-                si = sinv[Sg]
-                acc.maps[Sg][lv].append(np.bincount(si, V * v) / np.bincount(si, V))
-            if R is not None and lv in ("640", "cell"):
-                w = val["_w"]
-                inv6 = g640[1]
-                val["tb_640" if lv == "640" else "tb_cell"] += (np.bincount(inv6, V * v) / np.bincount(inv6, V))[w].sum()
-        acc.blk.append(res)
-        r640 = res["640"][0] / res["cell"][0] if res["cell"][0] else np.nan
-        print(f"  block {ib:2d} cells {s0:,}+: {frac_keep:.2f} in complete 320^3 pixels, <dT_b> cell "
-              f"{res['cell'][0] / res['cell'][1]:+.4e}, 640/cell {r640:.4f}  ({time.time() - tb0:.0f} s)", flush=True)
-
-    if not acc.blk:
-        sys.exit("no usable block")
-    print(f"\nsnapshot {a.snap}, z = {z:.4f}, line {a.line}: {len(acc.blk)} blocks, {time.time() - t0:.0f} s")
-    if S.has_ne:
-        print(f"  median |ElectronAbundance - (x_HII + f_HeII + 2 f_HeIII)| (non-SF cells) = {np.median(ne_chk):.2e}")
-    else:
-        print("  ElectronAbundance not stored: Ne = HII + HeII + 2 HeIII (the render Temperature check below tests it)")
-    tot = {lv: sum(b[lv][0] for b in acc.blk) / sum(b[lv][1] for b in acc.blk) for lv in names}
-    rat = np.array([[b[lv][0] / b["cell"][0] for lv in names] for b in acc.blk])
-    nb = len(acc.blk)
-    jk = []                                                          # jackknife of the pooled ratio
-    for i in range(nb):
-        num = {lv: sum(acc.blk[j][lv][0] for j in range(nb) if j != i) for lv in names}
-        jk.append([num[lv] / num["cell"] for lv in names])
-    jk = np.array(jk)
-    jerr = np.sqrt((nb - 1) / nb * ((jk - jk.mean(0))**2).sum(0))
-    print(f"\n  <dT_b> [{L.unit}] (volume-weighted over the cells used) and ratio to the cell level (jackknife error):")
-    for i, lv in enumerate(names):
-        print(f"    {lv:>6}: {tot[lv]:+.5e}   ratio {tot[lv] / tot['cell']:.4f} +- {jerr[i]:.4f}"
-              f"   (blocks: median {np.median(rat[:, i]):.4f}, range {rat[:, i].min():.4f}-{rat[:, i].max():.4f})")
-    print(f"  share of the cell-level <dT_b> by 1+delta: " + ", ".join(
-        f"{dshare_edges[i]:g}-{dshare_edges[i + 1]:g}: {dshare[i] / dshare.sum():.3f}" for i in range(len(dshare))))
-    for Sg in SCALES:
-        ref = np.concatenate(acc.maps[Sg]["cell"])
-        print(f"  map smoothed to {Sg}^3 pixels ({len(ref):,} pixels): variance ratio to cell level / correlation")
-        print("    " + "  ".join(f"{lv}: {np.var(np.concatenate(acc.maps[Sg][lv])) / np.var(ref):.4f}/"
-                                   f"{np.corrcoef(np.concatenate(acc.maps[Sg][lv]), ref)[0, 1]:.4f}" for lv in names[:-1]))
-    if R is not None:
-        print(f"\n  render check on {val['n']:,} complete 640^3 pixels (axis order {order}): render / cells grouped at 640:")
-        print(f"    Density median ratio {np.median(val['rho']):.4f}, Temperature {np.median(val['T']):.4f}, "
-              f"median |dx_HII| {np.median(val['xHII']):.2e}, median |dx_HeII| {np.median(val['fII']):.2e}")
-        print(f"    <dT_b> on these pixels: render (production map) {val['tb_r'] / val['n']:+.5e}, cells at 640 "
-              f"{val['tb_640'] / val['n']:+.5e}, cell level {val['tb_cell'] / val['n']:+.5e} {L.unit}")
-        print(f"    => production map / cell level on these pixels: {val['tb_r'] / val['tb_cell']:.4f}")
+                for g in GRIDS:
+                    G_[g] += f[g][()]
+            sV += float(f.attrs["sum_V"]); sVtb += float(f.attrs["sum_V_tb"])
+    N = G_["V"].shape[0]
+    vpix = (box / N)**3
+    # production (render) inputs and map
+    R = {}
+    for k in ("Density", "Temperature", "HII_Fraction", "HeII_Fraction", "HeIII_Fraction"):
+        p = os.path.join(a.render, k, f"{k}_{a.render_snap:03d}.hdf5")
+        R[k] = h5py.File(p if os.path.exists(p) else os.path.join(a.render, "All", f"All_{a.render_snap:03d}.hdf5"), "r")[k]
+    J = sum(first_3d(h5py.File(fn, "r"))[()].astype(np.float32) for fn in a.J)
+    R_tb = np.empty((N,) * 3, np.float32)
+    for i0 in range(0, N, 32):
+        sl = slice(i0, i0 + 32)
+        F = {k: R[k][sl].astype(np.float64) for k in R}
+        R_tb[sl] = P.tb(F["Density"], F["Temperature"], F["HII_Fraction"], F["HeII_Fraction"], F["HeIII_Fraction"],
+                        J[sl].astype(np.float64))
+    # checks: the cells deposited at 640^3 against the render
+    Rd = R["Density"][()].astype(np.float64)
+    mc = G_["m"] / vpix
+    ok = (G_["m"] > 0) & (Rd > 0)
+    print(f"\n  check, cells deposited at {N}^3 (nearest pixel) vs the render (cube-overlap deposit):")
+    print(f"    total mass ratio {G_['m'].sum() / (Rd.sum() * vpix):.6f}; empty pixels {(G_['V'] == 0).sum():,}; "
+          f"corr(log rho) {np.corrcoef(np.log(mc[ok]), np.log(Rd[ok]))[0, 1]:.4f}, median ratio {np.median(Rd[ok] / mc[ok]):.4f}")
+    del Rd
+    for g, k in (("m_T", "Temperature"), ("m_xHII", "HII_Fraction"), ("m_fHeII", "HeII_Fraction")):
+        r = R[k][()].astype(np.float64)
+        q = G_[g][ok] / G_["m"][ok]
+        if k == "Temperature":
+            print(f"    Temperature: median render/cells {np.median(r[ok] / q):.4f}, mass-weighted mean ratio "
+                  f"{(r[ok] * G_['m'][ok]).sum() / G_[g][ok].sum():.5f}")
+        else:
+            print(f"    {k}: median |render - cells| {np.median(np.abs(r[ok] - q)):.2e}, mass-weighted means "
+                  f"{(r[ok] * G_['m'][ok]).sum() / G_['m'][ok].sum():.5f} / {G_[g][ok].sum() / G_['m'][ok].sum():.5f}")
+        del r
+    # whole box: cell level vs production
+    cellmap = np.where(G_["V"] > 0, G_["V_tb"] / np.maximum(G_["V"], 1e-300), R_tb).astype(np.float32)
+    mean_cell = sVtb / sV
+    mean_prod = float(R_tb.astype(np.float64).mean())
+    print(f"\n  WHOLE BOX, <dT_b> [{unit}]: production ({N}^3 render inputs) {mean_prod:+.5e}, cell level {mean_cell:+.5e}; "
+          f"production / cell = {mean_prod / mean_cell:.4f}")
+    print(f"    (cell-level map at {N}^3: volume-weighted average of the cells in each pixel; its mean "
+          f"{float(cellmap.astype(np.float64).mean()):+.5e})")
+    kc, cnt, Pk, X = spectra([cellmap, R_tb], box / 1e3)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        r = X[0] / np.sqrt(Pk[0] * Pk[1])
+    sel = np.flatnonzero((cnt > 0) & (Pk[0] > 0))
+    print("    P_production / P_cell and r(k), k in h/cMpc:")
+    for i in sel:
+        print(f"      k = {kc[i]:7.3f}: {Pk[1][i] / Pk[0][i]:.4f}  r = {r[i]:.4f}")
+    if a.save_map:
+        with h5py.File(os.path.join(a.out, f"cellmap_{a.line}_{a.snap:03d}.hdf5"), "w") as f:
+            f["dTb_cell"] = cellmap; f["dTb_production"] = R_tb
+            f.attrs.update({"z": z, "unit": unit, "order": order, "box": box})
+    # cubes: the resolution ladder
+    nc = int(A["n_cube"])
+    names = [str(n) for n in levels(N)] + ["cell", "production"]
+    scales = (N // 2, N)
+    rows_ = []
+    mapsS = {S_: {lv: [] for lv in names[:-1]} for S_ in scales}
+    for q in range(nc):
+        parts = []
+        for fn in files:
+            with h5py.File(fn, "r") as f:
+                if f"cube_{q:03d}" in f:
+                    parts.append({k: f[f"cube_{q:03d}/{k}"][()].astype(np.float64) for k in f[f"cube_{q:03d}"]})
+        if not parts:
+            continue
+        c = {k: np.concatenate([p_[k] for p_ in parts]) for k in parts[0]}
+        res, maps = ladder(c, P, box, R_tb, order, N)
+        rows_.append(res)
+        for S_ in scales:
+            for lv in names[:-1]:
+                mapsS[S_][lv].append(maps[S_][lv])
+    if rows_:
+        print(f"\n  CUBES ({len(rows_)} x {int(A['cube_side'])}^3 of the {N // 2}^3 pixels): <dT_b> and ratio to the cell level "
+              f"(jackknife over cubes)")
+        tot = {lv: np.array([r_[lv] for r_ in rows_]) for lv in names}
+        n = len(rows_)
+        for lv in names:
+            rat = tot[lv].sum() / tot["cell"].sum()
+            jk = np.array([(tot[lv].sum() - tot[lv][i]) / (tot["cell"].sum() - tot["cell"][i]) for i in range(n)])
+            err = np.sqrt((n - 1) / n * ((jk - jk.mean())**2).sum())
+            print(f"    {lv:>10}: {tot[lv].mean():+.5e}  ratio {rat:.4f} +- {err:.4f}")
+        for S_ in scales:
+            ref = np.concatenate(mapsS[S_]["cell"])
+            print(f"    map smoothed to {S_}^3 pixels ({len(ref):,}): variance ratio to cell level / correlation")
+            print("      " + "  ".join(f"{lv}: {np.var(np.concatenate(mapsS[S_][lv])) / np.var(ref):.4f}/"
+                                       f"{np.corrcoef(np.concatenate(mapsS[S_][lv]), ref)[0, 1]:.4f}" for lv in names[:-2]))
 
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="mode", required=True)
-    for name in ("inspect", "run"):
+    for name in ("inspect", "scan", "merge"):
         q = sub.add_parser(name)
         q.add_argument("--snapdir", required=True)
         q.add_argument("--gas-file", help="file with the PartType0 fields (default: PartType0/PartType0_NNN.hdf5, else snap_NNN.hdf5)")
-        q.add_argument("--block-size", type=int, default=40_000_000)
     q = sub.choices["inspect"]
     q.add_argument("--snap", type=int)
-    q.add_argument("--complete", type=float, default=0.05)
     q.add_argument("--renders", nargs="*", help="ren_640 directories, to match render snapshots by z")
     q.add_argument("--jdir", help="J_alpha directory, to say which matched snapshots have J files")
     q.add_argument("--tr-tag", default="tr_sfmask")
-    q = sub.choices["run"]
-    q.add_argument("--snap", type=int, required=True)
-    q.add_argument("--line", choices=["H", "He"], default="He")
-    q.add_argument("--J", action="append", required=True, help="640^3 J_alpha files of the line (stars, AGN), summed")
-    q.add_argument("--render", help="ren_640 directory for the check against the production inputs")
-    q.add_argument("--render-snap", type=int)
-    q.add_argument("--blocks", type=int, default=32)
-    q.add_argument("--complete", type=float, default=0.05, help="|gas volume / pixel volume - 1| for a complete 320^3 pixel")
+    q.add_argument("--block-size", type=int, default=40_000_000)
+    q.add_argument("--complete", type=float, default=0.05)
+    for name in ("scan", "merge"):
+        q = sub.choices[name]
+        q.add_argument("--snap", type=int, required=True)
+        q.add_argument("--line", choices=["H", "He"], default="He")
+        q.add_argument("--J", action="append", required=True, help="640^3 J_alpha files of the line (stars, AGN), summed")
+        q.add_argument("--render", required=True, help="ren_640 directory of the matching render snapshot")
+        q.add_argument("--render-snap", type=int, required=True)
+        q.add_argument("--out", required=True, help="directory of the task files")
+    q = sub.choices["scan"]
+    q.add_argument("--task", type=int, required=True)
+    q.add_argument("--ntask", type=int, required=True)
+    q.add_argument("--chunk", type=int, default=20_000_000, help="rows per read")
+    q.add_argument("--n-cube", type=int, default=64)
+    q.add_argument("--cube-side", type=int, default=16, help="cube side in pixels of the N/2 grid (320^3 for Lumina; divides it)")
+    q.add_argument("--seed", type=int, default=12345)
+    sub.choices["merge"].add_argument("--save-map", action="store_true", help="write the 640^3 cell-level and production maps")
     a = p.parse_args()
-    if a.mode == "run" and a.render and a.render_snap is None:
-        sys.exit("--render needs --render-snap")
-    inspect(a) if a.mode == "inspect" else run(a)
+    {"inspect": inspect, "scan": scan, "merge": merge}[a.mode](a)
 
 
 if __name__ == "__main__":
