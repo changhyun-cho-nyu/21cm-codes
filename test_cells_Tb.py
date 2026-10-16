@@ -296,10 +296,13 @@ def choose_order(S, rows, Rd, box):
         rr = Rd[i, j, k].astype(np.float64)
         ok = rr > 0
         res.append((np.corrcoef(np.log(c["rho"][ok]), np.log(rr[ok]))[0, 1], o))
+    err = 1.0 / np.sqrt(len(c["rho"]))                            # statistical error of a correlation coefficient
     for cc, o in res:
-        print(f"  axis order render[i0,i1,i2] = coords {o}: corr(log rho_cell, log render Density) = {cc:.4f}")
+        print(f"  axis order render[i0,i1,i2] = coords {o}: corr(log rho_cell, log render Density) = {cc:.4f} (+- {err:.4f})")
     res.sort(reverse=True)
-    if not (res[0][0] > 0.3 and res[0][0] - res[1][0] > 0.1):
+    # a single cell's density scatters by decades inside its pixel, so the right order gives a modest correlation
+    # (~0.2 on Lumina); it must stand out from the wrong one by many standard errors
+    if not (res[0][0] > 0.05 and res[0][0] - res[1][0] > 20 * err):
         sys.exit("STOP: the render axis order is not clear from the data (see the correlations above)")
     return res[0][1]
 
