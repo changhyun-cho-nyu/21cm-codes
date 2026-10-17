@@ -28,7 +28,7 @@ source ~/.bashrc
 conda activate jupyter_env
 set -eo pipefail
 cd "$SLURM_SUBMIT_DIR"
-echo "decompose: $LINE, $RUN snapshot $SNAP, $(date), commit $(git rev-parse --short HEAD)"
 EXTRA=""; [ "$IGM" = 1 ] && EXTRA="--igm"
+echo "decompose: $LINE, $RUN snapshot $SNAP, mode $([ "$IGM" = 1 ] && echo IGM-test || echo decomposition) (IGM=$IGM), out $OUT_DIR, $(date), commit $(git rev-parse --short HEAD)"
 python -u decompose_cells_He.py --snapdir $SD --snap $SNAP --line $LINE --out $OUT_DIR $EXTRA
 echo "done $(date)"
