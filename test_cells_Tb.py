@@ -346,12 +346,15 @@ def scan(a):
     del Rd
     Nc = N // 2
     nl, cubes = cube_origins(a.n_cube, a.cube_side, a.seed, Nc)
-    grids = GRIDS if a.grids == "full" else GRIDS_SLIM
+    grids = list(GRIDS if a.grids == "full" else GRIDS_SLIM)
+    igm = {f"V_tb_lt{c:g}": c for c in (a.igm_cuts or [])}          # IGM-only signal: cells with 1 + delta < cut
+    grids += list(igm)
     G_ = {g: np.zeros(N**3, np.float64) for g in grids}
     part = out + ".part"
     fo = h5py.File(part, "w")
     fo.attrs.update({"snap": a.snap, "z": S.z, "line": a.line, "order": order, "rows": (r0, r1), "n_cube": a.n_cube,
-                     "cube_side": a.cube_side, "seed": a.seed, "render_snap": a.render_snap, "grids": a.grids})
+                     "cube_side": a.cube_side, "seed": a.seed, "render_snap": a.render_snap, "grids": a.grids,
+                     "igm_cuts": list(a.igm_cuts or []), "rho_mean": P.rho_mean})
     cg = {}
     CF = ("pos", "m", "rho", "V", "T", "xHII", "fII", "fIII", "J", "tb")
     t0, sV, sVtb, ncell = time.time(), 0.0, 0.0, 0
@@ -365,8 +368,10 @@ def scan(a):
         del i, j, k
         wts = {"V": lambda: c["V"], "V_tb": lambda: c["V"] * c["tb"], "m": lambda: c["m"], "m_T": lambda: c["m"] * c["T"],
                "m_xHII": lambda: c["m"] * c["xHII"], "m_fHeII": lambda: c["m"] * c["fII"]}
+        dl = c["rho"] / P.rho_mean
         for g in grids:
-            G_[g] += np.bincount(lin, wts[g](), minlength=N**3)
+            w = (c["V"] * c["tb"] * (dl < igm[g])) if g in igm else wts[g]()
+            G_[g] += np.bincount(lin, w, minlength=N**3)
         sV += c["V"].sum(); sVtb += (c["V"] * c["tb"]).sum(); ncell += i1 - i0
         # cells of the cubes (cube lattice in coordinate axes)
         cl = np.floor(c["pos"] * (Nc / box)).astype(np.int64) % Nc // a.cube_side
@@ -389,7 +394,7 @@ def scan(a):
             el = time.time() - t0
             print(f"  rows {i1 - r0:,}/{r1 - r0:,}: {el / 60:.1f} min, ~{el * (r1 - r0) / (i1 - r0) / 3600:.1f} h total", flush=True)
     for g in grids:
-        dt = np.float64 if (g == "V_tb" and a.grids == "full") else np.float32
+        dt = np.float64 if (g == "V_tb" and a.grids == "full") else np.float32      # IGM grids: float32
         fo.create_dataset(g, data=G_[g].reshape(N, N, N).astype(dt))
     fo.attrs.update({"sum_V": sV, "sum_V_tb": sVtb, "n_cells": ncell})
     fo.close()
@@ -445,7 +450,7 @@ def merge(a):
         with h5py.File(fn, "r") as f:
             if tuple(int(x) for x in f.attrs["order"]) != order:
                 sys.exit(f"ERROR: axis order differs in {fn}")
-            gs = [g for g in GRIDS if g in f]
+            gs = [g for g in GRIDS if g in f] + sorted(k for k in f if k.startswith("V_tb_lt"))
             if G_ is None:
                 G_ = {g: f[g][()].astype(np.float64) for g in gs}
             else:
@@ -509,9 +514,26 @@ def merge(a):
     print("    P_production / P_cell and r(k), k in h/cMpc:")
     for i in sel:
         print(f"      k = {kc[i]:7.3f}: {Pk[1][i] / Pk[0][i]:.4f}  r = {r[i]:.4f}")
+    igm_maps = {}
+    for g in sorted((g for g in G_ if g.startswith("V_tb_lt")), key=lambda x: float(x[7:])):
+        cut = float(g[7:])
+        mi = np.where(G_["V"] > 0, G_[g] / np.maximum(G_["V"], 1e-300), 0.0).astype(np.float32)
+        igm_maps[cut] = mi
+        mean_i = G_[g].sum() / sV
+        kc2, cnt2, Pk2, X2 = spectra([mi, R_tb, cellmap], box / 1e3)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            rp = X2[0] / np.sqrt(Pk2[0] * Pk2[1]); rc = X2[1] / np.sqrt(Pk2[0] * Pk2[2])
+        sel2 = np.flatnonzero((cnt2 > 0) & (Pk2[0] > 0))
+        pick = sorted({int(sel2[np.argmin(abs(kc2[sel2] - qq))]) for qq in (0.03, 0.1, 0.3, 1.0, 3.0)})
+        print(f"\n  WHOLE BOX, IGM only (cells with 1 + delta < {cut:g}): <dT_b> {mean_i:+.5e} {unit} = {mean_i / mean_cell:.4f} of the "
+              f"cell level; production / IGM = {mean_prod / mean_i:.4f}")
+        print("    k [h/cMpc]: P_IGM/P_cell, P_production/P_IGM, r(production, IGM), r(IGM, cell all):  " + "  ".join(
+            f"{kc2[i]:.2f}: {Pk2[0][i] / Pk2[2][i]:.4f}, {Pk2[1][i] / Pk2[0][i]:.3f}, {rp[i]:.3f}, {rc[i]:.3f}" for i in pick))
     if a.save_map:
         with h5py.File(os.path.join(a.out, f"cellmap_{a.line}_{a.snap:03d}.hdf5"), "w") as f:
             f["dTb_cell"] = cellmap; f["dTb_production"] = R_tb
+            for cut, mi in igm_maps.items():
+                f[f"dTb_cell_igm_lt{cut:g}"] = mi
             f.attrs.update({"z": z, "unit": unit, "order": order, "box": box})
         # the cell-level map in the format of the production maps (RIN_NNN.hdf5: dataset "rin", render index order),
         # for the bispectrum, VID or PS codes that read those
@@ -520,6 +542,12 @@ def merge(a):
             f["rin"].attrs["content"] = np.bytes_(f"delta T_b{'^He' if a.line == 'He' else ''} [{unit}], real space; gas-cell level "
                                                   f"(volume-weighted mean of the Voronoi cells in each pixel), test_cells_Tb.py")
             f.attrs.update({"z": z, "snap_full": a.snap, "render_snap": a.render_snap, "box_ckpc_h": box})
+        for cut, mi in igm_maps.items():
+            with h5py.File(os.path.join(a.out, f"RIN_cell_igm{cut:g}_{a.line}_{a.snap:03d}.hdf5"), "w") as f:
+                f["rin"] = mi
+                f["rin"].attrs["content"] = np.bytes_(f"delta T_b{'^He' if a.line == 'He' else ''} [{unit}], real space; gas-cell "
+                                                      f"level, only cells with 1 + delta < {cut:g} (sum over them / pixel gas volume)")
+                f.attrs.update({"z": z, "snap_full": a.snap, "render_snap": a.render_snap, "box_ckpc_h": box, "igm_cut": cut})
     # cubes: the resolution ladder
     nc = int(A["n_cube"])
     names = [str(n) for n in levels(N)] + ["cell", "production"]
@@ -586,6 +614,8 @@ def main():
     q.add_argument("--n-cube", type=int, default=64)
     q.add_argument("--cube-side", type=int, default=16, help="cube side in pixels of the N/2 grid (320^3 for Lumina; divides it)")
     q.add_argument("--seed", type=int, default=12345)
+    q.add_argument("--igm-cuts", type=float, nargs="*", default=[],
+                   help="also whole-box IGM-only signal grids: cells with 1 + delta < each cut (1 GB per cut per task)")
     q.add_argument("--grids", choices=["full", "slim"], default="full",
                    help="full: 6 640^3 sums incl. the render checks (~7.3 GB per task); slim: volume and volume x dT_b (2.1 GB)")
     sub.choices["merge"].add_argument("--save-map", action="store_true",

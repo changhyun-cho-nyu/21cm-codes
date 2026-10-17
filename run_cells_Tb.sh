@@ -34,6 +34,7 @@ OUT_DIR=${OUT_DIR:-/orcd/data/mvogelsb/004/chcho/cell_test}
 NTASK=${NTASK:-32}                       # = the --array size
 GRIDS=${GRIDS:-full}           # full (render checks, ~7.3 GB per task) or slim (volume and volume x dT_b, 2.1 GB)
 NCUBE=${NCUBE:-64}             # cubes kept for the ladder (~1.6 GB each in total)
+IGM_CUTS=${IGM_CUTS:-}         # e.g. "3 10 30 100": whole-box IGM-only maps (cells with 1 + delta < cut), ~1 GB per cut per task
 
 SNAP_ABOVE=/orcd/data/mvogelsb/005/Lumina/Lumina_above_z_4p75/snapshots
 SNAP_BELOW=/orcd/data/mvogelsb/005/Lumina/Lumina_below_z_4p75/snapshots
@@ -50,5 +51,5 @@ cd "$SLURM_SUBMIT_DIR"
 for f in "$J1" "$J2"; do [ -s "$f" ] || { echo "missing $f"; exit 1; }; done
 echo "scan task $SLURM_ARRAY_TASK_ID/$NTASK: $LINE, $RUN snapshot $SNAP, render $RSNAP, J $J1 $J2, $(date), commit $(git rev-parse --short HEAD)"
 python -u test_cells_Tb.py scan --snapdir $SD --snap $SNAP --line $LINE --J $J1 --J $J2 --render $REN --render-snap $RSNAP \
-    --out $OUT_DIR --task $SLURM_ARRAY_TASK_ID --ntask $NTASK --grids $GRIDS --n-cube $NCUBE
+    --out $OUT_DIR --task $SLURM_ARRAY_TASK_ID --ntask $NTASK --grids $GRIDS --n-cube $NCUBE ${IGM_CUTS:+--igm-cuts $IGM_CUTS}
 echo "done $(date)"
