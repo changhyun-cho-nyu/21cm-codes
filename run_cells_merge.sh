@@ -17,14 +17,14 @@
 # Keep the settings below the same as in run_cells_Tb.sh. Writes the 640^3 cell-level and production maps
 # (cellmap_<line>_<snap>.hdf5, 2 GB) to OUT_DIR.
 
-LINE=He
-RUN=below
-SNAP=136
-RSNAP=501
-JDIR=/orcd/data/mvogelsb/004/chcho/Jalpha_test   # production He J at 501 not yet made (2026-10-15): the test J
-JSNAP=500                      # snapshot of the J files (render 500, z = 4.0116, dz = 0.0074; same J on both sides of the ratio)
-TR_TAG=tr_sfmask
-OUT_DIR=/orcd/data/mvogelsb/004/chcho/cell_test
+LINE=${LINE:-He}
+RUN=${RUN:-below}
+SNAP=${SNAP:-136}
+RSNAP=${RSNAP:-501}
+JDIR=${JDIR:-/orcd/data/mvogelsb/004/chcho/Jalpha_test}   # production He J at 501 not yet made (2026-10-15): the test J
+JSNAP=${JSNAP:-500}                      # snapshot of the J files (render 500, z = 4.0116, dz = 0.0074; same J on both sides of the ratio)
+TR_TAG=${TR_TAG:-tr_sfmask}
+OUT_DIR=${OUT_DIR:-/orcd/data/mvogelsb/004/chcho/cell_test}
 
 SNAP_ABOVE=/orcd/data/mvogelsb/005/Lumina/Lumina_above_z_4p75/snapshots
 SNAP_BELOW=/orcd/data/mvogelsb/005/Lumina/Lumina_below_z_4p75/snapshots

@@ -247,6 +247,7 @@ def group(pos, box, Ng):
 
 ORDERS = ((0, 1, 2), (2, 1, 0))
 GRIDS = ("V", "V_tb", "m", "m_T", "m_xHII", "m_fHeII")       # 640^3 sums of the cells, in render index order
+GRIDS_SLIM = ("V", "V_tb")       # --grids slim: only what the result needs (the render checks need the full set)
 
 
 class Phys:
@@ -345,11 +346,12 @@ def scan(a):
     del Rd
     Nc = N // 2
     nl, cubes = cube_origins(a.n_cube, a.cube_side, a.seed, Nc)
-    G_ = {g: np.zeros(N**3, np.float64) for g in GRIDS}
+    grids = GRIDS if a.grids == "full" else GRIDS_SLIM
+    G_ = {g: np.zeros(N**3, np.float64) for g in grids}
     part = out + ".part"
     fo = h5py.File(part, "w")
     fo.attrs.update({"snap": a.snap, "z": S.z, "line": a.line, "order": order, "rows": (r0, r1), "n_cube": a.n_cube,
-                     "cube_side": a.cube_side, "seed": a.seed, "render_snap": a.render_snap})
+                     "cube_side": a.cube_side, "seed": a.seed, "render_snap": a.render_snap, "grids": a.grids})
     cg = {}
     CF = ("pos", "m", "rho", "V", "T", "xHII", "fII", "fIII", "J", "tb")
     t0, sV, sVtb, ncell = time.time(), 0.0, 0.0, 0
@@ -361,9 +363,10 @@ def scan(a):
         c["tb"] = P.tb(c["rho"], c["T"], c["xHII"], c["fII"], c["fIII"], c["J"])
         lin = (i * N + j) * N + k
         del i, j, k
-        for g, w in (("V", c["V"]), ("V_tb", c["V"] * c["tb"]), ("m", c["m"]), ("m_T", c["m"] * c["T"]),
-                     ("m_xHII", c["m"] * c["xHII"]), ("m_fHeII", c["m"] * c["fII"])):
-            G_[g] += np.bincount(lin, w, minlength=N**3)
+        wts = {"V": lambda: c["V"], "V_tb": lambda: c["V"] * c["tb"], "m": lambda: c["m"], "m_T": lambda: c["m"] * c["T"],
+               "m_xHII": lambda: c["m"] * c["xHII"], "m_fHeII": lambda: c["m"] * c["fII"]}
+        for g in grids:
+            G_[g] += np.bincount(lin, wts[g](), minlength=N**3)
         sV += c["V"].sum(); sVtb += (c["V"] * c["tb"]).sum(); ncell += i1 - i0
         # cells of the cubes (cube lattice in coordinate axes)
         cl = np.floor(c["pos"] * (Nc / box)).astype(np.int64) % Nc // a.cube_side
@@ -385,8 +388,9 @@ def scan(a):
         if (i0 - r0) // a.chunk % 20 == 0:
             el = time.time() - t0
             print(f"  rows {i1 - r0:,}/{r1 - r0:,}: {el / 60:.1f} min, ~{el * (r1 - r0) / (i1 - r0) / 3600:.1f} h total", flush=True)
-    for g in GRIDS:
-        fo.create_dataset(g, data=G_[g].reshape(N, N, N).astype(np.float32 if g != "V_tb" else np.float64))
+    for g in grids:
+        dt = np.float64 if (g == "V_tb" and a.grids == "full") else np.float32
+        fo.create_dataset(g, data=G_[g].reshape(N, N, N).astype(dt))
     fo.attrs.update({"sum_V": sV, "sum_V_tb": sVtb, "n_cells": ncell})
     fo.close()
     os.replace(part, out)
@@ -441,10 +445,13 @@ def merge(a):
         with h5py.File(fn, "r") as f:
             if tuple(int(x) for x in f.attrs["order"]) != order:
                 sys.exit(f"ERROR: axis order differs in {fn}")
+            gs = [g for g in GRIDS if g in f]
             if G_ is None:
-                G_ = {g: f[g][()].astype(np.float64) for g in GRIDS}
+                G_ = {g: f[g][()].astype(np.float64) for g in gs}
             else:
-                for g in GRIDS:
+                if set(gs) != set(G_):
+                    sys.exit(f"ERROR: {fn} has grids {gs}, the first file {sorted(G_)}")
+                for g in gs:
                     G_[g] += f[g][()]
             sV += float(f.attrs["sum_V"]); sVtb += float(f.attrs["sum_V_tb"])
     N = G_["V"].shape[0]
@@ -461,15 +468,23 @@ def merge(a):
         F = {k: R[k][sl].astype(np.float64) for k in R}
         R_tb[sl] = P.tb(F["Density"], F["Temperature"], F["HII_Fraction"], F["HeII_Fraction"], F["HeIII_Fraction"],
                         J[sl].astype(np.float64))
-    # checks: the cells deposited at 640^3 against the render
-    Rd = R["Density"][()].astype(np.float64)
-    mc = G_["m"] / vpix
-    ok = (G_["m"] > 0) & (Rd > 0)
-    print(f"\n  check, cells deposited at {N}^3 (nearest pixel) vs the render (cube-overlap deposit):")
-    print(f"    total mass ratio {G_['m'].sum() / (Rd.sum() * vpix):.6f}; empty pixels {(G_['V'] == 0).sum():,}; "
-          f"corr(log rho) {np.corrcoef(np.log(mc[ok]), np.log(Rd[ok]))[0, 1]:.4f}, median ratio {np.median(Rd[ok] / mc[ok]):.4f}")
-    del Rd
+    # checks: gas volume per pixel (always); with --grids full also the cells deposited at 640^3 vs the render
+    cov = G_["V"] / vpix
+    print(f"\n  check, gas volume of the cells per {N}^3 pixel / pixel volume: total {G_['V'].sum() / box**3:.6f}, "
+          f"median {np.median(cov):.4f}, 1-99% {np.percentile(cov, 1):.4f}-{np.percentile(cov, 99):.4f}, empty pixels {(G_['V'] == 0).sum():,}")
+    if "m" in G_:
+        Rd = R["Density"][()].astype(np.float64)
+        mc = G_["m"] / vpix
+        ok = (G_["m"] > 0) & (Rd > 0)
+        print(f"  check, cells deposited at {N}^3 (nearest pixel) vs the render (cube-overlap deposit):")
+        print(f"    total mass ratio {G_['m'].sum() / (Rd.sum() * vpix):.6f}; "
+              f"corr(log rho) {np.corrcoef(np.log(mc[ok]), np.log(Rd[ok]))[0, 1]:.4f}, median ratio {np.median(Rd[ok] / mc[ok]):.4f}")
+        del Rd
+    else:
+        print("  (--grids slim: no render comparison of mass, T and fractions)")
     for g, k in (("m_T", "Temperature"), ("m_xHII", "HII_Fraction"), ("m_fHeII", "HeII_Fraction")):
+        if g not in G_:
+            continue
         r = R[k][()].astype(np.float64)
         q = G_[g][ok] / G_["m"][ok]
         if k == "Temperature":
@@ -498,6 +513,13 @@ def merge(a):
         with h5py.File(os.path.join(a.out, f"cellmap_{a.line}_{a.snap:03d}.hdf5"), "w") as f:
             f["dTb_cell"] = cellmap; f["dTb_production"] = R_tb
             f.attrs.update({"z": z, "unit": unit, "order": order, "box": box})
+        # the cell-level map in the format of the production maps (RIN_NNN.hdf5: dataset "rin", render index order),
+        # for the bispectrum, VID or PS codes that read those
+        with h5py.File(os.path.join(a.out, f"RIN_cell_{a.line}_{a.snap:03d}.hdf5"), "w") as f:
+            f["rin"] = cellmap
+            f["rin"].attrs["content"] = np.bytes_(f"delta T_b{'^He' if a.line == 'He' else ''} [{unit}], real space; gas-cell level "
+                                                  f"(volume-weighted mean of the Voronoi cells in each pixel), test_cells_Tb.py")
+            f.attrs.update({"z": z, "snap_full": a.snap, "render_snap": a.render_snap, "box_ckpc_h": box})
     # cubes: the resolution ladder
     nc = int(A["n_cube"])
     names = [str(n) for n in levels(N)] + ["cell", "production"]
@@ -564,7 +586,10 @@ def main():
     q.add_argument("--n-cube", type=int, default=64)
     q.add_argument("--cube-side", type=int, default=16, help="cube side in pixels of the N/2 grid (320^3 for Lumina; divides it)")
     q.add_argument("--seed", type=int, default=12345)
-    sub.choices["merge"].add_argument("--save-map", action="store_true", help="write the 640^3 cell-level and production maps")
+    q.add_argument("--grids", choices=["full", "slim"], default="full",
+                   help="full: 6 640^3 sums incl. the render checks (~7.3 GB per task); slim: volume and volume x dT_b (2.1 GB)")
+    sub.choices["merge"].add_argument("--save-map", action="store_true",
+                                      help="write the 640^3 cell-level and production maps (and RIN_cell_<line>_<snap>.hdf5)")
     a = p.parse_args()
     {"inspect": inspect, "scan": scan, "merge": merge}[a.mode](a)
 

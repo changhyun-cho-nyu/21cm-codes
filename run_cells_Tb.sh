@@ -19,16 +19,21 @@
 # Reads all fields of the snapshot once (~8.6 TB in total). Disk in OUT_DIR: ~6.3 GB per task (640^3 sums) plus the
 # cube cells (~75 GB); the task files can be deleted after the merge.
 # A task whose output exists is skipped, so a resubmission redoes only the failed tasks.
+# Settings can be given on the command line, e.g. for the slim run at full snapshot 92:
+#   RUN=above SNAP=92 RSNAP=304 JDIR=/orcd/data/mvogelsb/004/chcho/Jalpha JSNAP=304 GRIDS=slim NCUBE=16 \
+#   OUT_DIR=/orcd/data/mvogelsb/004/chcho/cell_test_92 sbatch run_cells_Tb.sh   (the same variables for run_cells_merge.sh)
 
-LINE=He
-RUN=below                      # snapshot directory: above | below z = 4.75
-SNAP=136                       # full snapshot (z = 4.00417)
-RSNAP=501                      # render snapshot at the same z (inspect: dz = 0)
-JDIR=/orcd/data/mvogelsb/004/chcho/Jalpha_test   # production He J at 501 not yet made (2026-10-15): the test J
-JSNAP=500                      # snapshot of the J files (render 500, z = 4.0116, dz = 0.0074; same J on both sides of the ratio)
-TR_TAG=tr_sfmask
-OUT_DIR=/orcd/data/mvogelsb/004/chcho/cell_test
-NTASK=32                       # = the --array size
+LINE=${LINE:-He}
+RUN=${RUN:-below}                      # snapshot directory: above | below z = 4.75
+SNAP=${SNAP:-136}                       # full snapshot (z = 4.00417)
+RSNAP=${RSNAP:-501}                      # render snapshot at the same z (inspect: dz = 0)
+JDIR=${JDIR:-/orcd/data/mvogelsb/004/chcho/Jalpha_test}   # production He J at 501 not yet made (2026-10-15): the test J
+JSNAP=${JSNAP:-500}                      # snapshot of the J files (render 500, z = 4.0116, dz = 0.0074; same J on both sides of the ratio)
+TR_TAG=${TR_TAG:-tr_sfmask}
+OUT_DIR=${OUT_DIR:-/orcd/data/mvogelsb/004/chcho/cell_test}
+NTASK=${NTASK:-32}                       # = the --array size
+GRIDS=${GRIDS:-full}           # full (render checks, ~7.3 GB per task) or slim (volume and volume x dT_b, 2.1 GB)
+NCUBE=${NCUBE:-64}             # cubes kept for the ladder (~1.6 GB each in total)
 
 SNAP_ABOVE=/orcd/data/mvogelsb/005/Lumina/Lumina_above_z_4p75/snapshots
 SNAP_BELOW=/orcd/data/mvogelsb/005/Lumina/Lumina_below_z_4p75/snapshots
@@ -45,5 +50,5 @@ cd "$SLURM_SUBMIT_DIR"
 for f in "$J1" "$J2"; do [ -s "$f" ] || { echo "missing $f"; exit 1; }; done
 echo "scan task $SLURM_ARRAY_TASK_ID/$NTASK: $LINE, $RUN snapshot $SNAP, render $RSNAP, J $J1 $J2, $(date), commit $(git rev-parse --short HEAD)"
 python -u test_cells_Tb.py scan --snapdir $SD --snap $SNAP --line $LINE --J $J1 --J $J2 --render $REN --render-snap $RSNAP \
-    --out $OUT_DIR --task $SLURM_ARRAY_TASK_ID --ntask $NTASK
+    --out $OUT_DIR --task $SLURM_ARRAY_TASK_ID --ntask $NTASK --grids $GRIDS --n-cube $NCUBE
 echo "done $(date)"
