@@ -14,12 +14,13 @@
 # Which gas makes the cell-level delta T_b (decompose_cells_He.py): reads the cube cells saved by the scan
 # tasks of run_cells_Tb.sh (keep the scan_*.hdf5 files until this has run). Same settings as run_cells_Tb.sh.
 #   mkdir -p logs && sbatch run_decompose_cells.sh
+# Settings from the command line, e.g.  RUN=above SNAP=92 OUT_DIR=/orcd/data/mvogelsb/004/chcho/cell_test_92 IGM=1 sbatch run_decompose_cells.sh
 
-LINE=He
-RUN=below
-SNAP=136
-OUT_DIR=/orcd/data/mvogelsb/004/chcho/cell_test
-IGM=0              # 1: the IGM-component test instead (decompose_cells_He.py --igm; needs cellmap_<line>_<snap>.hdf5)
+LINE=${LINE:-He}
+RUN=${RUN:-below}
+SNAP=${SNAP:-136}
+OUT_DIR=${OUT_DIR:-/orcd/data/mvogelsb/004/chcho/cell_test}
+IGM=${IGM:-0}              # 1: the IGM-component test instead (decompose_cells_He.py --igm; needs cellmap_<line>_<snap>.hdf5)
 if [ "$RUN" = above ]; then SD=/orcd/data/mvogelsb/005/Lumina/Lumina_above_z_4p75/snapshots
 else SD=/orcd/data/mvogelsb/005/Lumina/Lumina_below_z_4p75/snapshots; fi
 
