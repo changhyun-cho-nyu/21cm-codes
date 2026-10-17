@@ -6,7 +6,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=48G
-#SBATCH --time=06:00:00
+#SBATCH --time=12:00:00
 #SBATCH --partition=sched_mit_mvogelsb
 #SBATCH --mail-user=chcho@mit.edu
 #SBATCH --mail-type=END,FAIL
@@ -19,6 +19,7 @@ LINE=He
 RUN=below
 SNAP=136
 OUT_DIR=/orcd/data/mvogelsb/004/chcho/cell_test
+IGM=0              # 1: the IGM-component test instead (decompose_cells_He.py --igm; needs cellmap_<line>_<snap>.hdf5)
 if [ "$RUN" = above ]; then SD=/orcd/data/mvogelsb/005/Lumina/Lumina_above_z_4p75/snapshots
 else SD=/orcd/data/mvogelsb/005/Lumina/Lumina_below_z_4p75/snapshots; fi
 
@@ -27,5 +28,6 @@ conda activate jupyter_env
 set -eo pipefail
 cd "$SLURM_SUBMIT_DIR"
 echo "decompose: $LINE, $RUN snapshot $SNAP, $(date), commit $(git rev-parse --short HEAD)"
-python -u decompose_cells_He.py --snapdir $SD --snap $SNAP --line $LINE --out $OUT_DIR
+EXTRA=""; [ "$IGM" = 1 ] && EXTRA="--igm"
+python -u decompose_cells_He.py --snapdir $SD --snap $SNAP --line $LINE --out $OUT_DIR $EXTRA
 echo "done $(date)"

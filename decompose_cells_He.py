@@ -19,6 +19,11 @@ and how concentrated the signal is: the share of sum(V dT_b) from the brightest 
 Usage
 -----
   python decompose_cells_He.py --snapdir <.../snapshots> --snap 136 --line He --out /orcd/data/mvogelsb/004/chcho/cell_test
+  python decompose_cells_He.py ... --igm [--cuts 3 10 30 100]
+      does pixel averaging reproduce the IGM component itself? For cells with 1 + delta < cut: the cell-level
+      sum(V dT_b) vs the same cells grouped into N/2 ... 4N pixels (mass-weighted T and fractions, density
+      sum(m)/sum(V), volume-weighted J), with jackknife errors over cubes; at N^3 pixels the variance ratio and
+      correlation of the grouped IGM map and of the production map (cellmap_*.hdf5) with the cell-level IGM map.
 """
 import argparse
 import glob
@@ -39,12 +44,106 @@ CLASSES = {
 }
 
 
+def load_cube(files, q, keys):
+    parts = []
+    for fn in files:
+        with h5py.File(fn, "r") as f:
+            g = f.get(f"cube_{q:03d}")
+            if g is not None:
+                parts.append({k: g[k][()].astype(np.float64) for k in keys})
+    return {k: np.concatenate([p_[k] for p_ in parts]) for k in keys} if parts else None
+
+
+def igm_test(a, S, P, files, ncube, N_PIX):
+    """does pixel averaging reproduce the IGM component itself? cells below a cut in 1 + delta, at the cell
+    level vs the same cells grouped into pixels (as the renders average), and vs the production map"""
+    box = S.box
+    cuts = a.cuts
+    lv = [N_PIX // 2, N_PIX, 2 * N_PIX, 4 * N_PIX]
+    cm = os.path.join(a.out, f"cellmap_{a.line}_{a.snap:03d}.hdf5")
+    if not os.path.exists(cm):
+        sys.exit(f"no {cm} (test_cells_Tb.py merge --save-map)")
+    with h5py.File(cm, "r") as f:
+        prod = f["dTb_production"][()]
+        order = tuple(int(x) for x in f.attrs["order"])
+    keys = ("pos", "m", "rho", "V", "T", "xHII", "fII", "fIII", "J", "tb")
+    per = []                                   # per cube: {cut: {"cell": .., level: ..}, "totV", "all": ..}
+    maps = {c: {"cell": [], "group": []} for c in cuts}
+    maps_all, maps_prod = [], []
+    for q in range(ncube):
+        c = load_cube(files, q, keys)
+        if c is None:
+            continue
+        V = c["V"]
+        dl = c["rho"] / P.rho_mean
+        uk, inv6, ix6 = group(c["pos"], box, N_PIX)
+        npx = len(uk)
+        Vpix = np.bincount(inv6, V)
+        first = np.zeros(npx, np.int64); first[inv6[::-1]] = np.arange(len(inv6))[::-1]
+        pix = ix6[first]
+        maps_prod.append(prod[pix[:, order[0]], pix[:, order[1]], pix[:, order[2]]].astype(np.float64))
+        maps_all.append(np.bincount(inv6, V * c["tb"]) / Vpix)
+        r = {"totV": V.sum(), "all": (V * c["tb"]).sum(), "prod": maps_prod[-1].sum() * (box / N_PIX)**3}
+        for cut in cuts:
+            s = dl < cut
+            rc = {"cell": (V[s] * c["tb"][s]).sum()}
+            for Ng in lv:
+                inv = inv6[s] if Ng == N_PIX else group(c["pos"][s], box, Ng)[1]
+                n = npx if Ng == N_PIX else None
+                Mp = np.bincount(inv, c["m"][s], minlength=n or 0)
+                Vp = np.bincount(inv, V[s], minlength=n or 0)
+                ok = Vp > 0
+                avg = lambda x: np.bincount(inv, c["m"][s] * x, minlength=n or 0)[ok] / Mp[ok]
+                tbp = np.zeros(len(Vp))
+                tbp[ok] = P.tb(Mp[ok] / Vp[ok], avg(c["T"][s]), avg(c["xHII"][s]), avg(c["fII"][s]), avg(c["fIII"][s]),
+                               np.bincount(inv, V[s] * c["J"][s], minlength=n or 0)[ok] / Vp[ok])
+                rc[Ng] = (Vp * tbp).sum()
+                if Ng == N_PIX:
+                    maps[cut]["group"].append(Vp * tbp / Vpix)
+                    maps[cut]["cell"].append(np.bincount(inv6[s], V[s] * c["tb"][s], minlength=npx) / Vpix)
+            r[cut] = rc
+        per.append(r)
+        print(f"  cube {q:2d}: {len(V):,} cells", flush=True)
+
+    n = len(per)
+    tot = lambda key, sub=None: np.array([(p_[key] if sub is None else p_[key][sub]) for p_ in per])
+    TV = tot("totV").sum()
+    def ratio_err(num, den):
+        R = num.sum() / den.sum()
+        jk = np.array([(num.sum() - num[i]) / (den.sum() - den[i]) for i in range(n)])
+        return R, np.sqrt((n - 1) / n * ((jk - jk.mean())**2).sum())
+    MA, MP = np.concatenate(maps_all), np.concatenate(maps_prod)
+    print(f"\n  {n} cubes. cell level, all gas: <dT_b> = {tot('all').sum() / TV:+.5e} {P.L.unit}; production map on the same "
+          f"pixels {tot('prod').sum() / TV:+.5e}")
+    print("  IGM = cells with 1 + delta < cut. Means over the cubes' volume; ratios with jackknife errors over cubes.")
+    print(f"  {'cut':>5} {'IGM share':>10} {'<dT_b>_IGM cell':>16} " + " ".join(f"{'grouped ' + str(g) + '/cell':>16}" for g in lv)
+          + f" {'production/IGM':>15}")
+    for cut in cuts:
+        cell = tot(cut, "cell")
+        sh = cell.sum() / tot("all").sum()
+        cols = []
+        for g in lv:
+            R, e = ratio_err(tot(cut, g), cell)
+            cols.append(f"{R:.4f}+-{e:.4f}")
+        Rp, ep = ratio_err(tot("prod"), cell)
+        print(f"  {cut:>5g} {sh:10.4f} {cell.sum() / TV:+16.5e} " + " ".join(f"{x:>16}" for x in cols) + f" {Rp:.4f}+-{ep:.4f}")
+    print(f"\n  at {N_PIX}^3 pixels ({len(MA):,}): variance ratio / correlation")
+    print(f"  {'cut':>5} {'grouped IGM vs cell IGM':>26} {'production vs cell IGM':>24} {'cell IGM vs cell all':>22}")
+    for cut in cuts:
+        C, Gm = np.concatenate(maps[cut]["cell"]), np.concatenate(maps[cut]["group"])
+        f = lambda x, y: f"{np.var(x) / np.var(y):.4f}/{np.corrcoef(x, y)[0, 1]:.4f}"
+        print(f"  {cut:>5g} {f(Gm, C):>26} {f(MP, C):>24} {f(C, MA):>22}")
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--snapdir", required=True)
     p.add_argument("--snap", type=int, required=True)
     p.add_argument("--line", choices=["H", "He"], default="He")
     p.add_argument("--out", required=True, help="directory of the scan task files")
+    p.add_argument("--igm", action="store_true",
+                   help="instead: does pixel averaging reproduce the IGM (1 + delta < cut) component? needs cellmap_*.hdf5")
+    p.add_argument("--cuts", type=float, nargs="+", default=[3, 10, 30, 100])
     a = p.parse_args()
 
     S = Snapshot(a.snapdir, a.snap)
@@ -59,6 +158,8 @@ def main():
     nH_fac = X_H * P.rho_unit * (1.0 + z)**3 / M_H
     print(f"snapshot {a.snap}, z = {z:.4f}, line {a.line}: {len(files)} task files, {ncube} cubes; "
           f"<rho_b> = {P.rho_mean:.4e} code = n_H {P.rho_mean * nH_fac:.3e} cm^-3")
+    if a.igm:
+        return igm_test(a, S, P, files, ncube, N_PIX)
 
     acc = {name: {k: np.zeros(len(e) - 1) for k in ("V", "m", "Vtb")} for name, (_, e) in CLASSES.items()}
     pix = {name: [] for name in CLASSES}          # per cube: class maps at 640^3 (sum V tb / pixel V)
