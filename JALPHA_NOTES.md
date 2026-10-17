@@ -292,6 +292,8 @@ Test, on a mock render (N = 32) against an independent Python calculation:
 - ~~**Signal normalisation in both C codes.**~~ **Decided 2026-10-17: not corrected** (measured, §7). The signal is `prefactor × x × ρ / global_gas` with the prefactor at n̄_H(Ω_b) and `global_gas` the render gas mean (`PS_21cm_mpi.c:402,716`, `PS_3cm_mpi.c:447,725`), while x_c uses the actual n_H; relative to the self-consistent n_H the maps are −0.4% (z ≳ 6) to +0.7% (z = 3) in ⟨δT_b⟩ and √P (≤ 1.5% in P). If the maps are ever rerun: use the simulation's own mean density in the signal, together with the exact constants in `x_c_He`. Open question for the Lumina team: before star formation the gas mean is 0.42% above Ω_b ρ_crit (header Ω_b = 0.04897; effective ≈ 0.0492), not explained by constants (G, Mpc ≪ 0.1%); render mass = snapshot gas mass to 10⁻⁶.
 - **Rounded constants in `x_c_He` (`PS_3cm_mpi.c:192–196`):** k_B = 1.381e-16, a₀ = 5.29177e-9, 14.3 eV = 2.291112e-11 → x_c^He low by 1.27×10⁻⁴ (C map / tb_physics = 0.99987 at snapshot 500). Negligible; fix together with the normalisation if the maps are rerun.
 
+- **Cell-level redshift space (decided 2026-10-17: not now).** The full snapshots have cell velocities, so an exact redshift-space cell-level He map (each cell shifted by v_pec/(aH) along +z) is possible in the scan at about the same cost; not done for now. The He maps stay real space.
+
 ### 6.3 Manuscript edits (drafts with inline marks were given in the conversation)
 - **f_rec citation** (l. ~1451): Pritchard2007 → Pritchard & Furlanetto 2006.
 - **Hot ISM / HMXB** (l. 1451, 1512, 1515, 1529, 1533): "included" → "neglected, with the bound", plus the Fragos 2013b/2016-erratum citation.
