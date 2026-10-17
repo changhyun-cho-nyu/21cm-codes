@@ -21,6 +21,9 @@ Lumina is a 500 cMpc (338.3 cMpc/h) radiation-hydrodynamics simulation (Zier et 
 | He-band IGM absorption | `make_opacity_fields.py` → `compute_transmission_He.c` (+ `jalpha_transmission.h`) | `transmission_He_NNN.hdf5`; J He with `TRANS_DIR`, `TR_TAG` |
 | He II density in redshift space | `remap_rsd.py` (`run_remap_He.sh`) | `SpectralDensityHeII_NNN.hdf5` |
 | δT_b maps + power spectra | `PS_21cm_mpi.c`, `PS_3cm_mpi.c` (+ `functions.c`, `collisions.c`; `run_21cm.sh`, `run_3cm.sh`) | `RIN_NNN.hdf5`, `PS_NNN.out` |
+| Ionization history (z, x_HII, x_HeIII of every render) | `check_ionization_history.py` (`run_ion_history.sh`) | `ion_history/ionization_history.csv` |
+| Cell-level δT_b test (full snapshots) | `test_cells_Tb.py` (`run_cells_Tb.sh`, `run_cells_merge.sh`), `decompose_cells_He.py` (`run_decompose_cells.sh`) | `cell_test/` |
+| VIDs and one-point statistics | `make_vid.py` (`run_vid.sh`) → figures in `VID.ipynb` (`one-stat.ipynb` is the archive) | `VID/<line>/` |
 | Global signal | volume mean of the cell-by-cell RIN maps (decided 2026-10-14); `global_snaps_clean.ipynb` (mean-field) is retired. No-heating reference: `TK_REF=1e-3` in `run_21cm.sh` (Eq. 27 anchor, JALPHA_NOTES §4.6) | |
 
 Test runs: `run_Jalpha_test.sh` (snapshots 156, 300, 406, 500). Checks: `check_*.py`, `bracket_Tb_He.py`, `check_tb_choices.py`.
@@ -48,6 +51,8 @@ Test runs: `run_Jalpha_test.sh` (snapshots 156, 300, 406, 500). Checks: `check_*
   - **H in real space** (decided 2026-10-14): `run_21cm.sh` sets `-DH_REDSHIFT_SPACE=0`, δT_b from Density (1 − HII_Fraction), maps in `Tb_maps_prod/H_real`. Reason: the code default multiplies the redshift-space SpectralDensityHI by the spin factor of the real-space pixel (the spin factor belongs to other gas), and the He maps are real space. The paper must say real space for both lines. A fully consistent redshift-space H (spin factor remapped with the H I mass) is an optional extra, not built.
   - **He in real space** (decided 2026-10-13): the renders and light-cone have no redshift-space He II, so `run_3cm.sh` sets `-DHE_REDSHIFT_SPACE=0`. The PS, BS and VID comparisons of the H/He fractions are all real space. The code default (shortcut `HeII_Fraction × SpectralDensity`) and `HE_RS_DIR` (remap) remain only for tests.
   - The size of the redshift-space effect on He is measured by `remap_rsd.py --rsd` (`run_remap_qtest.sh`), as a caveat for the paper.
+- **Ionized-fraction labels:** every x̄_HII / x̄_HeIII in the figures is the volume-weighted ⟨x⟩_V (checked 2026-10-15, `check_ionization_history.py`; notebook z_match = interpolated crossings). Map files are not zero-padded (`RIN_17.hdf5`, `PS_17.out`); renders are (`All_017.hdf5`).
+- **Full snapshots** (`/orcd/data/mvogelsb/005/Lumina/Lumina_{above,below}_z_4p75/snapshots`, 21 + 11, snap_NNN.hdf5 virtual datasets, 2.1×10¹¹ gas cells): IntCoordinates (uint32, × BoxSize/2³²), no ElectronAbundance (Ne = HII + HeII + 2 HeIII, exact for AREPO-RT); not in spatial order; each matches a render snapshot exactly for z ≤ 12.
 - **Power-spectrum `.out` files:** Δ² = column 2 × (line 3 / line 4)², as `load_ps` in the notebooks does.
 - **Absorption:** star-forming cells are transparent (`SF_MASK=1`, as in Lumina's RT and f_esc). The unresolved-absorber term (`LLS_A`) uses the broken-power-law f(N) conversion (1.59 and 1.82, not 3.5 and 4.8). **Decided 2026-10-14: `LLS_A = 0`** (Lumina's own resolved IGM only, no external parameters). Known biases: in the He band (`mfpE`) the simulation is 3× too transparent at 3.35 < z < 4.75 and 2–2.5× too opaque below 3.35; the calibrated term (LLS_A = 57.6, slope −5.4, z ≥ 3.35) is kept only as a systematic. With Lumina's absorption, the Lyα share of the He coupling is 0.9% (z = 6.35), 7% (z = 5), 18% (z = 4) of the mean δT_b^He. The J codes' shell-average × direction-average product underestimates J^He by ~30% at z = 6.3, ≤ 3% at z ≤ 5 (`check_angular_covariance.py`): ≤ 0.3% on δT_b^He, not corrected (JALPHA_NOTES §4.5, §7).
 
@@ -61,18 +66,12 @@ Test runs: `run_Jalpha_test.sh` (snapshots 156, 300, 406, 500). Checks: `check_*
 - Modules: hdf5/1.14.3 (an MPI build, so compile with mpicc) and fftw/3.3.10.
 - Compressed renders need `HDF5_PLUGIN_PATH` (from hdf5plugin).
 - Partition: `sched_mit_mvogelsb`.
+- `/orcd/data/mvogelsb/004` is a shared 160 TB group filesystem; it filled on 2026-10-16 and writes (maps, logs) failed silently. Check `df -h` before large jobs.
 
-## State (2026-10-14) and next steps
-1. **He redshift space, for the caveat only** (the He maps are real space): `sbatch run_remap_qtest.sh` gives P_rs/P_real for gas, H I and He II at snapshots 220, 300, 406, 500. Background, the remap validated at those snapshots:
-   - √a is best everywhere;
-   - gas power is within about 1% for k ≲ 0.3 h/cMpc, a few % at k ≈ 1 (9% at z = 4), and poor at k ≳ 2.
-   - It is an approximation: grid-cell mean velocities, not the render's own gas cells.
-   - The exact route is to ask the render team for `SpectralDensityHeII`, the same as `SpectralDensityHI` with He II mass.
-   - Better approximation, tested in the same job: the q method, exact redshift-space H II (0.76 SpectralDensity − SpectralDensityHI) × remapped He II/H II.
-2. **Production J_α:** SFR_eff is complete (`/orcd/data/mvogelsb/004/chcho/SFR_eff`, 2026-10-12). H band running with `run_Jalpha_prod.sh` (BAND=H, outputs in `.../chcho/Jalpha`). He band waits for the absorption: opacity and transmission done for 156/300/406/500 (SF_MASK=1); LLS_A = 0 chosen; testing its effect on δT_b^He (J He test with TR_TAG=tr_sfmask at 300/406/500, then `bracket_Tb_He.py`) → transmission for the He snapshots → BAND=He with TR_TAG=tr_sfmask.
-3. **T_b maps.** 21 cm **done and verified (2026-10-15)**: 305 snapshots (0–705) in `Tb_maps_prod/H_real` (real space, exact prefactors); `check_Tb_maps.py` OK at snapshots 17, 60, 156 (≤ 3×10⁻⁵), `check_ps.py` OK (Δ² from the .out = k³P/2π² from the map to 10⁻⁵). Global ⟨δT_b⟩ is in each log's "rin (T_b)" line. 3.46 cm: He J production running → `run_3cm.sh` → `check_Tb_maps.py --line He`. Then regenerate the PS, bispectra, VIDs and bubble statistics (notebook review: old paths, 2000-bin PS noise — rebin before reading Δ²(k), placeholder instrument curves in PS_redshift, bispectrum k in cMpc⁻¹ vs PS in h/cMpc, He bispectrum inputs and provenance).
-4. **Manuscript edits** (the user does them; list in `JALPHA_NOTES.md` §6.3; now includes the resolution statements):
-   - both lines are now real space: the He "real space" sentence at line 236 stays and should cover H too; the LIM paper's "peculiar velocities explicitly accounted for down to the particle resolution" (§2.4, after Eq. 1) must go, and the velocity-gradient term of Eqs. 1–2 is not used (state the size of the redshift-space effect from `remap_rsd.py --rsd` as a caveat);
-   - the flowchart's hot ISM and HMXB;
-   - the AGN shell count of 400 → 200;
-   - escape fractions, SFR_eff and absorption.
+## State (2026-10-17) and next steps
+1. **Production done:** J_α H and He; 21 cm maps (305, verified) and the no-heating reference (102; `check_Tb_maps.py --tk-ref` still to run); 3.46 cm maps (205; `check_Tb_maps.py` 1.4×10⁻⁴ from rounded constants in `x_c_He`, `check_ps.py` OK); H VIDs (305). He VIDs running.
+2. **Open decisions (user):**
+   - 3.46 cm resolution: cell level at z = 4 is 7× the 640³ mean, carried by dense gas around haloes (decomposition, JALPHA_NOTES §6.2, §7); options A–D in §6.2; B (`decompose_cells_He.py --igm`, job 26136927) running.
+   - Signal normalisation: both C codes divide by the render gas mean while the prefactor uses Ω_b (maps high by ρ̄_b/ρ̄_gas); ρ̄_gas/ρ̄_b measurement running; fix and rerun only if the size matters.
+3. **Notebooks:** `VID.ipynb` reads production outputs; PS_redshift, visual_PS, visual_maps, PS2Bubble, bispec_H/He, subvol_VID still read pre-production maps → repoint, then the bispectrum k units, He bispectrum inputs, placeholder instrument curves.
+4. **Manuscript edits** (the user does them; list in `JALPHA_NOTES.md` §6.3): real space for both lines (and drop "peculiar velocities down to the particle resolution"); volume-weighted x labels; the resolution statements (3.46 cm wording waits for decision 2); the flowchart's hot ISM and HMXB; the AGN shell count 400 → 200; escape fractions, SFR_eff and absorption.
