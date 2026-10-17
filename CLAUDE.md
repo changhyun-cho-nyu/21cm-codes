@@ -69,7 +69,7 @@ Test runs: `run_Jalpha_test.sh` (snapshots 156, 300, 406, 500). Checks: `check_*
 - `/orcd/data/mvogelsb/004` is a shared 160 TB group filesystem; it filled on 2026-10-16 and writes (maps, logs) failed silently. Check `df -h` before large jobs.
 
 ## State (2026-10-17) and next steps
-1. **Production done:** J_α H and He; 21 cm maps (305, verified) and the no-heating reference (102; `check_Tb_maps.py --tk-ref` still to run); 3.46 cm maps (205; `check_Tb_maps.py` 1.4×10⁻⁴ from rounded constants in `x_c_He`, `check_ps.py` OK); H VIDs (305). He VIDs running.
+1. **Production done:** J_α H and He; 21 cm maps (305, verified) and the no-heating reference (102, verified); 3.46 cm maps (205; `check_Tb_maps.py` 1.4×10⁻⁴ from rounded constants in `x_c_He`, `check_ps.py` OK); H VIDs (305). He VIDs running.
 2. **Open decisions (user):**
    - 3.46 cm resolution: cell level at z = 4 is 7× the 640³ mean, carried by dense gas around haloes (decomposition, JALPHA_NOTES §6.2, §7); options A–D in §6.2; B (`decompose_cells_He.py --igm`, job 26136927) running.
    - ~~Signal normalisation~~ decided 2026-10-17: not corrected (gas-mean normalisation vs Ω_b prefactor: −0.4% at z ≳ 6 to +0.7% at z = 3 in δT_b); fix with the `x_c_He` constants only if the maps are rerun. Ask the Lumina team about the +0.42% gas excess over Ω_b ρ_crit before star formation (JALPHA_NOTES §6.2, §7).
