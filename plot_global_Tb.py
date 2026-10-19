@@ -68,8 +68,8 @@ def main():
     for zq in zs:
         cells = []
         for lb, z, v in data:
-            if z.min() - 0.3 <= zq <= z.max() + 0.3:
-                j = int(np.argmin(abs(z - zq)))
+            j = int(np.argmin(abs(z - zq)))
+            if abs(z[j] - zq) < 0.5:
                 cells.append(f"{v[j, 0]:+10.3f} mK (z={z[j]:.2f})")
             else:
                 cells.append(f"{'-':>28}")
