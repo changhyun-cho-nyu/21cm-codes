@@ -8,7 +8,9 @@ with T_CMB. All statistics are H I-mass-weighted (Density x (1 - HII_Fraction)),
 
 Usage
 -----
-  python check_ref_T.py --dir <ren_640> --snap 156 [--snap0 0] [--xthresh 1e-3]
+  python check_ref_T.py --dir <ren_640> --snap 156 [--snap0 0] [--xthresh 1e-3] [--weighting mass|volume]
+--weighting volume uses TemperatureVolumeWeighted and HII_VolumeFraction (as -DTS_VOLUME_WEIGHTED=1); the default
+mass uses Temperature and HII_Fraction (the production maps).
 """
 import argparse
 import os
@@ -45,20 +47,22 @@ def main():
     p.add_argument("--snap", type=int, required=True)
     p.add_argument("--snap0", type=int, default=0)
     p.add_argument("--xthresh", type=float, default=1e-3)
+    p.add_argument("--weighting", choices=["mass", "volume"], default="mass")
     a = p.parse_args()
+    TF, XF = ("Temperature", "HII_Fraction") if a.weighting == "mass" else ("TemperatureVolumeWeighted", "HII_VolumeFraction")
 
     z, z0 = redshift(a.dir, a.snap), redshift(a.dir, a.snap0)
     Tg = 2.7255 * (1.0 + z)
-    rho, T, x = field(a.dir, "Density", a.snap), field(a.dir, "Temperature", a.snap), field(a.dir, "HII_Fraction", a.snap)
+    rho, T, x = field(a.dir, "Density", a.snap), field(a.dir, TF, a.snap), field(a.dir, XF, a.snap)
     sel = x < a.xthresh
     whi_all = rho * (1.0 - x)
-    print(f"snapshot {a.snap}, z = {z:.4f}; anchor {a.snap0}, z0 = {z0:.4f}; T_CMB = {Tg:.2f} K")
+    print(f"snapshot {a.snap}, z = {z:.4f}; anchor {a.snap0}, z0 = {z0:.4f}; T_CMB = {Tg:.2f} K; fields {TF}, {XF}")
     print(f"  pixels with x_HII < {a.xthresh:g}: {sel.mean():.4f} of the cells, {whi_all[sel].sum() / whi_all.sum():.4f} of the H I mass")
     w = whi_all[sel]
     dl = rho[sel] / rho.mean()
     Tf = T[sel]
     del T, x, whi_all
-    rho0, T0 = field(a.dir, "Density", a.snap0)[sel], field(a.dir, "Temperature", a.snap0)[sel]
+    rho0, T0 = field(a.dir, "Density", a.snap0)[sel], field(a.dir, TF, a.snap0)[sel]
     Tr = T0 * ((1.0 + z) / (1.0 + z0))**2 * (rho[sel] / rho0)**(2.0 / 3.0)
     del rho, rho0, T0
 
