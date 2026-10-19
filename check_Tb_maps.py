@@ -71,8 +71,12 @@ def main():
     p.add_argument("--he-rs", action="store_true", help="He: map made with the code default HE_REDSHIFT_SPACE=1")
     p.add_argument("--ts-volume", action="store_true", help="map made with -DTS_VOLUME_WEIGHTED=1")
     p.add_argument("--tk-ref", type=float, metavar="THRESH",
-                   help="H: map made with -DTK_REFERENCE -DTK_REF_XTHRESH=THRESH (no-heating reference: "
-                        "T = T_CMB,0 (1+z)^2/(1+124.8) (1+delta)^(2/3) where x_HII < THRESH)")
+                   help="H: map made with -DTK_REFERENCE -DTK_REF_XTHRESH=THRESH (no-heating reference where x_HII < THRESH)")
+    p.add_argument("--tk-ref-anchor", choices=["pixel", "eq27"], default="pixel",
+                   help="pixel (TK_REF_ANCHOR=1, default): T(p, z0) [(1+z)/(1+z0)]^2 [rho/rho(z0)]^(2/3) from the render at "
+                        "--tk-ref-snap0; eq27 (TK_REF_ANCHOR=0): T_CMB,0 (1+z)^2/(1+124.8) (1+delta)^(2/3)")
+    p.add_argument("--tk-ref-snap0", type=int, default=0, help="anchor render snapshot (TK_REF_SNAP0)")
+    p.add_argument("--tk-ref-dir0", help="render directory of the anchor snapshot (TK_REF_DIR0; default --dir)")
     p.add_argument("--slabs", type=int, nargs="+", default=[0, 317, 636], help="first plane of each 4-plane slab")
     p.add_argument("--nplanes", type=int, default=4)
     p.add_argument("--tol", type=float, default=1e-4, help="max |C - here| / |here| allowed per cell (float32 maps: ~1e-7)")
@@ -116,6 +120,14 @@ def main():
         sys.exit(f"ERROR: {a.rin} has shape {rin.shape}")
     print(f"  map {a.rin}: content = {rf[rin.name].attrs.get('content', b'?')}")
 
+    if a.tk_ref is not None and a.tk_ref_anchor == "pixel":
+        d0 = a.tk_ref_dir0 or d
+        with h5py.File(os.path.join(d0, "All", f"All_{a.tk_ref_snap0:03d}.hdf5"), "r") as f:
+            z0 = float(f["Header"].attrs["Redshift"])
+        T0d = h5py.File(field_path(d0, ts["T"], a.tk_ref_snap0), "r")[ts["T"]]
+        R0d = h5py.File(field_path(d0, "Density", a.tk_ref_snap0), "r")["Density"]
+        print(f"  reference anchored per pixel to render snapshot {a.tk_ref_snap0} (z0 = {z0:.4f}) in {d0}")
+
     worst, num, den, cnt = 0.0, 0.0, 0.0, 0
     for i0 in a.slabs:
         sl = slice(i0, min(N, i0 + a.nplanes))
@@ -130,7 +142,11 @@ def main():
             if a.line != "H":
                 sys.exit("--tk-ref is an option of the 21 cm code only")
             ref = (xHII < a.tk_ref)
-            T = np.where(ref, L.t_ref(rho, rho_mean), T)
+            if a.tk_ref_anchor == "pixel":
+                Tr = L.t_ref_pixel(T0d[sl].astype(np.float64), R0d[sl].astype(np.float64), rho, z0)
+            else:
+                Tr = L.t_ref(rho, rho_mean)
+            T = np.where(ref, Tr, T)
             print(f"  planes {sl.start}-{sl.stop - 1}: reference T in {ref.mean():.4f} of the cells")
         if a.line == "H":
             if a.real_space:

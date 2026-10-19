@@ -26,10 +26,14 @@ HDF5_PREFIX=/orcd/software/community/001/spack/pkg/hdf5/1.14.3/suffu3v
 EXTRA_CFLAGS="-DH_REDSHIFT_SPACE=0"
 TK_REF_SNAPMAX=330         # reference runs only: snapshots <= this (z >~ 6; the reference means little after)
 TK_REF_STRIDE=2            # reference runs only: every n-th snapshot of SNAPS (disk: ~1 GB per map)
-TK_REF=""                  # no-heating reference: an x_HII threshold, e.g. 1e-3 (the default of the code option);
-                           # cells below it get T = T_CMB,0 (1+z)^2/(1+z_dec) (1+delta)^(2/3) (Zier+26 Eq. 27).
-                           # Non-empty: compile also builds bin/PS_21cm_mpi_tkref, the run uses it and writes to
-                           # ${OUT_DIR}_tkref<threshold>. Empty: the fiducial maps.
+TK_REF=""                  # no-heating reference: an x_HII threshold, e.g. 1e-3 (the default of the code option).
+                           # Non-empty: compile also builds bin/PS_21cm_mpi_tkref and the run uses it. Empty: the fiducial maps.
+TK_REF_ANCHOR=1            # 1 (decided 2026-10-19): cells below the threshold get each pixel's own T at render snapshot
+                           #   TK_REF_SNAP0, carried adiabatically: T(p,z0) [(1+z)/(1+z0)]^2 [rho(p,z)/rho(p,z0)]^(2/3);
+                           #   output ${OUT_DIR}_tkref<threshold>_pix<TK_REF_SNAP0>.
+                           # 0: the analytic Zier+26 Eq. 27 law T_CMB,0 (1+z)^2/(1+124.8) (1+delta)^(2/3) (colder than
+                           #   Lumina's unheated gas at z ~ 25-30); output ${OUT_DIR}_tkref<threshold> (the 2026-10-16 run).
+TK_REF_SNAP0=0             # anchor render snapshot (z0 = 29.43 for snapshot 0)
 export LD_LIBRARY_PATH=$FFTW_PREFIX/lib:$HDF5_PREFIX/lib:$LD_LIBRARY_PATH
 export HDF5_PLUGIN_PATH=/home/chcho/.local/lib/python3.12/site-packages/hdf5plugin/plugins
 export OMP_NUM_THREADS=1
@@ -48,19 +52,20 @@ if [ "$1" = "compile" ]; then
         || { echo "COMPILE FAILED: bin/PS_21cm_mpi was not rebuilt; do not submit"; exit 1; }
     echo "built bin/PS_21cm_mpi (EXTRA_CFLAGS: ${EXTRA_CFLAGS:-none})   commit $(git rev-parse --short HEAD)"
     if [ -n "$TK_REF" ]; then
-        mpicc -O3 -fopenmp -DH5_USE_16_API $EXTRA_CFLAGS -DTK_REFERENCE -DTK_REF_XTHRESH=$TK_REF $INC \
+        mpicc -O3 -fopenmp -DH5_USE_16_API $EXTRA_CFLAGS -DTK_REFERENCE -DTK_REF_XTHRESH=$TK_REF \
+            -DTK_REF_ANCHOR=$TK_REF_ANCHOR -DTK_REF_SNAP0=$TK_REF_SNAP0 $INC \
             PS_21cm_mpi.c functions.c collisions.c -o bin/PS_21cm_mpi_tkref.new $LIBS \
             && mv bin/PS_21cm_mpi_tkref.new bin/PS_21cm_mpi_tkref \
             || { echo "COMPILE FAILED: bin/PS_21cm_mpi_tkref was not rebuilt; do not submit"; exit 1; }
-        echo "$TK_REF" > bin/PS_21cm_mpi_tkref.thr
-        echo "built bin/PS_21cm_mpi_tkref (no-heating reference, x_HII < $TK_REF)"
+        echo "$TK_REF $TK_REF_ANCHOR $TK_REF_SNAP0" > bin/PS_21cm_mpi_tkref.thr
+        echo "built bin/PS_21cm_mpi_tkref (no-heating reference, x_HII < $TK_REF, anchor $TK_REF_ANCHOR, snapshot $TK_REF_SNAP0)"
     fi
     exit 0
 fi
 BIN=bin/PS_21cm_mpi
 if [ -n "$TK_REF" ]; then
     BIN=bin/PS_21cm_mpi_tkref
-    [ "$(cat bin/PS_21cm_mpi_tkref.thr 2>/dev/null)" = "$TK_REF" ] || { echo "bin/PS_21cm_mpi_tkref was not built with TK_REF = $TK_REF: run 'bash $0 compile'"; exit 1; }
+    [ "$(cat bin/PS_21cm_mpi_tkref.thr 2>/dev/null)" = "$TK_REF $TK_REF_ANCHOR $TK_REF_SNAP0" ] || { echo "bin/PS_21cm_mpi_tkref was not built with TK_REF = $TK_REF, TK_REF_ANCHOR = $TK_REF_ANCHOR, TK_REF_SNAP0 = $TK_REF_SNAP0: run 'bash $0 compile'"; exit 1; }
 fi
 [ -x $BIN ] || { echo "run 'bash $0 compile' first"; exit 1; }
 for f in PS_21cm_mpi.c functions.c collisions.c; do    # a binary older than its source was not rebuilt
@@ -75,7 +80,10 @@ INPUT_NEW_DIR="/orcd/data/mvogelsb/005/mkilab001/mvogelsblab003/Lab/Thesan-XL/Fl
 J_DIR=/orcd/data/mvogelsb/004/chcho/Jalpha            # run_Jalpha_prod.sh outputs (BAND=H)
 OUT_DIR=/orcd/data/mvogelsb/004/chcho/Tb_maps_prod/H_real # production maps, real space (Tb_maps/: test-J maps;
                                                           # Tb_maps_prod/H: earlier redshift-space maps, if any)
-[ -n "$TK_REF" ] && OUT_DIR=${OUT_DIR}_tkref${TK_REF}
+if [ -n "$TK_REF" ]; then
+    if [ "$TK_REF_ANCHOR" = 1 ]; then OUT_DIR=${OUT_DIR}_tkref${TK_REF}_pix${TK_REF_SNAP0}; else OUT_DIR=${OUT_DIR}_tkref${TK_REF}; fi
+    export TK_REF_DIR0=$INPUT_DIR                     # the anchor snapshot is in the first render directory
+fi
 mkdir -p "$OUT_DIR"
 
 # -------------------------

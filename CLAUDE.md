@@ -24,7 +24,7 @@ Lumina is a 500 cMpc (338.3 cMpc/h) radiation-hydrodynamics simulation (Zier et 
 | Ionization history (z, x_HII, x_HeIII of every render) | `check_ionization_history.py` (`run_ion_history.sh`) | `ion_history/ionization_history.csv` |
 | Cell-level δT_b test (full snapshots) | `test_cells_Tb.py` (`run_cells_Tb.sh`, `run_cells_merge.sh`), `decompose_cells_He.py` (`run_decompose_cells.sh`) | `cell_test/` |
 | VIDs and one-point statistics | `make_vid.py` (`run_vid.sh`) → figures in `VID.ipynb` (`one-stat.ipynb` is the archive) | `VID/<line>/` |
-| Global signal | volume mean of the cell-by-cell RIN maps (decided 2026-10-14); `global_snaps_clean.ipynb` (mean-field) is retired. No-heating reference: `TK_REF=1e-3` in `run_21cm.sh` (Eq. 27 anchor, JALPHA_NOTES §4.6) | |
+| Global signal | volume mean of the cell-by-cell RIN maps (decided 2026-10-14); `global_snaps_clean.ipynb` (mean-field) is retired. No-heating reference: `TK_REF=1e-3` in `run_21cm.sh`, anchored per pixel to Lumina's own T at render snapshot 0 (`TK_REF_ANCHOR=1`, decided 2026-10-19; the Eq. 27 law was colder than Lumina's unheated gas; JALPHA_NOTES §6.2); `plot_global_Tb.py` | |
 
 Test runs: `run_Jalpha_test.sh` (snapshots 156, 300, 406, 500). Checks: `check_*.py`, `bracket_Tb_He.py`, `check_tb_choices.py`.
 

@@ -67,14 +67,24 @@
 
 /* TK_REFERENCE (off by default): the no-heating reference. In cells with x_HII < TK_REF_XTHRESH
  * (default 1e-3, the neutral-gas criterion of Zier+26 App. B) the gas temperature used for the
- * spin temperature (x_c, S_alpha, T_S) is replaced by the adiabatic temperature of unheated gas,
- *     T_ref = T_CMB,0 (1+z)^2 / (1+z_dec) x (1+delta)^(2/3),   z_dec = 124.8,
- * Lumina's own initial-condition law (Zier+26 Eq. 27: 54.17 K at z_init = 49) with adiabatic
- * compression of each cell (1+delta = Density/<Density>). Other cells keep the simulated T.
- * x_HII is the field the spin temperature uses (F_HII_FIELD). Everything else is unchanged. */
+ * spin temperature (x_c, S_alpha, T_S) is replaced by the adiabatic temperature of unheated gas.
+ * Other cells keep the simulated T. x_HII is the field the spin temperature uses (F_HII_FIELD).
+ * TK_REF_ANCHOR = 1 (default; decided 2026-10-19): anchored to Lumina's own gas, pixel by pixel, at
+ *   render snapshot TK_REF_SNAP0 (default 0, z0 = 29.43):
+ *     T_ref(p, z) = T(p, z0) [(1+z)/(1+z0)]^2 [rho(p, z)/rho(p, z0)]^(2/3)   (comoving densities),
+ *   adiabatic expansion and the pixel's density change; T_ref = T at z0. The z0 render is read from
+ *   the same render directory, or from $TK_REF_DIR0 if set.
+ * TK_REF_ANCHOR = 0: the analytic law T_ref = T_CMB,0 (1+z)^2/(1+z_dec) (1+delta)^(2/3), z_dec = 124.8
+ *   (Zier+26 Eq. 27). Its temperature lies below Lumina's unheated gas at z ~ 25-30 (2026-10-19). */
 #ifdef TK_REFERENCE
 #ifndef TK_REF_XTHRESH
 #define TK_REF_XTHRESH 1e-3
+#endif
+#ifndef TK_REF_ANCHOR
+#define TK_REF_ANCHOR 1
+#endif
+#ifndef TK_REF_SNAP0
+#define TK_REF_SNAP0 0
 #endif
 #define TK_REF_ZDEC  124.8
 #define TK_REF_TCMB0 2.7255
@@ -155,6 +165,9 @@ static double *dset, *dset2, *shared_dset,
               *dset5, *dset6, *dset7;
 static myint dset_length_task, total_length ;
 static double global_gas ;
+#if defined(TK_REFERENCE) && TK_REF_ANCHOR == 1
+static double *ref_T0 = NULL, *ref_rho0 = NULL, ref_z0 = 0.0;   /* this task's slab of the z0 render */
+#endif
 
 static double constK  = 47229.765 ;
 /* Lumina (Planck 2018). Omega_m, Omega_b are replaced by the render header's Omega0 /
@@ -340,11 +353,18 @@ int main(int argc, char **argv)
   long   d_ref_cells = 0;                       /* TK_REFERENCE diagnostics (zero otherwise) */
   double d_ref_HI    = 0.0, d_all_HI = 0.0;
 #ifdef TK_REFERENCE
+#if TK_REF_ANCHOR == 1
+  const double tk_ref_scale = ((1.0 + z) / (1.0 + ref_z0)) * ((1.0 + z) / (1.0 + ref_z0));   /* (1+z)^2 expansion */
+  if (ThisTask == 0)
+    printf("TK_REFERENCE: T = T(p, z0 = %.4f) x %.6f x [rho(p)/rho(p, z0)]^(2/3) [per pixel, anchor snapshot %d] where %s < %g\n",
+           ref_z0, tk_ref_scale, TK_REF_SNAP0, F_HII_FIELD, (double)TK_REF_XTHRESH);
+#else
   const double tk_ref_mean    = TK_REF_TCMB0 * (1.0 + z) * (1.0 + z) / (1.0 + TK_REF_ZDEC); /* K, at mean density */
   const double mean_mass_cell = global_gas * volume_cell;                                   /* sim units */
   if (ThisTask == 0)
     printf("TK_REFERENCE: T = %.4f K (1+delta)^(2/3) [Zier+26 Eq. 27, z_dec = %.1f] where %s < %g\n",
            tk_ref_mean, TK_REF_ZDEC, F_HII_FIELD, (double)TK_REF_XTHRESH);
+#endif
 #endif
 
   for (int i = 0; i < local_n0; ++i)
@@ -372,7 +392,12 @@ int main(int argc, char **argv)
             double value4 = input_data4(local_0_start+i, j, k); // f_HII
 #ifdef TK_REFERENCE
             if (value4 < TK_REF_XTHRESH) {             /* adiabatic reference temperature (see TK_REFERENCE) */
+#if TK_REF_ANCHOR == 1
+                myint li = ((myint)i * N + j) * N + k;     /* this task's slab (global plane local_0_start + i) */
+                value2 = ref_T0[li] * tk_ref_scale * cbrt(pow(value1 / (ref_rho0[li] * volume_cell), 2));
+#else
                 value2 = tk_ref_mean * cbrt(pow(value1 / mean_mass_cell, 2));
+#endif
                 d_ref_cells++; d_ref_HI += value1 * (1.0 - value4);
             }
             d_all_HI += value1 * (1.0 - value4);
@@ -604,7 +629,11 @@ int main(int argc, char **argv)
     snprintf(u, sizeof u, "%s%s", H_REDSHIFT_SPACE ? "delta T_b [mK], real-space spin factor x redshift-space H I density"
                                                     : "delta T_b [mK], real space",
 #ifdef TK_REFERENCE
+#if TK_REF_ANCHOR == 1
+             "; no-heating reference T_K (each pixel's T at the anchor snapshot, adiabatic) where x_HII < TK_REF_XTHRESH"
+#else
              "; adiabatic reference T_K (Eq. 27) where x_HII < TK_REF_XTHRESH"
+#endif
 #else
              ""
 #endif
@@ -959,6 +988,33 @@ static void read_data(int snapnum,
 #if !H_REDSHIFT_SPACE
     for (myint i = 0; i < length_vector; i++)
         dset[i] = 0.76 * dset2[i] * (1.0 - dset[i]);   /* real-space H I density, in SpectralDensityHI units */
+#endif
+#if defined(TK_REFERENCE) && TK_REF_ANCHOR == 1
+    {   /* the anchor: T and Density of render snapshot TK_REF_SNAP0, same slab */
+        char saved[500];
+        const char *d0 = getenv("TK_REF_DIR0");
+        strcpy(saved, inputfilename);
+        if (d0 && *d0) snprintf(inputfilename, sizeof inputfilename, "%s", d0);
+        ref_T0   = malloc(length_vector * sizeof(double));
+        ref_rho0 = malloc(length_vector * sizeof(double));
+        read_single_field(T_FIELD,   ref_T0,   TK_REF_SNAP0, local_n0, local_0_start, buffer, length_vector);
+        read_single_field("Density", ref_rho0, TK_REF_SNAP0, local_n0, local_0_start, buffer, length_vector);
+        if (ThisTask == 0) {
+            char fname[1024];
+            snprintf(fname, sizeof fname, "%s/All/All_%03d.hdf5", inputfilename, TK_REF_SNAP0);
+            hid_t file = H5Fopen(fname, H5F_ACC_RDONLY, H5P_DEFAULT);
+            hid_t grp  = (file >= 0) ? H5Gopen(file, "/Header") : -1;
+            if (grp < 0 || H5Aexists(grp, "Redshift") <= 0) {
+                fprintf(stderr, "FATAL: no /Header Redshift in %s (TK_REFERENCE anchor)\n", fname);
+                MPI_Abort(MPI_COMM_WORLD, 1);
+            }
+            H5Aread(H5Aopen(grp, "Redshift", H5P_DEFAULT), H5T_NATIVE_DOUBLE, &ref_z0);
+            H5Gclose(grp); H5Fclose(file);
+            printf("TK_REFERENCE anchor: render snapshot %d (z0 = %.4f) from %s\n", TK_REF_SNAP0, ref_z0, inputfilename);
+        }
+        MPI_Bcast(&ref_z0, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+        strcpy(inputfilename, saved);
+    }
 #endif
     if (ThisTask == 0)
         printf("Spin-temperature fields: %s, %s, %s, %s; signal: %s\n", F_HII_FIELD, T_FIELD, F_HEII_FIELD, F_HEIII_FIELD,

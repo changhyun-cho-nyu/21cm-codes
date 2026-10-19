@@ -73,8 +73,13 @@ class Line:
         self.xa_c = 16.0 * np.pi**2 * self.Tst * E_CGS**2 * F_ALPHA / (kxa * self.A * self.Tg * M_E * C)
 
     def t_ref(self, rho, rho_mean):
-        """no-heating reference temperature (Zier+26 Eq. 27 law with adiabatic compression)"""
+        """no-heating reference temperature, analytic (Zier+26 Eq. 27 law with adiabatic compression; TK_REF_ANCHOR=0)"""
         return 2.7255 * (1.0 + self.z)**2 / (1.0 + Z_DEC) * (rho / rho_mean)**(2.0 / 3.0)
+
+    def t_ref_pixel(self, T0, rho0, rho, z0):
+        """no-heating reference temperature anchored to the render at z0, pixel by pixel (TK_REF_ANCHOR=1):
+        T(p, z0) [(1+z)/(1+z0)]^2 [rho(p, z)/rho(p, z0)]^(2/3), comoving densities"""
+        return T0 * ((1.0 + self.z) / (1.0 + z0))**2 * (rho / rho0)**(2.0 / 3.0)
 
     def tb(self, sig, nH, T, xHII, fII, fIII, J):
         """delta T_b [mK or uK] and (x_c, x_a); nH proper cm^-3, fII/fIII per H nucleus, sig = x(1+delta)"""
