@@ -26,11 +26,11 @@ def read_log(path):
             if m:
                 z_cur = float(m.group(1)); continue
             if z_cur is not None and line.strip().startswith("rin (T_b)"):
-                vals = line.split()[2:5]
-                rows[z_cur] = tuple(float(v) for v in vals)            # mean, min, max
+                rows[z_cur] = float(line.split()[2])                   # mean over all cells [mK]
+                # (the line's min/max columns are per-cell dT_b x V_cell, not normalised: not used)
                 z_cur = None
     z = np.array(sorted(rows, reverse=True))
-    return z, np.array([rows[k] for k in z])
+    return z, np.array([rows[k] for k in z])[:, None]
 
 
 def main():
@@ -52,8 +52,8 @@ def main():
         if len(z) == 0:
             raise SystemExit(f"no 'rin (T_b)' entries in {lg}")
         data.append((lb, z, v))
-        np.savetxt(a.out.rsplit(".", 1)[0] + f"_{i}.csv", np.column_stack([z, v]), delimiter=",",
-                   header="z,mean_dTb_mK,min_mK,max_mK", comments="")
+        np.savetxt(a.out.rsplit(".", 1)[0] + f"_{i}.csv", np.column_stack([z, v[:, 0]]), delimiter=",",
+                   header="z,mean_dTb_mK", comments="")
         ax.plot(z, v[:, 0], lw=2.2, label=f"{lb} ({len(z)} snapshots)", ls="-" if i == 0 else "--")
     ax.axhline(0, color="0.5", lw=0.8)
     ax.set_xlabel(r"$z$")
