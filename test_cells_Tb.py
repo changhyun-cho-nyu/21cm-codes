@@ -302,8 +302,9 @@ def choose_order(S, rows, Rd, box):
         print(f"  axis order render[i0,i1,i2] = coords {o}: corr(log rho_cell, log render Density) = {cc:.4f} (+- {err:.4f})")
     res.sort(reverse=True)
     # a single cell's density scatters by decades inside its pixel, so the right order gives a modest correlation
-    # (~0.2 on Lumina); it must stand out from the wrong one by many standard errors
-    if not (res[0][0] > 0.05 and res[0][0] - res[1][0] > 20 * err):
+    # (0.2-0.7 on Lumina, but 0.047 for one block of rows at snapshot 131, vs 0.000 for the wrong order); it must be
+    # significantly positive and stand out from the wrong one by many standard errors (no absolute floor)
+    if not (res[0][0] > 10 * err and res[0][0] - res[1][0] > 20 * err):
         sys.exit("STOP: the render axis order is not clear from the data (see the correlations above)")
     return res[0][1]
 
