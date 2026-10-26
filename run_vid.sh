@@ -17,7 +17,7 @@
 #   python make_vid.py table --line $LINE --out $OUT
 #   mkdir -p logs && sbatch run_vid.sh
 
-LINE=H                                                            # H or He
+LINE=He                                                            # H or He
 if [ "$LINE" = H ]; then MAPS=/orcd/data/mvogelsb/004/chcho/Tb_maps_prod/H_real
 else MAPS=/orcd/data/mvogelsb/004/chcho/Tb_maps_prod/He; fi
 OUT=/orcd/data/mvogelsb/004/chcho/VID/$LINE

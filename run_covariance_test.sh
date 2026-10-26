@@ -2,7 +2,7 @@
 #SBATCH --job-name=covJ
 #SBATCH --output=logs/covJ_%A_%a.out
 #SBATCH --error=logs/covJ_%A_%a.err
-#SBATCH --array=0-2
+#SBATCH --array=0-4
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
@@ -17,7 +17,7 @@
 # what compute_Jalpha_He.c / compute_Jalpha_AGN.c do), for stars and AGN, at snapshots 300, 406, 500.
 # Writes nothing but the logs.   mkdir -p logs && sbatch run_covariance_test.sh
 
-SNAPS=(300 406 500)
+SNAPS=(160 200 250 340 380)
 OPA=/orcd/data/mvogelsb/004/chcho/opacity_He_sfmask          # the opacity used for the transmission
 SFR=/orcd/data/mvogelsb/004/chcho/SFR_eff/He
 ZCSV=/orcd/data/mvogelsb/004/chcho/SFR_eff/SFR_eff_summary.csv

@@ -31,10 +31,10 @@ RB=/orcd/data/mvogelsb/005/mkilab001/mvogelsblab003/Lab/Thesan-XL/Flagship_below
 SED=agn_sed_full.hdf5                                           # in the repository
 MIN_FREE_GB=20                                                  # ~1 GB per output, 16 outputs
 CONDA_ENV=jupyter_env      # has hdf5plugin: its filter plugins let the C codes read the compressed renders
-TRANS_DIR=                 # He II-band IGM transmission (run_transmission.sh output); empty = no IGM absorption.
+TRANS_DIR=/orcd/data/mvogelsb/004/chcho/transmission_He_sfmask                 # He II-band IGM transmission (run_transmission.sh output); empty = no IGM absorption.
                            # When set: compile builds bin/Jalpha_He_tr and bin/Jalpha_AGN_tr, and the He tasks
                            # write *_tr.hdf5 (rerun only the He tasks: sbatch --array=1,3,5,7,9,11,13,15)
-TR_TAG=tr                  # suffix of those binaries and outputs; use a distinct one per transmission variant,
+TR_TAG=tr_sfmask                  # suffix of those binaries and outputs; use a distinct one per transmission variant,
                            # e.g. TR_TAG=tr_sfmask with TRANS_DIR=.../transmission_He_sfmask
 # FFTW (single precision, with OpenMP) and HDF5 install prefixes: the directories that contain
 # include/fftw3.h and include/hdf5.h. Left empty, they are found from the loaded modules

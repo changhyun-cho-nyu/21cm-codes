@@ -23,8 +23,10 @@
 #   3. bash run_Jalpha_prod.sh status                      # which outputs exist / are missing
 # Then set J_DIR=$J in run_21cm.sh (and run_3cm.sh, with its TR_TAG = the TR_TAG here).
 
-BAND=H                     # H or He
-TR_TAG=                    # BAND=He only: e.g. tr_sfmask (bin/Jalpha_He_<TR_TAG>); empty = no IGM absorption
+#BAND=H                     # H or He
+#TR_TAG=                    # BAND=He only: e.g. tr_sfmask (bin/Jalpha_He_<TR_TAG>); empty = no IGM absorption
+BAND=He
+TR_TAG=tr_sfmask
 
 OUT=/orcd/data/mvogelsb/004/chcho/SFR_eff                       # make_SFR_eff.py output
 J=/orcd/data/mvogelsb/004/chcho/Jalpha                          # production output directory

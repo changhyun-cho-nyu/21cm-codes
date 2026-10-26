@@ -26,7 +26,7 @@ HDF5_PREFIX=/orcd/software/community/001/spack/pkg/hdf5/1.14.3/suffu3v
 EXTRA_CFLAGS="-DH_REDSHIFT_SPACE=0"
 TK_REF_SNAPMAX=330         # reference runs only: snapshots <= this (z >~ 6; the reference means little after)
 TK_REF_STRIDE=2            # reference runs only: every n-th snapshot of SNAPS (disk: ~1 GB per map)
-TK_REF=""                  # no-heating reference: an x_HII threshold, e.g. 1e-3 (the default of the code option).
+TK_REF="1e-3"                  # no-heating reference: an x_HII threshold, e.g. 1e-3 (the default of the code option).
                            # Non-empty: compile also builds bin/PS_21cm_mpi_tkref and the run uses it. Empty: the fiducial maps.
 TK_REF_ANCHOR=1            # 1 (decided 2026-10-19): cells below the threshold get each pixel's own T at render snapshot
                            #   TK_REF_SNAP0, carried adiabatically: T(p,z0) [(1+z)/(1+z0)]^2 [rho(p,z)/rho(p,z0)]^(2/3);
