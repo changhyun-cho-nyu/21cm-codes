@@ -16,7 +16,7 @@
 # be read while another job writes them).
 #   mkdir -p logs && sbatch run_lightcone_ps.sh
 #   CONE_DIR=/orcd/data/mvogelsb/004/chcho/lightcone_test OUT_DIR=/orcd/data/mvogelsb/004/chcho/lightcone_test \
-#     EXTRA="--z 7.5 --depth 60" sbatch run_lightcone_ps.sh                     # the test band z = 7.4-7.6
+#     EXTRA="--z 7.5 --depth 36" sbatch run_lightcone_ps.sh   # the test band z = 7.4-7.6 (~43 cMpc/h)
 # Output: OUT_DIR/lightcone_ps_{H,He}.hdf5 (small).
 
 CONE_DIR=${CONE_DIR:-/orcd/data/mvogelsb/004/chcho/lightcone}
