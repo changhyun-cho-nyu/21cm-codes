@@ -8,7 +8,10 @@ lightcone_J.cone_J, in bands of z:
      table (LUMINA_ALL.csv) used by the fan notebook so far;
   2. time="nearest" against time="linear": per-pixel |J_nearest / J_linear - 1| (median, 99th percentile), and the
      change in delta T_b (mean, and rms of the difference / rms of delta T_b);
-  3. delta T_b with the sampled J (linear) against the notebook's J(z) (1 + delta): mean and rms of the difference.
+  3. delta T_b with the sampled J (linear) against the notebook's J(z) (1 + delta) with J(z) from the table, and
+     against J_box(z) (1 + delta) with the box mean of the production J: mean and rms of the difference. The table
+     column mixes the table's normalisation with the missing spatial structure of J; the J_box column is the
+     structure alone.
 Only slices inside the J snapshots' z range are used (no choice of J outside it is made here).
 
 Usage
@@ -69,11 +72,13 @@ def main():
             delta = cone["Density"] / units(cone["header"])[1]
             Jtab = interp1d(jt["redshift"], jt[col], bounds_error=False, fill_value=np.nan)(zc)
             Jmod = Jtab[None, :] * delta
-            tl, tn, tm = cone_tb(cone, band, Jl), cone_tb(cone, band, Jn), cone_tb(cone, band, Jmod)
             Jbox = np.interp(zc, bm[0], bm[1]) if bm is not None else np.full(zc.shape, np.nan)
+            tl, tn, tm = cone_tb(cone, band, Jl), cone_tb(cone, band, Jn), cone_tb(cone, band, Jmod)
+            tb = cone_tb(cone, band, Jbox[None, :] * delta)
             print(f"  J table {a.jcsv} column {col}: z {jt['redshift'].min():.3f} - {jt['redshift'].max():.3f}")
             print(f"  {'z band':>12} {'slices':>6} | {'<J>row/<J>box':>13} {'<J>row/table':>12} | {'nearest vs linear: |dJ/J| med, 99%':>34} "
-                  f"{'d<Tb>':>9} {'rms dTb/rms Tb':>14} | {'<Tb> J lin':>11} {'<Tb> J(z)(1+d)':>14} {'rms diff/rms':>12}")
+                  f"{'d<Tb>':>9} {'rms dTb/rms Tb':>14} | {'<Tb> J lin':>11} {'<Tb> Jtab(1+d)':>14} {'rms diff/rms':>12} | "
+                  f"{'<Tb> Jbox(1+d)':>14} {'rms diff/rms':>12}")
             for lo, hi in zip(BANDS[:-1], BANDS[1:]):
                 m = (zc >= lo) & (zc < hi)
                 if m.sum() < 2:
@@ -84,10 +89,11 @@ def main():
                 sd = tl[:, m].std()
                 print(f"  {lo:5.2f}-{hi:5.2f} {m.sum():6d} | {Jl[:, m].mean() / Jbox[m].mean():13.4f} {Jl[:, m].mean() / np.nanmean(Jtab[m]):12.4f} | "
                       f"{np.median(rel):17.2e} {np.percentile(rel, 99):16.2e} {dt.mean():9.3g} {dt.std() / sd:14.3g} | "
-                      f"{tl[:, m].mean():11.4g} {tm[:, m].mean():14.4g} {(tm[:, m] - tl[:, m]).std() / sd:12.3g}")
+                      f"{tl[:, m].mean():11.4g} {tm[:, m].mean():14.4g} {(tm[:, m] - tl[:, m]).std() / sd:12.3g} | "
+                      f"{tb[:, m].mean():14.4g} {(tb[:, m] - tl[:, m]).std() / sd:12.3g}")
             print(f"  ({unit}; J snapshots used: {len({s for w in info['weights'] for s in w})}; pixels with J = 0: "
                   f"{np.mean(Jl == 0):.2%}, left out of |dJ/J|)")
-            del cone, Jl, Jn, tl, tn, tm, delta, Jmod
+            del cone, Jl, Jn, tl, tn, tm, tb, delta, Jmod
 
 if __name__ == "__main__":
     main()
