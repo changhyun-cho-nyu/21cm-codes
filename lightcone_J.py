@@ -62,6 +62,18 @@ def j_files(band, jdir=JDIR, tag="tr_sfmask"):
     return out
 
 
+def box_mean(files, band):
+    """z (increasing) and the box-mean J (stars + AGN) of the J snapshots, from the J_mean attributes"""
+    rows = []
+    for s, (p1, p2, z) in files.items():
+        with h5py.File(p1, "r") as f1, h5py.File(p2, "r") as f2:
+            m1, m2 = f1[DSETS[band][0]].attrs.get("J_mean"), f2[DSETS[band][1]].attrs.get("J_mean")
+        if m1 is not None and m2 is not None:
+            rows.append((z, float(m1) + float(m2)))
+    rows.sort()
+    return np.array(rows).T if rows else None
+
+
 def cone_cells(cone, sel, Nb, origin=CONE_ORIGIN):
     """flat J-grid cell index (Nb^3 grid) of every selected pixel of every slice, shape cone["Density"].shape"""
     hd = cone["header"]

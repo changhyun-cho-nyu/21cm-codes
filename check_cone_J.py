@@ -28,25 +28,12 @@ import numpy as np
 import pandas as pd
 from scipy.interpolate import interp1d
 
-import h5py
-from lightcone_J import DSETS, JDIR, cone_J, j_files
+from lightcone_J import JDIR, box_mean, cone_J, j_files
 from lightcone_tb import cone_tb, read_cone, units
 
 BASE = "/orcd/data/mvogelsb/005/mkilab001/mvogelsblab003/Lab/Thesan-XL"
 CONES = [f"{BASE}/Flagship_new/postprocessing/rlc_640", f"{BASE}/Flagship_below_z_4p75_new/postprocessing/rlc_640"]
 BANDS = (3, 4, 4.75, 5, 6, 7, 8, 10, 12, 15, 20)
-
-
-def box_mean(files, band):
-    """z (increasing) and the box-mean J (stars + AGN) of the J snapshots, from the J_mean attributes"""
-    rows = []
-    for s, (p1, p2, z) in files.items():
-        with h5py.File(p1, "r") as f1, h5py.File(p2, "r") as f2:
-            m1, m2 = f1[DSETS[band][0]].attrs.get("J_mean"), f2[DSETS[band][1]].attrs.get("J_mean")
-        if m1 is not None and m2 is not None:
-            rows.append((z, float(m1) + float(m2)))
-    rows.sort()
-    return np.array(rows).T if rows else None
 
 
 def main():
