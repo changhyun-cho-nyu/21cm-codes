@@ -79,7 +79,7 @@ def main():
         mean = lambda t: float(np.sum(w * t.mean(axis=(0, 1), dtype=np.float64)) / w.sum())
         Jh, _ = cone_J(cone, "He", np.s_[:, :], outside="hold", verbose=False, jdir=a.jdir)
         t0, th = mean(cone_tb(cone, "He", np.zeros_like(Jh))), mean(cone_tb(cone, "He", Jh))
-        print(f"  He band z {cone['z'].min():.4f} - {cone['z'].max():.4f} ({len(cone['z'])} slices), <x_HII>_m "
+        print(f"  He band z {cone['z'].min():.4f} - {cone['z'].max():.4f} ({len(cone['z'])} slices), pixel mean of HII_Fraction "
               f"{np.average(cone['HII_Fraction'].mean(axis=(0, 1)), weights=w):.4f}: <dT_b^He> J = 0 {t0:.5g} uK, "
               f"hold {th:.5g} uK, hold/(J=0) - 1 = {th / t0 - 1:+.3%}")
         del cone, Jh
