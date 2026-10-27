@@ -7,10 +7,12 @@ end snapshot's J at the slice's cells) for the slices beyond. For each end it pr
 beyond, and, for the last band of slices inside the range (width --dz), <delta T_b> with the sampled J and with
 J = 0. "hold" beyond the end gives about the sampled-J value there, "zero" the J = 0 value, so the difference is
 the size of the choice at the end; further out it shrinks if J (and its share of the coupling) falls.
+For He it also takes bands beyond the J range (--zbeyond, z +- dz): <delta T_b^He> with J = 0 (collisional coupling
+only) and with "hold" (the z = 10.014 J). He J falls with z, so "hold" bounds the Lya part from above.
 
 Usage
 -----
-  python check_cone_outside.py [--dz 0.05]
+  python check_cone_outside.py [--dz 0.05] [--zbeyond 11 13 15 20]
 """
 import argparse
 
@@ -29,6 +31,8 @@ def main():
     ap.add_argument("--dz", type=float, default=0.05)
     ap.add_argument("--cones", nargs="+", default=CONES)
     ap.add_argument("--jdir", default=JDIR)
+    ap.add_argument("--zbeyond", type=float, nargs="*", default=[11.0, 13.0, 15.0, 20.0],
+                    help="He bands beyond the J range: J = 0 against hold")
     a = ap.parse_args()
 
     zc_all = []
@@ -63,6 +67,22 @@ def main():
                   + f"; last band inside z {sub['z'].min():.4f} - {sub['z'].max():.4f} ({keep.sum()} slices): "
                   f"<dT_b> sampled J {t1:.5g}, J = 0 {t0:.5g} {unit}, (J=0)/J - 1 = {t0 / t1 - 1:+.3%}")
             del cone, sub, J
+
+    zmax_He = max(f[2] for f in j_files("He", a.jdir).values())
+    for zb in a.zbeyond:
+        cone = read_cone(a.cones, sel=np.s_[:, :], zmin=zb - a.dz, zmax=zb + a.dz)
+        if cone["z"].min() <= zmax_He:
+            print(f"  He z = {zb}: band reaches into the J range (z <= {zmax_He:.4f}); skipped")
+            continue
+        w = cone["chi_edges"]
+        w = 0.5 * (w[:-1] + w[1:])**2 * np.abs(np.diff(w))
+        mean = lambda t: float(np.sum(w * t.mean(axis=(0, 1), dtype=np.float64)) / w.sum())
+        Jh, _ = cone_J(cone, "He", np.s_[:, :], outside="hold", verbose=False, jdir=a.jdir)
+        t0, th = mean(cone_tb(cone, "He", np.zeros_like(Jh))), mean(cone_tb(cone, "He", Jh))
+        print(f"  He band z {cone['z'].min():.4f} - {cone['z'].max():.4f} ({len(cone['z'])} slices), <x_HII>_m "
+              f"{np.average(cone['HII_Fraction'].mean(axis=(0, 1)), weights=w):.4f}: <dT_b^He> J = 0 {t0:.5g} uK, "
+              f"hold {th:.5g} uK, hold/(J=0) - 1 = {th / t0 - 1:+.3%}")
+        del cone, Jh
 
 
 if __name__ == "__main__":
