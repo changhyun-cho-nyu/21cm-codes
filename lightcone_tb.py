@@ -9,9 +9,12 @@ and units from the light-cone header.
 
   - read_cone joins the light cones of the two runs (z > 4.75 and z < 4.75) at their shared edge without
     duplicating it, after checking that they are the same cone (NumPixels, OpeningAngle) and that the edges meet.
-    The two runs' Center differ (the below-z = 4.75 run's box coordinates are shifted), but the cone is continuous
-    across the join: corr(log rho) of the last outer and first inner slices 0.567, of two outer neighbours 0.605
-    (2026-10-26).
+    The two runs' header Centers differ, but both map onto the box with the same origin (below), and the cone is
+    continuous across the join: corr(log rho) of the last outer and first inner slices 0.567, of two outer
+    neighbours 0.605 (2026-10-26).
+  - Cone -> box: pixel (ix, iy) of the slice at centre distance r is at P = (O_x + t_x p, O_y + t_y p, O_z + p) mod
+    BoxSize, t = ((i + 0.5)/N - 0.5) OpeningAngle, p = r / sqrt(1 + t_x^2 + t_y^2), with one O = CONE_ORIGIN for
+    both runs (not the header Center; check_cone_mapping.py, 2026-10-26: ten snapshots z = 10-3, spread 0.2 cell).
   - cone_tb: as test_cells_Tb.py, the mean density is Omega_b rho_crit (the production maps normalise by the map's
     gas mean: -0.4% to +0.7% in delta T_b, JALPHA_NOTES §6.2). J_alpha is whatever the caller passes, in proper
     photons s^-1 cm^-2 Hz^-1 sr^-1 (the light cone has no J_alpha field).
@@ -41,6 +44,7 @@ except ImportError:
     pass
 
 FIELDS = ("Density", "Temperature", "HII_Fraction", "HeII_Fraction", "HeIII_Fraction")
+CONE_ORIGIN = (91.447, 39.645, 7.864)        # O [cMpc/h] of the cone -> box mapping above
 HDR_KEYS = ("HubbleParam", "Omega0", "OmegaBaryon", "OmegaLambda", "UnitLength_in_cm", "UnitMass_in_g",
             "NumPixels", "OpeningAngle", "BoxSize")
 
