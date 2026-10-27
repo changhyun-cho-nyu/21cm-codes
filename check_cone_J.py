@@ -17,6 +17,10 @@ Only slices inside the J snapshots' z range are used (no choice of J outside it 
 Usage
 -----
   python check_cone_J.py [--row 64 320 576] [--zmax 20]
+  python check_cone_J.py --stride 32          # every 32nd row (20 rows across the cone) in one table
+Rows sample nearly one x plane of the box each (x ~ O_x + t_x p mod BoxSize): rows 64 and 576 see nearly the same
+plane at z ~ 10-20 (512 pixels ~ BoxSize at z ~ 12) and row 320 the plane x = O_x at all z. --stride spreads the
+rows over the box for the <J>row/<J>box test.
 """
 import argparse
 
@@ -49,21 +53,23 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--row", type=int, nargs="+", default=[64],
                     help="ix of the row(s) (the fan notebook: int(0.1 * 640) = 64); several rows: one table each")
+    ap.add_argument("--stride", type=int, default=None,
+                    help="instead of --row: every stride-th row (ix = 0, stride, ...) in one table")
     ap.add_argument("--zmax", type=float, default=20.0)
     ap.add_argument("--cones", nargs="+", default=CONES)
     ap.add_argument("--jdir", default=JDIR)
     ap.add_argument("--jcsv", default="/orcd/data/mvogelsb/004/chcho/LUMINA_ALL.csv")
     a = ap.parse_args()
     jt = pd.read_csv(a.jcsv).sort_values("redshift")
+    sels = [(f"ix = 0:640:{a.stride}", np.s_[::a.stride, :])] if a.stride else [(f"ix = {r}", np.s_[r, :]) for r in a.row]
 
     for band, col, unit in (("H", "J_alpha", "mK"), ("He", "J_alpha_He", "uK")):
         files = j_files(band, a.jdir)
         zj = np.array(sorted(f[2] for f in files.values()))
         zmin, zmax = zj[0], min(zj[-1], a.zmax)
         bm = box_mean(files, band)
-        for row in a.row:
-            sel = np.s_[row, :]
-            print(f"\n===== {band}: {len(files)} J snapshots, z {zj[0]:.4f} - {zj[-1]:.4f}; cone row ix = {row}, "
+        for label, sel in sels:
+            print(f"\n===== {band}: {len(files)} J snapshots, z {zj[0]:.4f} - {zj[-1]:.4f}; cone rows {label}, "
                   f"slices within z {zmin:.4f} - {zmax:.4f}", flush=True)
             cone = read_cone(a.cones, sel=sel, zmin=zmin, zmax=zmax)
             zc = cone["z"]
@@ -83,14 +89,14 @@ def main():
                 m = (zc >= lo) & (zc < hi)
                 if m.sum() < 2:
                     continue
-                pos = Jl[:, m] > 0                                   # He J can be exactly 0 (fully absorbed)
-                rel = np.abs(Jn[:, m][pos] / Jl[:, m][pos] - 1.0)
-                dt = tn[:, m] - tl[:, m]
-                sd = tl[:, m].std()
-                print(f"  {lo:5.2f}-{hi:5.2f} {m.sum():6d} | {Jl[:, m].mean() / Jbox[m].mean():13.4f} {Jl[:, m].mean() / np.nanmean(Jtab[m]):12.4f} | "
+                pos = Jl[..., m] > 0                                   # He J can be exactly 0 (fully absorbed)
+                rel = np.abs(Jn[..., m][pos] / Jl[..., m][pos] - 1.0)
+                dt = tn[..., m] - tl[..., m]
+                sd = tl[..., m].std()
+                print(f"  {lo:5.2f}-{hi:5.2f} {m.sum():6d} | {Jl[..., m].mean() / Jbox[m].mean():13.4f} {Jl[..., m].mean() / np.nanmean(Jtab[m]):12.4f} | "
                       f"{np.median(rel):17.2e} {np.percentile(rel, 99):16.2e} {dt.mean():9.3g} {dt.std() / sd:14.3g} | "
-                      f"{tl[:, m].mean():11.4g} {tm[:, m].mean():14.4g} {(tm[:, m] - tl[:, m]).std() / sd:12.3g} | "
-                      f"{tb[:, m].mean():14.4g} {(tb[:, m] - tl[:, m]).std() / sd:12.3g}")
+                      f"{tl[..., m].mean():11.4g} {tm[..., m].mean():14.4g} {(tm[..., m] - tl[..., m]).std() / sd:12.3g} | "
+                      f"{tb[..., m].mean():14.4g} {(tb[..., m] - tl[..., m]).std() / sd:12.3g}")
             print(f"  ({unit}; J snapshots used: {len({s for w in info['weights'] for s in w})}; pixels with J = 0: "
                   f"{np.mean(Jl == 0):.2%}, left out of |dJ/J|)")
             del cone, Jl, Jn, tl, tn, tm, tb, delta, Jmod
