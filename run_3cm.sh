@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=PS_3cm
-#SBATCH --partition=sched_mit_mvogelsb
+#SBATCH --partition=orcd_ug_pi_mki_mvogelsb_all
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1

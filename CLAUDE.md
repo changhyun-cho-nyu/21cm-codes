@@ -66,7 +66,7 @@ Test runs: `run_Jalpha_test.sh` (snapshots 156, 300, 406, 500). Checks: `check_*
 - User data: `/orcd/data/mvogelsb/004/chcho/`.
 - Modules: hdf5/1.14.3 (an MPI build, so compile with mpicc) and fftw/3.3.10.
 - Compressed renders need `HDF5_PLUGIN_PATH` (from hdf5plugin).
-- Partition: `sched_mit_mvogelsb`.
+- Partition: `orcd_ug_pi_mki_mvogelsb_all`.
 - `/orcd/data/mvogelsb/004` is a shared 160 TB group filesystem; it filled on 2026-10-16 and writes (maps, logs) failed silently. Check `df -h` before large jobs.
 
 ## State (2026-10-17) and next steps

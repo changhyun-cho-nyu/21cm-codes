@@ -7,7 +7,7 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=96G
 #SBATCH --time=08:00:00
-#SBATCH --partition=sched_mit_mvogelsb
+#SBATCH --partition=orcd_ug_pi_mki_mvogelsb_all
 #SBATCH --mail-user=chcho@mit.edu
 #SBATCH --mail-type=END,FAIL
 #
