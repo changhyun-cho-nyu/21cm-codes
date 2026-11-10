@@ -142,6 +142,15 @@ def first_3d(f):
     return f[next(k for k in f if isinstance(f[k], h5py.Dataset) and f[k].ndim == 3)]
 
 
+def load_J(files, N):
+    """sum of the 640^3 J_alpha files (stars, AGN); --J none alone means J = 0 (no J files: He above z = 10.01,
+    where the Lyman-alpha share of the coupling is <= 0.4%, JALPHA_NOTES 4.7)"""
+    if list(files) == ["none"]:
+        print("J = 0 (--J none)")
+        return np.zeros((N,) * 3, np.float32)
+    return sum(first_3d(h5py.File(fn, "r"))[()].astype(np.float32) for fn in files)
+
+
 def render_redshifts(dirs):
     out = {}
     for d in dirs:
@@ -336,8 +345,7 @@ def scan(a):
     p = os.path.join(a.render, "Density", f"Density_{a.render_snap:03d}.hdf5")
     Rd = h5py.File(p if os.path.exists(p) else os.path.join(a.render, "All", f"All_{a.render_snap:03d}.hdf5"), "r")["Density"][()]
     N = Rd.shape[0]
-    Jf = [h5py.File(fn, "r") for fn in a.J]
-    J = sum(first_3d(f)[()].astype(np.float32) for f in Jf)
+    J = load_J(a.J, N)
     if J.shape != (N,) * 3:
         sys.exit(f"ERROR: J is {J.shape}, render {Rd.shape}")
     edges = np.linspace(0, S.n, a.ntask + 1).astype(np.int64)
@@ -467,7 +475,7 @@ def merge(a):
     for k in ("Density", "Temperature", "HII_Fraction", "HeII_Fraction", "HeIII_Fraction"):
         p = os.path.join(a.render, k, f"{k}_{a.render_snap:03d}.hdf5")
         R[k] = h5py.File(p if os.path.exists(p) else os.path.join(a.render, "All", f"All_{a.render_snap:03d}.hdf5"), "r")[k]
-    J = sum(first_3d(h5py.File(fn, "r"))[()].astype(np.float32) for fn in a.J)
+    J = load_J(a.J, N)
     R_tb = np.empty((N,) * 3, np.float32)
     for i0 in range(0, N, 32):
         sl = slice(i0, i0 + 32)
@@ -604,7 +612,7 @@ def main():
         q = sub.choices[name]
         q.add_argument("--snap", type=int, required=True)
         q.add_argument("--line", choices=["H", "He"], default="He")
-        q.add_argument("--J", action="append", required=True, help="640^3 J_alpha files of the line (stars, AGN), summed")
+        q.add_argument("--J", action="append", required=True, help="640^3 J_alpha files of the line (stars, AGN), summed; 'none' (alone) = J = 0")
         q.add_argument("--render", required=True, help="ren_640 directory of the matching render snapshot")
         q.add_argument("--render-snap", type=int, required=True)
         q.add_argument("--out", required=True, help="directory of the task files")

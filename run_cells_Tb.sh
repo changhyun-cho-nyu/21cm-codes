@@ -28,7 +28,7 @@ RUN=${RUN:-below}                      # snapshot directory: above | below z = 4
 SNAP=${SNAP:-136}                       # full snapshot (z = 4.00417)
 RSNAP=${RSNAP:-501}                      # render snapshot at the same z (inspect: dz = 0)
 JDIR=${JDIR:-/orcd/data/mvogelsb/004/chcho/Jalpha_test}   # production He J at 501 not yet made (2026-10-15): the test J
-JSNAP=${JSNAP:-500}                      # snapshot of the J files (render 500, z = 4.0116, dz = 0.0074; same J on both sides of the ratio)
+JSNAP=${JSNAP:-500}                      # (none: J = 0) snapshot of the J files (render 500, z = 4.0116, dz = 0.0074; same J on both sides of the ratio)
 TR_TAG=${TR_TAG:-tr_sfmask}
 OUT_DIR=${OUT_DIR:-/orcd/data/mvogelsb/004/chcho/cell_test}
 NTASK=${NTASK:-32}                       # = the --array size
@@ -43,13 +43,15 @@ if [ "$RUN" = above ]; then SD=$SNAP_ABOVE; else SD=$SNAP_BELOW; fi
 if [ "$RSNAP" -le 428 ]; then REN=$BASE/Flagship_new/postprocessing/ren_640; else REN=$BASE/Flagship_below_z_4p75_new/postprocessing/ren_640; fi
 if [ "$LINE" = H ]; then J1=$JDIR/Jalpha_H_$JSNAP.hdf5; J2=$JDIR/Jalpha_AGN_H_$JSNAP.hdf5
 else J1=$JDIR/Jalpha_He_${JSNAP}_$TR_TAG.hdf5; J2=$JDIR/Jalpha_AGN_He_${JSNAP}_$TR_TAG.hdf5; fi
+JARGS="--J $J1 --J $J2"
+if [ "$JSNAP" = none ]; then J1=none; J2=; JARGS="--J none"; fi   # JSNAP=none: J = 0 (He above z = 10.01, no J files)
 
 source ~/.bashrc
 conda activate jupyter_env
 set -eo pipefail
 cd "$SLURM_SUBMIT_DIR"
-for f in "$J1" "$J2"; do [ -s "$f" ] || { echo "missing $f"; exit 1; }; done
+[ "$JSNAP" = none ] || for f in "$J1" "$J2"; do [ -s "$f" ] || { echo "missing $f"; exit 1; }; done
 echo "scan task $SLURM_ARRAY_TASK_ID/$NTASK: $LINE, $RUN snapshot $SNAP, render $RSNAP, J $J1 $J2, $(date), commit $(git rev-parse --short HEAD)"
-python -u test_cells_Tb.py scan --snapdir $SD --snap $SNAP --line $LINE --J $J1 --J $J2 --render $REN --render-snap $RSNAP \
+python -u test_cells_Tb.py scan --snapdir $SD --snap $SNAP --line $LINE $JARGS --render $REN --render-snap $RSNAP \
     --out $OUT_DIR --task $SLURM_ARRAY_TASK_ID --ntask $NTASK --grids $GRIDS --n-cube $NCUBE ${IGM_CUTS:+--igm-cuts $IGM_CUTS}
 echo "done $(date)"
