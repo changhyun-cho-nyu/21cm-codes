@@ -21,6 +21,7 @@
 
 SNAPS=()                   # empty: the snapshot list of run_3cm.sh (its uncommented SNAPS block);
                            # or a list, e.g. SNAPS=(156 300 406 500) for the tests
+                           # or ONLY="280" in the environment (ONLY=280 bash run_transmission.sh count)
 OPA=/orcd/data/mvogelsb/004/chcho/opacity_He       # run_opacity.sh output
 TRANS=/orcd/data/mvogelsb/004/chcho/transmission_He
 HDF5_PREFIX=                                       # set if hdf5.h is not found (see run_Jalpha_test.sh)
@@ -63,6 +64,7 @@ if [ "$1" = "compile" ]; then
     exit 0
 fi
 
+[ -n "${ONLY:-}" ] && SNAPS=($ONLY)   # ONLY="280": these snapshots (overrides SNAPS and the list)
 [ ${#SNAPS[@]} -gt 0 ] || SNAPS=($(sed -n '/^SNAPS=(/,/)/p' run_3cm.sh | sed 's/#.*//' | tr -d 'SNAPS=()'))
 if [ "$1" = "count" ]; then
     echo "${#SNAPS[@]} snapshots (${SNAPS[0]} .. ${SNAPS[${#SNAPS[@]}-1]}); ~1.5 GB each"

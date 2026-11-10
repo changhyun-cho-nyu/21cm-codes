@@ -21,6 +21,7 @@
 #   2. mkdir -p logs && sbatch --array=0-<N-1>%10 run_Jalpha_prod.sh
 #      (%10: at most 10 tasks at once; resubmitting the same line later redoes only the missing outputs)
 #   3. bash run_Jalpha_prod.sh status                      # which outputs exist / are missing
+#   ONLY="280" bash run_Jalpha_prod.sh count               # other snapshots than the list (export ONLY to sbatch too)
 # Then set J_DIR=$J in run_21cm.sh (and run_3cm.sh, with its TR_TAG = the TR_TAG here).
 
 #BAND=H                     # H or He
@@ -48,6 +49,7 @@ case $BAND in
 esac
 # the uncommented SNAPS=( ... ) block of the T_b script
 SNAPS=($(sed -n '/^SNAPS=(/,/)/p' $LIST | sed 's/#.*//' | tr -d 'SNAPS=()'))
+[ -n "${ONLY:-}" ] && SNAPS=($ONLY)   # ONLY="280": these snapshots instead of the list (e.g. a full-snapshot match)
 NT=$(( ${#SNAPS[@]} * ${#CODES[@]} ))
 outfile() {   # $1 snap, $2 code
     case $2 in
