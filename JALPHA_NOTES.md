@@ -449,3 +449,36 @@ Its AGN-SED finding (#3) is fixed (2.3 above). Its helium-coupling finding (#10,
 | No-heating reference, per-pixel anchor (job 26334741, first pass; 2026-10-19) | Check at the anchor: z = 29.4285, fiducial and reference ⟨δT_b⟩ both −2.7441 mK (identical by construction: all cells replaced, T_ref = T). The job hit its 4 h limit after 68 of 102 snapshots (~210 s per snapshot, not ~100 s as estimated); the rest is resumed. Side finding: the 'rin (T_b)' log line's min/max are per-cell δT_b × V_cell (V_cell = 1.477×10⁸), not normalised (the mean is); maps unaffected; `plot_global_Tb.py` uses only the mean |
 | No-heating reference, per-pixel anchor, complete (jobs 26334741 + 26374968, 2026-10-19) | 102/102 maps in `Tb_maps_prod/H_real_tkref1e-3_pix0` (resume: 02:10:02, "done, 0 failed"). `check_Tb_maps.py --real-space --tk-ref 1e-3 --tk-ref-anchor pixel` at 242 (z = 7.21; reference T in 36–37% of the cells): C / independent 0.9999852, worst cell 1.49×10⁻⁵, OK; slab ⟨δT_b⟩ −86 to −87 mK (Eq. 27: −102 to −105). Global ⟨δT_b⟩ fiducial / reference [mK] (`plot_global_Tb.py`, logs 25884455 and the two reference logs joined): z = 24.9: −0.83 / −1.58; 19.9: +0.42 / −0.75; 17.0: +0.67 / −2.93; 15.0: +0.92 / −17.4; 13.0: +4.81 / −64.2; 12.0: +10.4 / −98.1; 11.0: +16.6 / −124.4; 10.0: +20.0 / −135.7; 9.0: +20.0 / −133.0; 8.0: +16.8 / −114.0; 7.0: +10.9 / −76.6; 6.0: +3.0 / −22.1. Replaced pixels (x_HII < 10⁻³), share of the cells / of the H I mass: z = 10.01: 0.82 / 0.80; 9.01: 0.70 / 0.70; 7.01: 0.32 / 0.46, so the curves cannot meet before x_HI → 0. Hand check at z = 10, mean density: T_ref ≈ 4.4 K, x_α ≈ 8, T_S ≈ 4.9 K, δT_b ≈ −135 mK (run: −135.7). `check_ref_T.py` at 156 (z = 10.01), H I-mass-weighted over the replaced pixels: T_fid 10/50/90% = 76 / 186 / 843 K, T_ref 1.8 / 4.4 / 9.1 K, T_fid/T_ref median 48; 100% of that H I has T_fid > T_CMB (30 K); by 1+δ: < 1 (57% of the H I) median T_fid 114 K, 1–3 (43%) 441 K, none above 3. So Lumina's neutral IGM (x_HII < 10⁻³, underdense included) is heated to ~10²–10³ K by z = 10 with almost no ionization: heating of the diffuse IGM (consistent with X-rays; shocks and pixel mixing would sit in dense pixels), not ionization, so the x_HII threshold does not separate heated from unheated gas. Open: the anchored reference already differs at z = 24.9 (−1.58 vs −0.83 mK), so heating (or a non-adiabatic term) acts between z0 = 29.4 and 25; the 2026-10-19 rejection of the Eq. 27 law assumed heating negligible at z ≈ 25, which is not established |
 | `check_ref_T.py --weighting volume` at 156 (z = 10.01; job 26447453, 2026-10-20) | Same pixels with `TemperatureVolumeWeighted`, `HII_VolumeFraction` (x_HII < 10⁻³ in 0.825 of the cells, 0.818 of the H I): T_fid 10/50/90% = 68 / 129 / 365 K (mass-weighted 76 / 186 / 843); 1+δ < 1: median 91 K (114), 1–3: 232 K (441); 100% of that H I still above T_CMB = 30 K; T_ref median 3.8 K. So the heating of the neutral IGM is real, not mass-weighting of a few hot cells. Weighting effect on the spin factor at x_α ≈ 8 (median pixel): 1 − T_γ/T_S = 0.745 (mass) vs 0.682 (volume), voids 0.655 vs 0.596, i.e. δT_b ~9% lower with volume weighting at z = 10 (same order as the 640→1280 change, −5%). Maps stay mass-weighted (decided default); the weighting is a ~10% systematic at z ≈ 10 |
+
+### 7.1 Cell-level 3.46 cm at the 25 full snapshots (summary, 2026-11-13; data in `cell_test_summary.csv`)
+Collected from the §7 rows. prod/cell: whole-box ⟨δT_b^He⟩ of the 640³ production map over the cell level. P ratio: P_prod/P_cell at k ≲ 0.1 h/cMpc. r_min: minimum r(k) of production vs cell at k ≤ 0.2. IGM share: fraction of the cell-level mean from cells with 1+δ < 10. prod/IGM: production mean over that IGM mean (whole box; 136: cubes). Ladder: the cube cells grouped at N³ over the cell level (640³ ≈ prod/cell). 136 used the test J at render 500; 36 has J = 0.
+
+| snap | z | render | prod [µK] | cell [µK] | prod/cell | P ratio | r_min | IGM share | prod/IGM | ladder 640³ | 2560³ | 10240³ |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 36 | 11.931 | 114 | 0.002634 | 0.004981 | 0.529 | 0.285-0.292 | 0.999 | 0.737 | 0.717 | 0.531 | 0.789 | 0.967 |
+| 48 | 10.014 | 156 | 0.008269 | 0.016637 | 0.497 | 0.252-0.256 | 0.999 | 0.668 | 0.74 | 0.496 | 0.734 | 0.953 |
+| 57 | 8.90 | 184 | 0.01384 | 0.02955 | 0.468 | 0.214-0.221 | 0.999 | 0.615 | 0.76 | 0.467 | 0.692 | 0.941 |
+| 66 | 8.00 | 209 | 0.01917 | 0.04411 | 0.435 | 0.174-0.183 | 0.999 | 0.560 | 0.78 | 0.435 | 0.652 | 0.928 |
+| 74 | 7.462 | 226 | 0.02236 | 0.05461 | 0.4095 | 0.150-0.156 | 0.998 | 0.5225 | 0.784 | 0.409 | 0.623 | 0.917 |
+| 80 | 6.99 | 256 | 0.024953 | 0.065180 | 0.383 | 0.124-0.127 | 0.998 | 0.484 | 0.79 | 0.381 | 0.594 | 0.905 |
+| 86 | 6.633 | 280 | 0.02657 | 0.07388 | 0.3597 | 0.104-0.109 | 0.997 | 0.451 | 0.797 | 0.358 | 0.569 | 0.895 |
+| 92 | 6.29 | 304 | 0.02756 | 0.08226 | 0.335 | 0.085-0.089 | 0.996 | 0.417 | 0.80 | 0.333 | 0.543 | 0.882 |
+| 97 | 5.99 | 326 | 0.02769 | 0.08897 | 0.311 | 0.069-0.070 | 0.995 | 0.383 | 0.81 | 0.309 | 0.518 | 0.870 |
+| 102 | 5.73 | 346 | 0.0270 | 0.0930 | 0.290 | 0.056-0.057 | 0.993 | 0.352 | 0.82 | 0.288 | 0.496 | 0.857 |
+| 106 | 5.50 | 364 | 0.02568 | 0.09431 | 0.272 | 0.046-0.049 | 0.988 | 0.325 | 0.84 | 0.271 | 0.478 | 0.846 |
+| 111 | 5.234 | 386 | 0.02359 | 0.09326 | 0.253 | 0.038-0.043 | 0.979 | 0.294 | 0.86 | 0.251 | 0.458 | 0.834 |
+| 116 | 5.00 | 406 | 0.02156 | 0.09081 | 0.2375 | 0.029-0.037 | 0.95 | 0.268 | 0.89 | 0.236 | 0.443 | 0.824 |
+| 121 | 4.753 | 428 | 0.01921 | 0.08714 | 0.2205 | 0.020-0.029 | 0.90 | 0.239 | 0.92 | 0.218 | 0.426 | 0.812 |
+| 126 | 4.50 | 452 | 0.017593 | 0.090106 | 0.195 | 0.012-0.020 | 0.81 | 0.195 | 1.004 | 0.193 | 0.401 | 0.797 |
+| 131 | 4.25 | 476 | 0.0146 | 0.0845 | 0.173 | 0.011-0.018 | 0.58 | 0.160 | 1.08 | 0.170 | 0.377 | 0.779 |
+| 136 | 4.004 | 501 | 0.01127 | 0.0780 | 0.144 | 0.01-0.02 | <0 | 0.113 | 1.25 | 0.141 | 0.341 | 0.753 |
+| 139 | 3.86 | 516 | 0.00946 | 0.07442 | 0.127 | 0.022-0.028 | 0.03 | 0.095 | 1.34 | 0.123 | 0.319 | 0.735 |
+| 141 | 3.75 | 528 | 0.00807 | 0.07137 | 0.113 | 0.021-0.030 | -0.07 | 0.077 | 1.48 | 0.109 | 0.301 | 0.720 |
+| 144 | 3.63 | 552 | 0.00667 | 0.06776 | 0.098 | 0.017-0.032 | -0.18 | 0.057 | 1.72 | 0.095 | 0.281 | 0.704 |
+| 146 | 3.50 | 582 | 0.00526 | 0.0637 | 0.0825 | 0.011-0.026 | -0.28 | 0.038 | 2.19 | 0.080 | 0.260 | 0.685 |
+| 150 | 3.365 | 614 | 0.00404 | 0.05957 | 0.068 | 0.006-0.015 | -0.34 | 0.021 | 3.23 | 0.067 | 0.239 | 0.664 |
+| 152 | 3.250 | 641 | 0.002861 | 0.04754 | 0.0602 | 0.004-0.019 | -0.45 | 0.0135 | 4.47 | 0.058 | 0.218 | 0.624 |
+| 155 | 3.126 | 672 | 0.002407 | 0.04564 | 0.0527 | 0.002-0.006 | -0.10 | 0.0076 | 6.91 | 0.052 | 0.205 | 0.605 |
+| 158 | 2.998 | 705 | 0.00214 | 0.0442 | 0.0483 | 0.0015-0.0036 | 0.66 | 0.0049 | 9.79 | 0.048 | 0.197 | 0.593 |
+
+Every column is monotonic in z (checked). The cell-level mean peaks at z ≈ 5.5 (0.094 µK), the production mean at z ≈ 6.0–6.3 (0.028 µK). r_min stays ≥ 0.95 down to z = 5.0, then falls (0.90 at 4.75, 0.58 at 4.25, < 0 at 3.75–3.13) and recovers at 3.0 (0.66). The IGM (1+δ < 10) share falls from 0.74 to 0.005; prod/IGM passes 1 at z ≈ 4.5. 10240³ recovers 0.97 (z = 11.9) to 0.59 (z = 3.0) of the cell level.
