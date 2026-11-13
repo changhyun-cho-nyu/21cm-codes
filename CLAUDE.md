@@ -41,7 +41,7 @@ Test runs: `run_Jalpha_test.sh` (snapshots 156, 300, 406, 500). Checks: `check_*
   - the renders were made at 1280³ (Density, HII_Fraction and SpectralDensityHI with 2×2×2 sub-cells in the code, but no 2560³ files exist); 1280³ renders are available (Oliver Zier, 2026-10-14; location to be added), `ren_640` is downsampled from them;
   - there are 28 full snapshots with gas (from z = 23; see Full snapshots below), from which an exact SpectralDensityHeII could be rebuilt;
   - below z = 4.75, H and He I come from a uniform UVB (FG09) and only AGN are RT sources.
-  - **discontinuity between renders 617 and 618 (z = 3.35; full snapshots 150 → 152):** one output missing, and from there the gas at n_H > 0.01 cm⁻³ is self-shielded (non-star-forming x_HI ×12; diffuse x_HI ×0.6). The neutral H mass doubles (1.3% → 2.5%), and so does the 21 cm global signal (0.226 → 0.440 mK). Cause to be confirmed with the Lumina team; treatment open (JALPHA_NOTES §6.1 item 7).
+  - **discontinuity between renders 617 and 618 (z = 3.35; full snapshots 150 → 152):** one output missing, and from there the gas at n_H > 0.01 cm⁻³ is self-shielded (non-star-forming x_HI ×12; diffuse x_HI ×0.6). The neutral H mass doubles (1.3% → 2.5%), and so does the 21 cm global signal (0.226 → 0.440 mK). Cause to be confirmed with the Lumina team. **Decided 2026-11-12: keep the maps, state the step in the paper** (JALPHA_NOTES §6.1 item 7, §6.3).
 - **Units:**
   - J_α output: proper photons s⁻¹ cm⁻² Hz⁻¹ sr⁻¹.
   - AGN `LuminosityAGN` already includes f_esc(L), checked R = 0.1949. It is Lumina's obscuration correction L_obs/L_bol = 0.3 (L_bol/10⁴⁶)^0.07 on L_bol, frequency-independent (Zier+26 Eq. 15), so applying it in both bands is consistent. LUM_UNIT = 6.4459e36 erg/s.
