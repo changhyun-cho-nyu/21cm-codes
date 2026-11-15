@@ -54,6 +54,13 @@ Usage
   python make_Z_snapshots.py --from-csv Z_snapshots.csv --column Z_young_10
                                                      # rewrite Z_history only
   python make_Z_snapshots.py --runs above=/path/a below=/path/b
+  python make_Z_snapshots.py --runs xray=<run>/output --out-csv ... --out-weights ... --out-history ...
+                                                     # AREPO multi-file layout (snapdir_NNN/snap_NNN.<i>.hdf5,
+                                                     # stars in each file's PartType4), e.g. the SonjaXrayPaper runs
+
+Snapshot layouts (detected per directory):
+  LUMINA     <snapdir>/snap_NNN.hdf5 (Header) + <snapdir>/PartType4/PartType4_NNN.hdf5
+  multi-file <snapdir>/snapdir_NNN/snap_NNN.<i>.hdf5 (only the full snapshots; snap-prevmostboundonly_* is ignored)
 """
 import argparse
 import glob
@@ -137,8 +144,45 @@ def bpass_band_rates(path):
         rates[band] = np.trapezoid(Lnu[:, :, m] / (PLANCK * freq[m]) * (MP_CGS / MSOL2GRAM), freq[m], axis=2)
     return Zg, lo * GYR2SEC / MYR_S, hi * GYR2SEC / MYR_S, rates
 
+def multifile_paths(snapdir, snap):
+    """The pieces of a full snapshot in the AREPO multi-file layout, in file order (empty if none)."""
+    fs = glob.glob(os.path.join(snapdir, f"snapdir_{snap:03d}", f"snap_{snap:03d}.*.hdf5"))
+    return sorted(fs, key=lambda q: int(q.rsplit(".", 2)[-2]))
+
+def list_snapshots(snapdir):
+    """Snapshot numbers with stars data, in either layout."""
+    one = [int(re.search(r"snap_(\d{3})\.hdf5$", q).group(1)) for q in glob.glob(os.path.join(snapdir, "snap_*.hdf5"))]
+    if one:
+        return sorted(one)
+    return sorted(int(re.search(r"snap_(\d{3})\.0\.hdf5$", q).group(1))
+                  for q in glob.glob(os.path.join(snapdir, "snapdir_*", "snap_*.0.hdf5")))
+
+def star_chunks(snapdir, snap):
+    """Yield (GFM_StellarFormationTime, GFM_Metallicity, Masses, initial mass, has_initial_mass) in chunks."""
+    lumina = os.path.join(snapdir, "PartType4", f"PartType4_{snap:03d}.hdf5")
+    paths = [lumina] if os.path.exists(lumina) else multifile_paths(snapdir, snap)
+    nfile = None
+    for path in paths:
+        with h5py.File(path, "r") as f:
+            if "Header" in f and "NumFilesPerSnapshot" in f["Header"].attrs:
+                nfile = int(f["Header"].attrs["NumFilesPerSnapshot"])
+            g = f["PartType4"] if "PartType4" in f else (f if path == lumina else None)
+            if g is None or "GFM_StellarFormationTime" not in g:
+                continue                                   # a piece with no stars
+            n = g["GFM_StellarFormationTime"].shape[0]
+            m0key = "GFM_InitialMass" if "GFM_InitialMass" in g else "Masses"
+            for i in range(0, n, CHUNK):
+                yield (g["GFM_StellarFormationTime"][i:i + CHUNK].astype(np.float64),
+                       g["GFM_Metallicity"][i:i + CHUNK].astype(np.float64),
+                       g["Masses"][i:i + CHUNK].astype(np.float64),
+                       g[m0key][i:i + CHUNK].astype(np.float64), m0key == "GFM_InitialMass")
+    if nfile is not None and nfile != len(paths):
+        raise RuntimeError(f"snapshot {snap:03d}: {len(paths)} files, header NumFilesPerSnapshot = {nfile}")
+
 def snapshot_row(run, snapdir, snap, logZ_grid, window):
-    with h5py.File(os.path.join(snapdir, f"snap_{snap:03d}.hdf5"), "r") as f:
+    one = os.path.join(snapdir, f"snap_{snap:03d}.hdf5")
+    hdr_path = one if os.path.exists(one) else multifile_paths(snapdir, snap)[0]
+    with h5py.File(hdr_path, "r") as f:
         z_snap = float(f["Header"].attrs["Redshift"])
         a_snap = float(f["Header"].attrs["Time"])
     t_snap = t_of_a(a_snap)
@@ -149,32 +193,27 @@ def snapshot_row(run, snapdir, snap, logZ_grid, window):
     z_min, z_max, af_max = np.inf, -np.inf, 0.0
     young = {w: [0.0, 0.0, 0] for w in windows}              # sum m0, sum m0*Z, count
     wgrid = np.zeros(len(logZ_grid))                          # young mass per grid point
-    with h5py.File(os.path.join(snapdir, "PartType4", f"PartType4_{snap:03d}.hdf5"), "r") as f:
-        n = f["GFM_StellarFormationTime"].shape[0]
-        m0key = "GFM_InitialMass" if "GFM_InitialMass" in f else "Masses"
-        for i in range(0, n, CHUNK):
-            af = f["GFM_StellarFormationTime"][i:i + CHUNK].astype(np.float64)
-            ok = af > 0                                      # drop GFM wind particles
-            n_wind += int((~ok).sum())
-            if not ok.any():
-                continue
-            af = af[ok]
-            Z  = f["GFM_Metallicity"][i:i + CHUNK].astype(np.float64)[ok]
-            m  = f["Masses"][i:i + CHUNK].astype(np.float64)[ok]
-            m0 = f[m0key][i:i + CHUNK].astype(np.float64)[ok]
-            n_star += Z.size
-            s_m += m.sum(); s_mZ += (m * Z).sum(); s_Z += Z.sum()
-            z_min, z_max = min(z_min, Z.min()), max(z_max, Z.max())
-            af_max = max(af_max, af.max())
-            age = t_snap - t_of_a(af)                        # Myr
-            for w in windows:
-                y = age < w
-                young[w][0] += m0[y].sum(); young[w][1] += (m0[y] * Z[y]).sum(); young[w][2] += int(y.sum())
-            y = age < window
-            if y.any():
-                j, wt = logZ_split(Z[y], logZ_grid)
-                wgrid += np.bincount(j, weights=m0[y] * (1.0 - wt), minlength=len(logZ_grid))
-                wgrid += np.bincount(j + 1, weights=m0[y] * wt, minlength=len(logZ_grid))
+    has_m0 = True
+    for af, Z, m, m0, has in star_chunks(snapdir, snap):
+        has_m0 &= has
+        ok = af > 0                                      # drop GFM wind particles
+        n_wind += int((~ok).sum())
+        if not ok.any():
+            continue
+        af, Z, m, m0 = af[ok], Z[ok], m[ok], m0[ok]
+        n_star += Z.size
+        s_m += m.sum(); s_mZ += (m * Z).sum(); s_Z += Z.sum()
+        z_min, z_max = min(z_min, Z.min()), max(z_max, Z.max())
+        af_max = max(af_max, af.max())
+        age = t_snap - t_of_a(af)                        # Myr
+        for w in windows:
+            y = age < w
+            young[w][0] += m0[y].sum(); young[w][1] += (m0[y] * Z[y]).sum(); young[w][2] += int(y.sum())
+        y = age < window
+        if y.any():
+            j, wt = logZ_split(Z[y], logZ_grid)
+            wgrid += np.bincount(j, weights=m0[y] * (1.0 - wt), minlength=len(logZ_grid))
+            wgrid += np.bincount(j + 1, weights=m0[y] * wt, minlength=len(logZ_grid))
 
     nan = float("nan")
     row = {
@@ -192,7 +231,7 @@ def snapshot_row(run, snapdir, snap, logZ_grid, window):
     tot = wgrid.sum()
     for k in range(len(logZ_grid)):
         row[f"w_{k:02d}"] = wgrid[k] / tot if tot > 0 else nan
-    if m0key != "GFM_InitialMass":
+    if not has_m0:
         print(f"  WARNING snap {snap:03d}: GFM_InitialMass missing, young stars weighted by Masses")
     return row
 
@@ -255,8 +294,7 @@ def main():
     runs = dict(r.split("=", 1) for r in args.runs) if args.runs else RUNS
     rows = []
     for run, snapdir in runs.items():
-        snaps = sorted(int(re.search(r"snap_(\d{3})\.hdf5$", q).group(1))
-                       for q in glob.glob(os.path.join(snapdir, "snap_*.hdf5")))
+        snaps = list_snapshots(snapdir)
         print(f"{run}: {len(snaps)} snapshots in {snapdir}")
         for snap in snaps:
             r = snapshot_row(run, snapdir, snap, logZ_grid, window)
