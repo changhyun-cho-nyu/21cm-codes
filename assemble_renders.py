@@ -20,9 +20,11 @@ Checks (one CSV row per render, <out>/checks/part_TT.csv):
   hi          sum SpectralDensityHI / (X sum Density (1 - HII_Fraction)) over the sub-cells (Lumina: 1 to 1e-5)
   c0 c1 c2    correlation of log Density with its neighbour along axis 0, 1, 2 (a wrong layout gives ~0 along
               some axis; the right one gives similar, high values on all three)
-  losK        corr(SpectralDensity - Density, -d_K(rho v_K)) for K = 0, 1, 2: the remap axis (Lumina: +z = axis 2)
-              has a large positive value, the others ~0
-  vs_axis     the K with the largest losK
+  rs          corr(log Density, log SpectralDensity): the baseline
+  rsK         corr(log R_K, log SpectralDensity), R_K = Density remapped along +axis K (pixel CIC, each pixel shifted by
+              its own v_pec,K / (aH), v_pec = Velocities x sqrt(a)). The remap axis (Lumina: +z = axis 2) stands out
+              above rs; the other two fall below it. (Pixel-level remap: not exact, the render shifts each gas cell.)
+  vs_axis     the K with the largest rsK
 
 Usage (one run per call; tasks split the renders):
   python assemble_renders.py --src <run>/output/movie/renderings --out /orcd/data/mvogelsb/004/chcho/xray/<run>/ren_128 \
@@ -51,7 +53,7 @@ DEFAULT_FIELDS = ["Density", "HII_Fraction", "HII_VolumeFraction", "Temperature"
                   "LyaLuminosityCol", "LyaLuminosityRec", "Volume"]
 NEED_FOR_CHECKS = ["Density", "HII_Fraction", "SpectralDensity", "SpectralDensityHI", "Velocities"]
 OUT_ROOT = "/orcd/data/mvogelsb/004/chcho"   # the only place outputs may go (user rule, 2026-11-15); inputs are read only
-COLS = ["render", "z", "mass", "spec", "hi", "c0", "c1", "c2", "los0", "los1", "los2", "vs_axis"]
+COLS = ["render", "z", "mass", "spec", "hi", "c0", "c1", "c2", "rs", "rs0", "rs1", "rs2", "vs_axis"]
 
 
 def parse_snaps(s):
@@ -94,6 +96,25 @@ def corr(a, b):
     return float(np.dot(a, b) / np.sqrt(np.dot(a, a) * np.dot(b, b)))
 
 
+def hubble(z, hdr):
+    """H(z) [km/s/Mpc] from the header cosmology (flat: Omega0 + OmegaLambda)."""
+    return 100.0 * float(hdr["HubbleParam"]) * np.sqrt(float(hdr["Omega0"]) * (1 + z) ** 3 + float(hdr["OmegaLambda"]))
+
+
+def remap_axis(rho, shift, K):
+    """Move each pixel's mass by shift (pixels, may be fractional or > 1) along +axis K, periodic, CIC in 1D."""
+    N = rho.shape[K]
+    r = np.moveaxis(rho, K, -1)
+    sh = np.moveaxis(shift, K, -1)
+    pos = np.arange(N)[None, None, :] + sh
+    i0 = np.floor(pos).astype(np.int64)
+    f = pos - i0
+    base = (np.arange(r.shape[0] * r.shape[1]) * N).reshape(r.shape[0], r.shape[1], 1)
+    out = np.bincount((base + i0 % N).ravel(), weights=(r * (1 - f)).ravel(), minlength=r.size)
+    out += np.bincount((base + (i0 + 1) % N).ravel(), weights=(r * f).ravel(), minlength=r.size)
+    return np.moveaxis(out.reshape(r.shape), -1, K)
+
+
 def assemble_one(src, out, n, fields, overwrite):
     dst = f"{out}/All/All_{n:03d}.hdf5"
     if os.path.exists(dst) and not overwrite:
@@ -133,11 +154,15 @@ def assemble_one(src, out, n, fields, overwrite):
     hi = hi8.sum() / (X_H * (rho8 * (1.0 - x8)).sum())
     lr = np.log(rho)
     cs = [corr(lr, np.roll(lr, 1, axis=a)) for a in range(3)]
-    d = cube["SpectralDensity"] - rho
-    vel = cube["Velocities"].astype(np.float64)
-    los = [corr(d, -(np.roll(rho * vel[..., K], -1, K) - np.roll(rho * vel[..., K], 1, K))) for K in range(3)]
+    a = 1.0 / (1.0 + z)
+    pix_cmpc = float(hdr["BoxSize"]) / N / 1000.0 / float(hdr["HubbleParam"])
+    vpec = cube["Velocities"].astype(np.float64) * np.sqrt(a)                  # km/s
+    shift = vpec * (1.0 + z) / hubble(z, hdr) / pix_cmpc                      # comoving pixels
+    ls = np.log(np.maximum(cube["SpectralDensity"], 1e-30))
+    rs = corr(lr, ls)
+    rsK = [corr(np.log(np.maximum(remap_axis(rho, shift[..., K], K), 1e-30)), ls) for K in range(3)]
     row = dict(render=n, z=z, mass=mass, spec=spec, hi=hi, c0=cs[0], c1=cs[1], c2=cs[2],
-               los0=los[0], los1=los[1], los2=los[2], vs_axis=int(np.argmax(los)))
+               rs=rs, rs0=rsK[0], rs1=rsK[1], rs2=rsK[2], vs_axis=int(np.argmax(rsK)))
 
     # write (to a temporary name, then rename: a killed job leaves no half file)
     os.makedirs(f"{out}/All", exist_ok=True)
@@ -238,7 +263,8 @@ def main():
                 fp.flush()
             print(f"render {n:3d} z={row['z']:.4f} mass {row['mass']:.5f} spec {row['spec']:.7f} hi {row['hi']:.6f} "
                   f"corr {row['c0']:.3f} {row['c1']:.3f} {row['c2']:.3f} "
-                  f"los {row['los0']:+.3f} {row['los1']:+.3f} {row['los2']:+.3f} (axis {row['vs_axis']})", flush=True)
+                  f"remap: none {row['rs']:.3f}, axis 0/1/2 {row['rs0']:.3f} {row['rs1']:.3f} {row['rs2']:.3f} "
+                  f"(axis {row['vs_axis']})", flush=True)
 
 
 if __name__ == "__main__":
