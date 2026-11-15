@@ -482,3 +482,25 @@ Collected from the §7 rows. prod/cell: whole-box ⟨δT_b^He⟩ of the 640³ pr
 | 158 | 2.998 | 705 | 0.00214 | 0.0442 | 0.0483 | 0.0015-0.0036 | 0.66 | 0.0049 | 9.79 | 0.048 | 0.197 | 0.593 |
 
 prod/cell, the IGM share and the three ladder columns are monotonic in z (checked); r_min is not. The cell-level mean peaks at z ≈ 5.5 (0.094 µK), the production mean at z ≈ 6.0–6.3 (0.028 µK). r_min stays ≥ 0.95 down to z = 5.0, then falls (0.90 at 4.75, 0.58 at 4.25, < 0 at 3.75–3.13) and recovers at 3.0 (0.66). The IGM (1+δ < 10) share falls from 0.74 to 0.005; prod/IGM passes 1 at z ≈ 4.5. 10240³ recovers 0.97 (z = 11.9) to 0.59 (z = 3.0) of the cell level.
+
+---
+
+## 8. X-ray test runs (SonjaXrayPaper, from 2026-11-15)
+
+**Goal:** the 21 cm maps, global signal and PS of two runs that differ only in X-rays, to show the effect of X-ray heating.
+
+**Runs** (`/nfs/mvogelsblab002/Users/ozier/SonjaXrayPaper/{withoutXrays,withXrays}`; **read only**: that filesystem is full and the directories are Oliver's; outputs go to `/orcd/data/mvogelsb/004/chcho/xray/<run>/`). From `inspect_xray_runs.py` (`xray_inspect.txt`):
+- 33.83 cMpc/h = 50.0 cMpc, Lumina cosmology and model (MRT with stars and BHs, BPASS, EscapeFraction 0.18), probably 2×600³ (DM IDs start at 600³ = 2.16×10⁸). Same ICs (identical DensityDM). `UVB_OFF`: no UVB heating before reionization. Runs end at z = 5.0.
+- **The only difference is the compile flag `MRT_XRAY`** (parameters differ only in TimeLimitCPU): 6 RT bins with edges 13.6, 24.59, 54.42, 100, 200, 500, 2000 eV instead of 3 (to 100 eV).
+- **The X-rays are from AGN:** `LumNormStars` above 100 eV is 3×10⁻⁹, 2×10⁻²¹, 3×10⁻⁴⁹ (BPASS); `LumNormAGN` 1.6%, 0.21%, 0.10%. First BH at z = 10.39 in both runs (`blackholes.txt`), so z > 10.4 is a control (the two runs should agree). The X-ray columns of `photons_stars.txt` (39, 1.6, 0.01 vs 3.9×10⁵) do not match `LumNormStars`; not understood, not used.
+- Reduced speed of light: `MRT_SLOWLIGHT_IN_PARAMETERS` is set but no matching parameter in `param.txt-usedvalues` (grep light/reduc/slow). If ĉ < c and the X-ray bins are not corrected, long-mean-free-path X-ray heating rates are low by up to ĉ/c (argument, not checked in the code): ask Oliver/Sonja.
+- Start-up log: "mass content accounts for OmegaBaryon = 0.0491926" vs 0.0489747 (+0.44%), the size of Lumina's unexplained +0.42% gas excess (§6.2): likely from the ICs.
+- Render 309 (z = 6.19), file 0: min T 5.7 K without X-rays, 988 K with; min x_HII 9.5×10⁻⁷ vs 1.6×10⁻⁴; ⟨SFR⟩ +14% with X-rays; `LyaLuminosityCol` (collisional Lyα of the gas) mean 39 → 68, max 7.3×10⁴ → 2.9×10⁶ (possible extra J_α source, not in our J_α; open).
+
+**Renders:** 405 per run, z = 29.43 → 5.00, identical times in both runs (`render_z_*.csv`). `RENDERGRID=128` (0.39 cMpc pixels). Each render is 20 files holding pieces of the flat pixel list (only file 0 has the Header); `Density`, `HII_Fraction`, `SpectralDensityHI`, `IonEnergy` are (N³, 8) sub-cells (256³). Field names and units as Lumina (LUM_UNIT 6.4459×10³⁶ erg/s, He fractions per H nucleus, v_pec = V√a). `assemble_renders.py` (`run_assemble_xray.sh`) writes 128³ `All/All_NNN.hdf5` (Density, SpectralDensityHI: sub-cell mean; HII_Fraction: mass-weighted), with checks (mass, remap mass conservation, H I convention, axis correlations, redshift-space axis).
+
+**Full snapshots with gas (14, both runs):** 024 036 048 057 066 074 080 086 092 097 102 106 111 116 (z = 15, 11.93, 10, 8.88, 8, 7.46, 7, 6.63, 6.30, 6.00, 5.74, 5.50, 5.24, 5.00), the same z as Lumina's. Nearest renders 71, 112, 154, 182, 207, 224, 253, 278, 301, 323, 343, 362, 383, 404 (|Δz| ≤ 0.017; not exact). The other snapdirs hold only `snap-prevmostboundonly` (DM).
+
+**Decided 2026-11-15 (user): renders only** (no cell-level calculation). Known consequence (§7 resolution test): at z ≳ 10 the mass-weighted pixel T is biased high in the neutral IGM, most in the cold no-X-ray run, so the pixel maps understate the X-ray difference there.
+
+**Pipeline on these runs (no code changes):** `make_SFR_eff.py --dirs <ren_128> --n-snaps 405 --bands H`; `compute_Jalpha.c` and `compute_Jalpha_AGN.c` with `-DN_SNAPS=405` and the same directory passed twice; `PS_21cm_mpi.c` reads `<ren_128>/All/All_NNN.hdf5`. Open: metallicity weights (`Z_weights.txt`) from Lumina or from this box's stars.
