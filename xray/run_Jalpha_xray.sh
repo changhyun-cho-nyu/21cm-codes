@@ -14,6 +14,7 @@
 #
 # J_alpha (H Lyman band) of the SonjaXrayPaper runs at all 405 renders: stars (compute_Jalpha.c, SFR_eff, the run's
 # own Z_weights.txt) and AGN (compute_Jalpha_AGN.c, species H). Same codes as Lumina, with N_SNAPS = 405.
+#   0. cd xray
 #   1. bash run_Jalpha_xray.sh compile          (login node; builds bin/Jalpha_H_xray_<run>, bin/Jalpha_AGN_xray)
 #   2. mkdir -p logs && sbatch -p ou_mki run_Jalpha_xray.sh
 #      array tasks 0-7 = withoutXrays, 8-15 = withXrays; task i of a run does renders i, i+8, ...;
@@ -27,7 +28,7 @@ BASE=/orcd/data/mvogelsb/004/chcho/xray
 RUNS=(withoutXrays withXrays)
 NREN=405
 NTASK=8
-SED=agn_sed_full.hdf5            # in the repository (as for Lumina)
+SED=../agn_sed_full.hdf5         # in the repository root (as for Lumina)
 FFTW_PREFIX=
 HDF5_PREFIX=
 
@@ -35,6 +36,7 @@ source ~/.bashrc
 # module load ...        # <- the same modules as your usual J_alpha jobs (MPI, FFTW, HDF5)
 set -eo pipefail
 cd "${SLURM_SUBMIT_DIR:-$PWD}"
+[ -f ../compute_Jalpha.c ] && [ -f assemble_renders.py ] || { echo "run from the xray/ directory of the repository"; exit 1; }
 
 find_prefix() {   # as in run_Jalpha_test.sh
     local h=$1 pat=$2 c; shift 2
@@ -60,10 +62,10 @@ if [ "$1" = "compile" ]; then
     for RUN in "${RUNS[@]}"; do
         W=$BASE/$RUN/Z/Z_weights.txt
         [ -f "$W" ] || { echo "missing $W (run_Z_xray.sh first)"; exit 1; }
-        mpicc -O3 -fopenmp $INC compute_Jalpha.c -o bin/Jalpha_H_xray_$RUN.new \
+        mpicc -O3 -fopenmp $INC ../compute_Jalpha.c -o bin/Jalpha_H_xray_$RUN.new \
             -DN_SNAPS=$NREN -DZ_WEIGHTS_FILE="\"$W\"" $LIBS && mv bin/Jalpha_H_xray_$RUN.new bin/Jalpha_H_xray_$RUN
     done
-    mpicc -O3 -fopenmp $INC compute_Jalpha_AGN.c -o bin/Jalpha_AGN_xray.new -DN_SNAPS=$NREN $LIBS \
+    mpicc -O3 -fopenmp $INC ../compute_Jalpha_AGN.c -o bin/Jalpha_AGN_xray.new -DN_SNAPS=$NREN $LIBS \
         && mv bin/Jalpha_AGN_xray.new bin/Jalpha_AGN_xray
     echo "built: $(ls bin | grep xray | tr '\n' ' ')  commit $(git rev-parse --short HEAD)"
     exit 0
@@ -86,7 +88,7 @@ J=$BASE/$RUN/Jalpha
 BH=bin/Jalpha_H_xray_$RUN; BA=bin/Jalpha_AGN_xray
 case "$(realpath -m $J)/" in /orcd/data/mvogelsb/004/chcho/*) ;; *) echo "refusing to write to $J"; exit 1;; esac
 for b in $BH $BA; do [ -x $b ] || { echo "missing $b: run 'bash $0 compile' first"; exit 1; }; done
-[ $BH -nt compute_Jalpha.c ] && [ $BA -nt compute_Jalpha_AGN.c ] || { echo "binaries older than the sources: recompile"; exit 1; }
+[ $BH -nt ../compute_Jalpha.c ] && [ $BA -nt ../compute_Jalpha_AGN.c ] || { echo "binaries older than the sources: recompile"; exit 1; }
 [ "$(ls $SFR/All/All_*.hdf5 2>/dev/null | wc -l)" -eq "$NREN" ] || { echo "SFR_eff incomplete in $SFR (run_SFR_eff_xray.sh)"; exit 1; }
 [ -f "$SED" ] || { echo "missing $SED"; exit 1; }
 

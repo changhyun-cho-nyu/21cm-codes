@@ -15,7 +15,7 @@
 # 128^3 render cubes of the SonjaXrayPaper runs in the pipeline layout (assemble_renders.py):
 # array tasks 0-7 = withoutXrays, 8-15 = withXrays; task i of a run does renders i, i+8, ... (405 renders per run).
 # Reads Oliver's directory only; writes ~130 MB per render (~105 GB for both runs) under OUT_BASE.
-#   mkdir -p logs && sbatch run_assemble_xray.sh        (resumable: existing All files are skipped)
+#   cd xray && mkdir -p logs && sbatch -p ou_mki run_assemble_xray.sh        (resumable: existing All files are skipped)
 #   test first:  sbatch --array=0,8 --export=ALL,SNAPS=309 run_assemble_xray.sh
 # then, when all tasks are done:
 #   for r in withoutXrays withXrays; do python assemble_renders.py report --out $OUT_BASE/$r/ren_128; done
@@ -29,6 +29,7 @@ source ~/.bashrc
 conda activate jupyter_env
 set -eo pipefail
 cd "$SLURM_SUBMIT_DIR"
+[ -f ../compute_Jalpha.c ] && [ -f assemble_renders.py ] || { echo "submit from the xray/ directory of the repository"; exit 1; }
 RUN=${RUNS[$((SLURM_ARRAY_TASK_ID / NTASK))]}
 TASK=$((SLURM_ARRAY_TASK_ID % NTASK))
 OUT=$OUT_BASE/$RUN/ren_128
