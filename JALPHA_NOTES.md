@@ -489,6 +489,8 @@ prod/cell, the IGM share and the three ladder columns are monotonic in z (checke
 
 **Goal:** the 21 cm maps, global signal and PS of two runs that differ only in X-rays, to show the effect of X-ray heating.
 
+**Rule (user, 2026-11-15): write nothing outside `/orcd/data/mvogelsb/004/chcho/` (and the repo).** Other people's directories are input only; `assemble_renders.py` refuses any other output path.
+
 **Runs** (`/nfs/mvogelsblab002/Users/ozier/SonjaXrayPaper/{withoutXrays,withXrays}`; **read only**: that filesystem is full and the directories are Oliver's; outputs go to `/orcd/data/mvogelsb/004/chcho/xray/<run>/`). From `inspect_xray_runs.py` (`xray_inspect.txt`):
 - 33.83 cMpc/h = 50.0 cMpc, Lumina cosmology and model (MRT with stars and BHs, BPASS, EscapeFraction 0.18), probably 2×600³ (DM IDs start at 600³ = 2.16×10⁸). Same ICs (identical DensityDM). `UVB_OFF`: no UVB heating before reionization. Runs end at z = 5.0.
 - **The only difference is the compile flag `MRT_XRAY`** (parameters differ only in TimeLimitCPU): 6 RT bins with edges 13.6, 24.59, 54.42, 100, 200, 500, 2000 eV instead of 3 (to 100 eV).

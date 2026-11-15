@@ -50,7 +50,7 @@ DEFAULT_FIELDS = ["Density", "HII_Fraction", "HII_VolumeFraction", "Temperature"
                   "StarFormationRate", "SpectralDensity", "SpectralDensityHI", "LuminosityAGN",
                   "LyaLuminosityCol", "LyaLuminosityRec", "Volume"]
 NEED_FOR_CHECKS = ["Density", "HII_Fraction", "SpectralDensity", "SpectralDensityHI", "Velocities"]
-FORBIDDEN = ("/nfs/mvogelsblab002",)   # Oliver's run directories: input only
+OUT_ROOT = "/orcd/data/mvogelsb/004/chcho"   # the only place outputs may go (user rule, 2026-11-15); inputs are read only
 COLS = ["render", "z", "mass", "spec", "hi", "c0", "c1", "c2", "los0", "los1", "los2", "vs_axis"]
 
 
@@ -191,7 +191,8 @@ def main():
         return
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--src", required=True, help="<run>/output/movie/renderings (read only)")
-    p.add_argument("--out", required=True, help="output directory (not under /nfs/mvogelsblab002)")
+    p.add_argument("--out", required=True, help=f"output directory, under {OUT_ROOT}")
+    p.add_argument("--out-root", default=OUT_ROOT, help=argparse.SUPPRESS)   # tests only
     p.add_argument("--snaps", default=None, help="e.g. 0-404 or 154,309 (default: every render_NNN in --src)")
     p.add_argument("--task", type=int, default=0)
     p.add_argument("--ntask", type=int, default=1)
@@ -200,9 +201,9 @@ def main():
     a = p.parse_args()
 
     out = os.path.realpath(a.out)
-    run_dir = os.path.realpath(os.path.join(a.src, "..", "..", ".."))
-    if out.startswith(FORBIDDEN) or out.startswith(run_dir + os.sep) or out == run_dir:
-        sys.exit(f"refusing to write to {out}: the input directories are read only")
+    root = os.path.realpath(a.out_root)
+    if not out.startswith(root + os.sep):
+        sys.exit(f"refusing to write to {out}: outputs go under {root} only")
     if a.snaps:
         snaps = parse_snaps(a.snaps)
     else:
