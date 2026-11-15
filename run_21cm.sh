@@ -6,12 +6,17 @@
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=64G
 #SBATCH --time=24:00:00
-#SBATCH --output=logs/PS_21cm_%j.out
-#SBATCH --error=logs/PS_21cm_%j.err
+#SBATCH --output=logs/PS_21cm_%A_%a.out
+#SBATCH --error=logs/PS_21cm_%A_%a.err
+#SBATCH --array=0-7
 #
 # 21 cm delta T_b maps (RIN_NNN.hdf5) and power spectra (PS_NNN.out)
 #   1. bash run_21cm.sh compile     (needs the MPI + FFTW + HDF5 modules: mpicc, fftw3-mpi.h, parallel hdf5.h)
-#   2. mkdir -p logs && sbatch run_21cm.sh   (resumable: resubmit to finish snapshots a 24 h job did not reach)
+#   2. mkdir -p logs && sbatch run_21cm.sh   (an array: task i does every NTASK-th snapshot of SNAPS; resumable:
+#      resubmit to finish what a task did not reach). Partition: sbatch -p ou_mki while orcd_ug_pi_mki_mvogelsb_all
+#      does not exist (JALPHA_NOTES §6.1 item 6).
+# Spin-temperature physics: SPIN_MODEL=1 (2026-11-15, WF_PHYSICS.md: Hirata S~/T_c, exact local tau_GP, x_CMB);
+#   -DSPIN_MODEL=0 reproduces the maps made before (Tb_maps_prod/H_real) bit for bit.
 # Spin-temperature inputs and the signal convention are compile-time options of PS_21cm_mpi.c:
 #   EXTRA_CFLAGS="-DTS_VOLUME_WEIGHTED=1" (volume-weighted T, fractions)
 #   EXTRA_CFLAGS="-DH_REDSHIFT_SPACE=0"   (real-space H I signal: the choice made here, 2026-10-14, so that every
@@ -23,10 +28,11 @@
 # -------------------------
 FFTW_PREFIX=/orcd/software/core/001/spack/pkg/fftw/3.3.10/2qziucy
 HDF5_PREFIX=/orcd/software/community/001/spack/pkg/hdf5/1.14.3/suffu3v
-EXTRA_CFLAGS="-DH_REDSHIFT_SPACE=0"
+EXTRA_CFLAGS="-DH_REDSHIFT_SPACE=0 -DSPIN_MODEL=1"
 TK_REF_SNAPMAX=330         # reference runs only: snapshots <= this (z >~ 6; the reference means little after)
 TK_REF_STRIDE=2            # reference runs only: every n-th snapshot of SNAPS (disk: ~1 GB per map)
-TK_REF="1e-3"                  # no-heating reference: an x_HII threshold, e.g. 1e-3 (the default of the code option).
+TK_REF=""                  # no-heating reference: an x_HII threshold, e.g. 1e-3 (the default of the code option).
+                           # Empty since 2026-11-15 (the reference is not being redone; its maps were made with SPIN_MODEL 0).
                            # Non-empty: compile also builds bin/PS_21cm_mpi_tkref and the run uses it. Empty: the fiducial maps.
 TK_REF_ANCHOR=1            # 1 (decided 2026-10-19): cells below the threshold get each pixel's own T at render snapshot
                            #   TK_REF_SNAP0, carried adiabatically: T(p,z0) [(1+z)/(1+z0)]^2 [rho(p,z)/rho(p,z0)]^(2/3);
@@ -68,7 +74,7 @@ if [ -n "$TK_REF" ]; then
     [ "$(cat bin/PS_21cm_mpi_tkref.thr 2>/dev/null)" = "$TK_REF $TK_REF_ANCHOR $TK_REF_SNAP0" ] || { echo "bin/PS_21cm_mpi_tkref was not built with TK_REF = $TK_REF, TK_REF_ANCHOR = $TK_REF_ANCHOR, TK_REF_SNAP0 = $TK_REF_SNAP0: run 'bash $0 compile'"; exit 1; }
 fi
 [ -x $BIN ] || { echo "run 'bash $0 compile' first"; exit 1; }
-for f in PS_21cm_mpi.c functions.c collisions.c; do    # a binary older than its source was not rebuilt
+for f in PS_21cm_mpi.c functions.c collisions.c spin_wf.h; do    # a binary older than its source was not rebuilt
     [ $BIN -nt $f ] || { echo "$BIN is older than $f: run 'bash $0 compile' (and check it succeeds)"; exit 1; }
 done
 
@@ -78,8 +84,8 @@ done
 INPUT_DIR="/orcd/data/mvogelsb/005/mkilab001/mvogelsblab003/Lab/Thesan-XL/Flagship_new/postprocessing/ren_640/"
 INPUT_NEW_DIR="/orcd/data/mvogelsb/005/mkilab001/mvogelsblab003/Lab/Thesan-XL/Flagship_below_z_4p75_new/postprocessing/ren_640/"
 J_DIR=/orcd/data/mvogelsb/004/chcho/Jalpha            # run_Jalpha_prod.sh outputs (BAND=H)
-OUT_DIR=/orcd/data/mvogelsb/004/chcho/Tb_maps_prod/H_real # production maps, real space (Tb_maps/: test-J maps;
-                                                          # Tb_maps_prod/H: earlier redshift-space maps, if any)
+OUT_DIR=/orcd/data/mvogelsb/004/chcho/Tb_maps_prod/H_real_wf # production maps from 2026-11-15 (SPIN_MODEL 1), real space
+                                                          # (Tb_maps_prod/H_real: the SPIN_MODEL 0 maps, 2026-10-15)
 if [ -n "$TK_REF" ]; then
     if [ "$TK_REF_ANCHOR" = 1 ]; then OUT_DIR=${OUT_DIR}_tkref${TK_REF}_pix${TK_REF_SNAP0}; else OUT_DIR=${OUT_DIR}_tkref${TK_REF}; fi
     export TK_REF_DIR0=$INPUT_DIR                     # the anchor snapshot is in the first render directory
@@ -114,9 +120,11 @@ if [ -n "$TK_REF" ]; then              # the reference: a subset of SNAPS (TK_RE
     echo "no-heating reference (x_HII < $TK_REF): ${#SNAPS[@]} snapshots, ${SNAPS[0]} .. ${SNAPS[${#SNAPS[@]}-1]}"
 fi
 
-nfail=0
-echo "commit $(git rev-parse --short HEAD), host $(hostname), $(date)"
+NTASK=${SLURM_ARRAY_TASK_COUNT:-1}; TASK=${SLURM_ARRAY_TASK_ID:-0}
+nfail=0; n=-1
+echo "commit $(git rev-parse --short HEAD), host $(hostname), $(date), task $TASK of $NTASK, $(grep -o 'SPIN_MODEL=[0-9]' <<< "$EXTRA_CFLAGS")"
 for SNAP in "${SNAPS[@]}"; do
+    n=$((n + 1)); [ $((n % NTASK)) -eq "$TASK" ] || continue
     echo "=================================================="
     echo "Snapshot $SNAP"
     if [ "$SNAP" -le 428 ]; then DIR=$INPUT_DIR; else DIR=$INPUT_NEW_DIR; fi

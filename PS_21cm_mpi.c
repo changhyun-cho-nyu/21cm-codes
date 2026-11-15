@@ -90,6 +90,19 @@
 #define TK_REF_TCMB0 2.7255
 #endif
 
+/* SPIN_MODEL = 1 (default; production from 2026-11-15, WF_PHYSICS.md): the spin temperature and optical depth of
+ *   spin_wf.h: Hirata (2006) S~_alpha and colour temperature T_c, the Gunn-Peterson depth from first principles with
+ *   the pixel's own n_HI, and the finite 21 cm optical depth (x_CMB in T_S, exact 1 - exp(-tau_21) in delta T_b;
+ *   Venumadhav et al. 2018). tau_GP and tau_21 use the real-space n_HI of the pixel (with H_REDSHIFT_SPACE = 1 the
+ *   signal is in redshift space but tau_21 is not: not a production configuration).
+ * SPIN_MODEL = 0: the maps made before 2026-11-15: S_alpha = exp(-0.803 T^-2/3 (1e-6 tau_GP)^1/3) with
+ *   tau_GP = 3e5 x_HI ((1+z)/7)^1.5, T_c = T_K, no x_CMB, delta T_b linear in tau_21. */
+#ifndef SPIN_MODEL
+#define SPIN_MODEL 1
+#endif
+#include "spin_wf.h"
+#define LAMBDA_LYA 1215.67e-8     /* cm */
+
 typedef long long myint ;
 
 #define M_PI 3.14159265358979323846
@@ -299,6 +312,13 @@ int main(int argc, char **argv)
   double nH_mean  = HYDROGEN_MASSFRAC * omega_b * 3.0 * H0_cgs * H0_cgs / (8.0 * M_PI * G_GRAV) * oneplusz3 / M_H;
   double prefactor_21cm = 1.0e3 * 3.0 * pow(C_LIGHT, 3) * H_PLANCK * A10 * nH_mean
                         / (32.0 * M_PI * K_BOLTZ * NU21 * NU21 * Hz_cgs * (1.0 + z));
+  /* SPIN_MODEL = 1: per proper n_HI [cm^3]: tau_GP (Hirata 2006 Eq. 35) and tau_21 T_S [K] (Venumadhav+18 Eq. 2) */
+  const double gp_coef    = M_PI * E_CHARGE * E_CHARGE * F_ALPHA * LAMBDA_LYA / (M_ELEC * C_LIGHT * Hz_cgs);
+  const double tauTs_coef = 3.0 * pow(C_LIGHT, 3) * H_PLANCK * A10 / (32.0 * M_PI * K_BOLTZ * NU21 * NU21 * Hz_cgs);
+  if (ThisTask == 0)
+    printf("SPIN_MODEL = %d (%s); tau_GP(x_HI = 1, mean n_H) = %.4e, tau_21 T_S(mean) = %.5f K\n", SPIN_MODEL,
+           SPIN_MODEL ? "Hirata S~ and T_c, exact local tau_GP, x_CMB" : "before 2026-11-15",
+           gp_coef * nH_mean, tauTs_coef * nH_mean);
 
   /* -------------------------------------------------------
    * Load precomputed Jalpha_H field from HDF5.
@@ -350,6 +370,9 @@ int main(int argc, char **argv)
   double d_rin       = 0.0, d_rin_min   =  1e300, d_rin_max   = -1e300;
   double d_overdense = 0.0;
   long   d_ncells    = 0, d_nHI_zero = 0, d_Ts_neg = 0;
+  double d_xcmb      = 0.0, d_xcmb_min  =  1e300;   /* SPIN_MODEL = 1 diagnostics */
+  long   d_wf_bad    = 0;
+  double d_HI_cold   = 0.0, d_HI_tot    = 0.0;      /* H I mass with T_K or T_S < 2 K (Hirata fit range) */
   long   d_ref_cells = 0;                       /* TK_REFERENCE diagnostics (zero otherwise) */
   double d_ref_HI    = 0.0, d_all_HI = 0.0;
 #ifdef TK_REFERENCE
@@ -375,9 +398,9 @@ int main(int argc, char **argv)
             reduction(+:local_totmass,local_totmass2,local_volume,nzerocells, \
                         d_nH,d_Tgas,d_fHI,d_Jalpha,d_xa,d_xc,d_Tspin, \
                         d_sf,d_rin,d_overdense,d_ncells,d_nHI_zero,d_Ts_neg, \
-                        d_ref_cells,d_ref_HI,d_all_HI) \
+                        d_ref_cells,d_ref_HI,d_all_HI,d_xcmb,d_wf_bad,d_HI_cold,d_HI_tot) \
             reduction(min:d_nH_min,d_Tgas_min,d_Jalpha_min,d_xa_min, \
-                          d_xc_min,d_Tspin_min,d_sf_min,d_rin_min) \
+                          d_xc_min,d_Tspin_min,d_sf_min,d_rin_min,d_xcmb_min) \
             reduction(max:d_nH_max,d_Tgas_max,d_Jalpha_max,d_xa_max, \
                           d_xc_max,d_Tspin_max,d_sf_max,d_rin_max)
         for (int k = 0; k < N; ++k)
@@ -419,12 +442,26 @@ int main(int argc, char **argv)
             /* [CHANGE 3] sum stellar + AGN J_alpha before computing xa */
             double Jalpha = Jalpha_field[(size_t)(i*N + j)*N + k]
                           + Jalpha_AGN_field[(size_t)(i*N + j)*N + k];
-            double xa     = xa_const * compute_S_alpha(z, value2, f_HI) * Jalpha;
             double xc     = x_c(z, value2, f_HI * num_H_cgs, num_e_cgs, num_p_cgs);
+#if SPIN_MODEL == 1
+            double nHI_cgs = f_HI * num_H_cgs;                       /* proper, this pixel */
+            wf_result wf  = wf_spin(tcmb, value2, xa_const * Jalpha, xc, gp_coef * nHI_cgs, tauTs_coef * nHI_cgs);
+            double xa     = wf.xa;
+            double Tspin  = wf.Ts;
+            double xcmb   = wf.xcmb;                                 /* (1 - exp(-tau_21))/tau_21 */
+            if (!wf.ok) d_wf_bad++;
+            d_HI_tot += value1 * f_HI;
+            if (value2 < 2.0 || Tspin < 2.0) d_HI_cold += value1 * f_HI;
+#else
+            double xa     = xa_const * compute_S_alpha(z, value2, f_HI) * Jalpha;
             double Tspin  = T_spin(z, value2, xc, xa);
+            double xcmb   = 1.0;
+#endif
+            d_xcmb += xcmb;
+            if (xcmb < d_xcmb_min) d_xcmb_min = xcmb;
 
             double sf      = 1.0 - tcmb / Tspin;
-            double rin_val = prefactor_21cm * value / global_gas * sf; //f_HI * value5
+            double rin_val = prefactor_21cm * value / global_gas * sf * xcmb; /* x_CMB tau_21 (T_S - T_g)/(1+z) */
 
             rin[(i*N + j) * (2*(N/2+1)) + k] = rin_val;
 
@@ -478,6 +515,18 @@ int main(int argc, char **argv)
              (double)gc / ((double)N * N * N), gh[1] > 0 ? gh[0] / gh[1] : 0.0);
   }
 #endif
+  {   /* SPIN_MODEL diagnostics */
+    double ls[3] = {d_xcmb, d_HI_cold, d_HI_tot}, gs[3], gmin; long gbad;
+    MPI_Allreduce(ls, gs, 3, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(&d_xcmb_min, &gmin, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
+    MPI_Allreduce(&d_wf_bad, &gbad, 1, MPI_LONG, MPI_SUM, MPI_COMM_WORLD);
+    if (ThisTask == 0) {
+      printf("SPIN_MODEL %d: <x_CMB> = %.6f, min %.4e; H I mass with T_K or T_S < 2 K: %.3e of the H I; "
+             "T_S iteration not converged in %ld cells\n", SPIN_MODEL, gs[0] / ((double)N * N * N), gmin,
+             gs[2] > 0 ? gs[1] / gs[2] : 0.0, gbad);
+      if (gbad > 0) fprintf(stderr, "WARNING: T_S iteration not converged in %ld cells\n", gbad);
+    }
+  }
   /* --- MPI reductions for diagnostics --- */
   {
     double ls[10] = { d_nH, d_Tgas, d_fHI, d_Jalpha, d_xa,
@@ -624,10 +673,11 @@ int main(int argc, char **argv)
     hid_t sc = H5Screate(H5S_SCALAR);
     hid_t a = H5Acreate2(dset, "Redshift", H5T_NATIVE_DOUBLE, sc, H5P_DEFAULT, H5P_DEFAULT);
     H5Awrite(a, H5T_NATIVE_DOUBLE, &zz); H5Aclose(a);
-    hid_t st = H5Tcopy(H5T_C_S1); H5Tset_size(st, 128);
-    char u[128];
-    snprintf(u, sizeof u, "%s%s", H_REDSHIFT_SPACE ? "delta T_b [mK], real-space spin factor x redshift-space H I density"
+    hid_t st = H5Tcopy(H5T_C_S1); H5Tset_size(st, 256);
+    char u[256];
+    snprintf(u, sizeof u, "%s%s%s", H_REDSHIFT_SPACE ? "delta T_b [mK], real-space spin factor x redshift-space H I density"
                                                     : "delta T_b [mK], real space",
+             SPIN_MODEL ? "; SPIN_MODEL 1 (Hirata S~/T_c, local tau_GP, x_CMB)" : "; SPIN_MODEL 0",
 #ifdef TK_REFERENCE
 #if TK_REF_ANCHOR == 1
              "; no-heating reference T_K (each pixel's T at the anchor snapshot, adiabatic) where x_HII < TK_REF_XTHRESH"

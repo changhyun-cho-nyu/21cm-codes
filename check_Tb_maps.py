@@ -8,9 +8,13 @@ by cell with the RIN_NNN.hdf5 map the C code wrote. It checks the whole chain at
 units of the render density, n_H, n_e, x_c, x_alpha (J_alpha units), S_alpha, T_S,
 the exact optically thin prefactor, and the signal convention.
 
-Physics (what the C codes are meant to do; T_c = T_K):
+Physics (what the C codes are meant to do; tb_physics.py has the formulas):
+  21 cm, --spin-model 1 (default; maps from 2026-11-15, PS_21cm_mpi.c SPIN_MODEL = 1, WF_PHYSICS.md): Hirata (2006)
+          S~_a and T_c, tau_GP = (pi e^2 f lambda / m_e c) n_HI/H with the cell's n_HI, x_CMB = (1 - e^-tau21)/tau21 in
+          T_S and dT_b = P [x_HI (1+delta)] (1 - T_g/T_S) x_CMB  (Venumadhav+18); T_S solved here by bisection
+  21 cm, --spin-model 0 (maps made before 2026-11-15; T_c = T_K):
   T_S = (1 + x_c + x_a) / (1/T_g + (x_c + x_a)/T_K),  T_g = 2.7255 (1+z) K
-  21 cm : x_a = 16 pi^2 T* e^2 f / (27 A10 T_g m_e c) S_a J,  S_a = exp(-0.803 T^-2/3 (1e-6 tau_GP)^1/3),
+          x_a = 16 pi^2 T* e^2 f / (27 A10 T_g m_e c) S_a J,  S_a = exp(-0.803 T^-2/3 (1e-6 tau_GP)^1/3),
           tau_GP = 3e5 x_HI ((1+z)/7)^1.5;  x_c = T*/(A10 T_g) (k_HH n_HI + k_eH n_e + k_pH n_p)
           (Furlanetto, Oh & Briggs 2006 tables, log-log interpolation, held beyond the ends)
           dT_b = P21 [x_HI (1+delta)] (1 - T_g/T_S),  [x_HI(1+delta)] = SpectralDensityHI/0.76/<Density>
@@ -70,6 +74,8 @@ def main():
     p.add_argument("--real-space", action="store_true", help="H: map made with -DH_REDSHIFT_SPACE=0")
     p.add_argument("--he-rs", action="store_true", help="He: map made with the code default HE_REDSHIFT_SPACE=1")
     p.add_argument("--ts-volume", action="store_true", help="map made with -DTS_VOLUME_WEIGHTED=1")
+    p.add_argument("--spin-model", type=int, choices=[0, 1], default=1,
+                   help="21 cm: SPIN_MODEL of the map (1: from 2026-11-15, default; 0: the maps made before)")
     p.add_argument("--tk-ref", type=float, metavar="THRESH",
                    help="H: map made with -DTK_REFERENCE -DTK_REF_XTHRESH=THRESH (no-heating reference where x_HII < THRESH)")
     p.add_argument("--tk-ref-anchor", choices=["pixel", "eq27"], default="pixel",
@@ -105,7 +111,7 @@ def main():
         rho_mean += fld("Density")[i0:i0 + 32].astype(np.float64).sum()
     rho_mean /= float(N)**3
 
-    L = Line(a.line, z, h, om, ob, ol)
+    L = Line(a.line, z, h, om, ob, ol, spin_model=a.spin_model)
     unit = L.unit
     print(f"  T* = {L.Tst:.7f} K, A10 = {L.A:.5e} s^-1, prefactor = {L.P:.6e} {unit}, x_alpha const = {L.xa_c:.5e} / (S J)")
     ts = {"HII": "HII_VolumeFraction", "T": "TemperatureVolumeWeighted", "HeII": "HeII_VolumeFraction",

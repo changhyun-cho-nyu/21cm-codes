@@ -5,7 +5,7 @@ Global 21 cm signal <dT_b>(z) of the production maps against the no-heating (adi
 PS_21cm_mpi.c logs: each snapshot prints "DIAGNOSTIC: rin variable audit   z = ..." and then the "rin (T_b)" line
 with the mean over all cells of the map (mK), which is the volume-weighted global signal.
 
-Usage
+Usage (--log may be a quoted wildcard for the logs of an array job, e.g. "logs/PS_21cm_123_*.out")
 -----
   python plot_global_Tb.py --log logs/PS_21cm_25884455.out --label "Lumina (fiducial)" \
                            --log logs/PS_21cm_25971016.out --label "no heating (T_ref, x_HII < 1e-3)" \
@@ -13,22 +13,28 @@ Usage
 Writes the figure, a CSV per log (same name as the figure, _<n>.csv) and prints a table at a few redshifts.
 """
 import argparse
+import glob
 import re
 
 import numpy as np
 
 
 def read_log(path):
+    """path: one log, or a wildcard pattern (the logs of an array job, e.g. 'logs/PS_21cm_123_*.out'), merged"""
     z_cur, rows = None, {}
-    with open(path, errors="replace") as f:
-        for line in f:
-            m = re.search(r"DIAGNOSTIC: rin variable audit\s+z = ([0-9.eE+-]+)", line)
-            if m:
-                z_cur = float(m.group(1)); continue
-            if z_cur is not None and line.strip().startswith("rin (T_b)"):
-                rows[z_cur] = float(line.split()[2])                   # mean over all cells [mK]
-                # (the line's min/max columns are per-cell dT_b x V_cell, not normalised: not used)
-                z_cur = None
+    paths = sorted(glob.glob(path)) if any(c in path for c in "*?[") else [path]
+    if not paths:
+        raise SystemExit(f"no log matches {path}")
+    for p in paths:
+        with open(p, errors="replace") as f:
+            for line in f:
+                m = re.search(r"DIAGNOSTIC: rin variable audit\s+z = ([0-9.eE+-]+)", line)
+                if m:
+                    z_cur = float(m.group(1)); continue
+                if z_cur is not None and line.strip().startswith("rin (T_b)"):
+                    rows[z_cur] = float(line.split()[2])               # mean over all cells [mK]
+                    # (the line's min/max columns are per-cell dT_b x V_cell, not normalised: not used)
+                    z_cur = None
     z = np.array(sorted(rows, reverse=True))
     return z, np.array([rows[k] for k in z])[:, None]
 
