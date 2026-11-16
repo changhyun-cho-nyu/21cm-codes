@@ -11,7 +11,7 @@ compatible: on mock data the Lumina layout gives identical rows).
 Order: `inspect_xray_runs.py` → `run_assemble_xray.sh` → `run_Z_xray.sh` → `run_SFR_eff_xray.sh` → `run_Jalpha_xray.sh`
 (compile, then submit) → `check_Jalpha_xray.py` → `run_21cm_xray.sh` (compile, then submit) → analysis: `../plot_global_Tb.py`,
 `ps_xray.py`, `temp_HI_xray.py` (render pixels), `cells_T_xray.py` + `run_cells_T_xray.sh` (gas cells of a full snapshot).
-All done through the gas-cell test at snapshot 024 (2026-11-16); open: gas cells at 036 and 048. Data and figures: `data/`.
+All done through the gas-cell tests at snapshots 024, 036 and 048 (2026-11-16; 036 / 048 scan checks still to confirm). Data and figures: `data/`.
 
 ## Record (from JALPHA_NOTES §8, 2026-11-15)
 
@@ -92,6 +92,18 @@ Reading:
   2. **The 5 K floor (`MinGasTemp`) matters:** ~33% of all neutral H I is below 5.5 K at z = 15 (68–79% of the underdense H I). The earlier "only the coldest few %" came from the pixels and was wrong. Adiabatically this gas would be at 3.4–4.7 K at z = 15 and ~1.5–2.6 K at z = 10, so the floor keeps it warmer by ×1.1–1.5 at z = 15 and ×2–3 at z = 10. It is a simulation limitation; Lumina's MinGasTemp not yet checked.
   3. **Mildly overdense neutral gas (1+δ > 1, ~half the H I) is really heated:** 79–1000 K against 7–14 K adiabatic (most likely structure-formation shocks). The pixels still overstate its harmonic mean ~5× (105 against 22 K).
 - **For the 21 cm maps:** coupled T_S follows ⟨1/T⟩⁻¹ of the H I, which the 128³ pixels overstate 2–5× at z = 15. So the no-X-ray absorption in the pixel maps (−1.1 mK at z = 15) is far too shallow: the CLAUDE.md "z ≳ 10 maps are upper limits" rule, quantified here. The X-ray difference at cell level needs snapshots 036 (z = 11.93, render 112) and 048 (z = 10.01, render 154).
+
+**Gas-cell test, full snapshots 036 (z = 11.931 = render 112) and 048 (z = 10.014 = render 154), both runs (`cells_T_xray.py`, jobs 29282457 (036) / 29282458 (048), all four tasks COMPLETED 0:0 in 4–8.5 min, commit f7cadde, 2026-11-16; `data/cells_T_xray_036.png`, `_048.png`).** **Scan checks (cells read = header, positions from IntCoordinates, gas mass cells / render, axis order, deposit correlations) not yet confirmed from the logs; the numbers below are provisional until they are.**
+- **No X-rays, neutral IGM cells by the cell's own 1+δ** (median T; adiabatic; share below 5.5 K), z = 11.93 / 10.01:
+  - 0.3–0.5 (H I share 4.6% / 7.7%): 5.2 / 6.3 K; adiabatic 2.14 / 1.52 K; 57% / 39%.
+  - 0.5–1 (42.0% / 39.2%): 5.3 / 6.4 K; adiabatic 3.00 / 2.14 K; 54% / 41%.
+  - 1–2 (35.5% / 31.4%): 91 / 104 K. 2–3: 378 / 407 K. 3–10: 1166 / 1289 K. 10–100: 6356 / 6533 K.
+  - The floor still holds about half of the underdense H I (z = 15: 68–79%), ×2–4 above adiabatic; the share at the floor falls with time (some void gas warms above 5 K without X-rays: cause not identified).
+- **With X-rays** (median T, z = 11.93 / 10.01): 0.3–1: 12–13 K (×2.4) / 67–71 K (×11); 1–2: 104 / 185 K; 2–3: 395 / 497 K; 3–10: 1184 / 1384 K. Below 5.5 K: ≤ 3% / 0. X-rays heat the cold void gas most; the shock-heated denser gas changes by ≤ 25%.
+- **Sub-pixel test, neutral pixels by the pixel's 1+δ** (cells / pixels, ⟨1/T⟩⁻¹):
+  - no X-rays, z = 11.93: 0–0.5 6.2 / 7.0 K; 0.5–1 8.0 / 16.4 K (×2.0); 1–3 26.5 / 152 K (×5.7). z = 10.01: 7.1 / 8.8; 9.1 / 20.1 (×2.2); 30.7 / 202 K (×6.6).
+  - with X-rays, z = 11.93: 11.3 / 12.9; 14.3 / 25.1 (×1.8); 46.5 / 170 K (×3.7). z = 10.01: 65.3 / 67.0; 77.7 / 92.2 (×1.2); 170 / 317 K (×1.9).
+- **Reading (provisional):** the pixels overstate the T that a coupled T_S follows by ×2–7 without X-rays, ×1.2–1.9 with X-rays at z = 10, so **the pixel maps underestimate the X-ray effect**: withX / noX of ⟨1/T⟩⁻¹ in 1+δ = 0.5–1 pixels is 4.6 in the pixels and 8.5 in the cells at z = 10 (1.5 vs 1.8 at z = 11.9). Fully coupled limit at z = 10 (T_γ = 30 K): 1 − T_γ/T ≈ −2.3 (cells) vs −0.5 (pixels) for the no-X-ray voids; the actual δT_b difference is not computed.
 - Identical at z ≥ 20 and again at z = 5 (reionized).
 - Caveats as for the mean: the z ≳ 10 pixel-T bias is largest in the no-X-ray run (its contrast and power are probably underestimated, so the true suppression is probably larger); RSLAFactor 0.2 (sign of its effect on the ratio not established); 34 cMpc/h box (few modes at k < 0.4; the shared ICs reduce the ratio's sample variance).
 
