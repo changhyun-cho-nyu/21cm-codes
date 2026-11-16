@@ -20,7 +20,7 @@ Lumina is a 500 cMpc (338.3 cMpc/h) radiation-hydrodynamics simulation (Zier et 
 | J_α, AGN (H or He) | `compute_Jalpha_AGN.c` | `Jalpha_AGN_{H,He}_NNN[_tr].hdf5` |
 | He-band IGM absorption | `make_opacity_fields.py` → `compute_transmission_He.c` (+ `jalpha_transmission.h`) | `transmission_He_NNN.hdf5`; J He with `TRANS_DIR`, `TR_TAG` |
 | He II density in redshift space | `remap_rsd.py` (`run_remap_He.sh`) | `SpectralDensityHeII_NNN.hdf5` |
-| δT_b maps + power spectra | `PS_21cm_mpi.c`, `PS_3cm_mpi.c` (+ `functions.c`, `collisions.c`; `run_21cm.sh`, `run_3cm.sh`) | `RIN_NNN.hdf5`, `PS_NNN.out` |
+| δT_b maps + power spectra | `PS_21cm_mpi.c` (+ `spin_wf.h`, the 21 cm spin model), `PS_3cm_mpi.c` (+ `functions.c`, `collisions.c`; `run_21cm.sh`, `run_3cm.sh`) | `RIN_NNN.hdf5`, `PS_NNN.out` |
 | Ionization history (z, x_HII, x_HeIII of every render) | `check_ionization_history.py` (`run_ion_history.sh`) | `ion_history/ionization_history.csv` |
 | Cell-level δT_b test (full snapshots) | `test_cells_Tb.py` (`run_cells_Tb.sh`, `run_cells_merge.sh`), `decompose_cells_He.py` (`run_decompose_cells.sh`) | `cell_test/` |
 | VIDs and one-point statistics | `make_vid.py` (`run_vid.sh`) → figures in `VID.ipynb` (`one-stat.ipynb` is the archive) | `VID/<line>/` |
@@ -69,13 +69,15 @@ Test runs: `run_Jalpha_test.sh` (snapshots 156, 300, 406, 500). Checks: `check_*
 - User data: `/orcd/data/mvogelsb/004/chcho/`.
 - Modules: hdf5/1.14.3 (an MPI build, so compile with mpicc) and fftw/3.3.10.
 - Compressed renders need `HDF5_PLUGIN_PATH` (from hdf5plugin).
-- Partition: `orcd_ug_pi_mki_mvogelsb_all`.
+- Partition: the scripts name `orcd_ug_pi_mki_mvogelsb_all`, which does not exist yet (JALPHA_NOTES §6.1 item 6): submit with `sbatch -p ou_mki …`.
 - `/orcd/data/mvogelsb/004` is a shared 160 TB group filesystem; it filled on 2026-10-16 and writes (maps, logs) failed silently. Check `df -h` before large jobs.
 
-## State (2026-10-17) and next steps
+## State (2026-11-16) and next steps
+Latest handoff: `HANDOFF_2026-11-16.md` (cloud session of 2026-11-15/16).
 1. **Production done:** J_α H and He; 21 cm maps (**`SPIN_MODEL=1` maps done 2026-11-16, job 29237390, 305/305 verified, `Tb_maps_prod/H_real_wf`; VIDs, light cone and figures still on the SPIN_MODEL 0 maps**); the no-heating reference with the per-pixel anchor (102 maps, jobs 26334741 + 26374968, verified at 242; Lumina's neutral IGM is heated to ~10²–10³ K by z = 10 at x_HII < 10⁻³, so the reference stays −130 mK below the fiducial at z ≈ 9–10; JALPHA_NOTES §7); 3.46 cm maps (205; `check_Tb_maps.py` 1.4×10⁻⁴ from rounded constants in `x_c_He`, `check_ps.py` OK); H VIDs (305). He VIDs running.
 2. **Open decisions (user):**
    - 3.46 cm resolution: cell level at z = 4 is 7× the 640³ mean, carried by dense gas around haloes (decomposition, JALPHA_NOTES §6.2, §7); the IGM test (job 26136927) shows the 640³ maps are neither the IGM signal (even the IGM loses 42% below 1+δ = 10 at 640³; the maps' mean is ×1.25 the IGM, variance ×9, r = 0.43) nor the total; cell-level results (with whole-box IGM-only maps) at 20 full snapshots, z = 10–3, the last two 111 and 121 (2026-10-27): production/cell 0.497 (z = 10) → 0.253 (5.23) → 0.2205 (4.75) → 0.048 (3.0); large-scale r falls steadily, minimum at k ≈ 0.1–0.3 0.96 / 0.95 / 0.90 / 0.81 / 0.58 / 0.2 at z = 5.23 / 5.0 / 4.75 / 4.5 / 4.25 / 4.0 (JALPHA_NOTES §7).
    - ~~Signal normalisation~~ decided 2026-10-17: not corrected (gas-mean normalisation vs Ω_b prefactor: −0.4% at z ≳ 6 to +0.7% at z = 3 in δT_b); fix with the `x_c_He` constants only if the maps are rerun. Ask the Lumina team about the +0.42% gas excess over Ω_b ρ_crit before star formation (JALPHA_NOTES §6.2, §7).
 3. **Notebooks:** `visual.ipynb` (a paper figure) and `fan_diagram.ipynb` still use `LUMINA_ALL*.csv`, the pre-production J and mean-field globals: fix after the light cone (JALPHA_NOTES §6.1). `VID.ipynb` reads production outputs; PS_redshift, visual_PS, visual_maps, PS2Bubble, bispec_H/He, subvol_VID still read pre-production maps → repoint, then the bispectrum k units, He bispectrum inputs, placeholder instrument curves.
 4. **Manuscript edits** (the user does them; list in `JALPHA_NOTES.md` §6.3): real space for both lines (and drop "peculiar velocities down to the particle resolution"); volume-weighted x labels; the resolution statements (3.46 cm wording waits for decision 2); the flowchart's hot ISM and HMXB; the AGN shell count 400 → 200; escape fractions, SFR_eff and absorption.
+5. **X-ray runs (`xray/NOTES.md`):** J_α, 21 cm maps (SPIN_MODEL 1), global signal, power spectra, H I temperatures done. **Gas-cell test at full snapshot 024 (z = 15.02):** underdense neutral gas sits at the simulation's 5 K floor (`MinGasTemp = 5` in both runs; ~33% of the neutral H I below 5.5 K); the warm voids of the 128³ pixels were sub-pixel mixing; the pixels overstate ⟨1/T⟩⁻¹ of the neutral H I 2–5×. **Open:** gas cells at 036 (z = 11.93) and 048 (z = 10.01) for the X-ray effect at cell level; **check Lumina's `MinGasTemp`** (if 5 K, the floor applies to the main paper's cosmic-dawn maps).
