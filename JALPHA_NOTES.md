@@ -498,3 +498,9 @@ prod/cell, the IGM share and the three ladder columns are monotonic in z (checke
 
 ## 8. X-ray test runs
 Moved to `xray/NOTES.md` (kept apart from the Lumina fiducial pipeline, 2026-11-15).
+
+Findings there that bear on Lumina itself (details and numbers in `xray/NOTES.md`):
+- **Ω_b excess (§6.2 open question):** the X-ray runs (same model, 50 cMpc) log at start-up "mass content accounts for OmegaBaryon = 0.0491926" vs 0.0489747 (+0.445%), and their renders give gas mean / Ω_b ρ_crit = 1.0045 before star formation. So the excess is in the initial conditions; Lumina's +0.42% very likely has the same origin.
+- **Lumina's neutral-IGM heating (§7, `check_ref_T.py`: 10²–10³ K at z ≈ 10) is mostly X-ray heating:** Lumina has the same X-ray model (HMXB + hot ISM, `MRT_XRAY`; manuscript l. 216–219); the 50 cMpc run with it matches Lumina's global signal to ≤ 1.5% at z = 9–7, the run without it is at +4.7 instead of +19 mK at z = 10.
+- **Temperature floor:** `MinGasTemp = 5` K in the X-ray runs; at z = 15 about a third of the neutral H I gas cells sit at it. Lumina's value not yet checked (open item in `HANDOFF_2026-11-16.md`); if also 5 K, it limits the cosmic-dawn absorption in the main maps.
+- **Pixel temperature at z = 15 (gas-cell test, same gas resolution as Lumina):** 128³ pixels (0.39 cMpc) overstate the harmonic-mean T of the neutral H I 2–5×; Lumina's 640³ pixels are twice as large, so the "21 cm at z ≳ 10 is an upper limit" statement (§6.2, CLAUDE.md) is, if anything, understated.
