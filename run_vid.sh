@@ -15,12 +15,16 @@
 # VIDs and one-point statistics of the production delta T_b maps (make_vid.py), for VID.ipynb.
 # Task i does every NTASK-th snapshot of the map directory; existing outputs are skipped. Then, once:
 #   python make_vid.py table --line $LINE --out $OUT
-#   mkdir -p logs && sbatch run_vid.sh
+#   mkdir -p logs && LINE=H sbatch -p ou_mki run_vid.sh
 
-LINE=He                                                            # H or He
-if [ "$LINE" = H ]; then MAPS=/orcd/data/mvogelsb/004/chcho/Tb_maps_prod/H_real
-else MAPS=/orcd/data/mvogelsb/004/chcho/Tb_maps_prod/He; fi
-OUT=/orcd/data/mvogelsb/004/chcho/VID/$LINE
+# Settings from the command line, e.g.  LINE=H sbatch -p ou_mki run_vid.sh
+#   H:  the SPIN_MODEL 1 maps (Tb_maps_prod/H_real_wf, from 2026-11-15) -> VID/H_wf. The SPIN_MODEL 0 VIDs stay in VID/H
+#       (MAPS=.../H_real OUT=.../VID/H reproduces them). A new OUT is needed: existing outputs are skipped.
+#   He: Tb_maps_prod/He -> VID/He (unchanged).
+LINE=${LINE:-He}                                                   # H or He
+U=/orcd/data/mvogelsb/004/chcho
+if [ "$LINE" = H ]; then MAPS=${MAPS:-$U/Tb_maps_prod/H_real_wf}; OUT=${OUT:-$U/VID/H_wf}
+else MAPS=${MAPS:-$U/Tb_maps_prod/He}; OUT=${OUT:-$U/VID/He}; fi
 NTASK=8                                                           # = the --array size
 
 source ~/.bashrc
