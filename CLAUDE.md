@@ -25,6 +25,7 @@ Lumina is a 500 cMpc (338.3 cMpc/h) radiation-hydrodynamics simulation (Zier et 
 | Cell-level δT_b test (full snapshots) | `test_cells_Tb.py` (`run_cells_Tb.sh`, `run_cells_merge.sh`), `decompose_cells_He.py` (`run_decompose_cells.sh`) | `cell_test/` |
 | VIDs and one-point statistics | `make_vid.py` (`run_vid.sh`) → figures in `VID.ipynb` (`one-stat.ipynb` is the archive) | `VID/<line>/` |
 | Global signal | volume mean of the cell-by-cell RIN maps (decided 2026-10-14); `global_snaps_clean.ipynb` (mean-field) is retired. No-heating reference (SPIN_MODEL 0 maps; not being redone, `TK_REF=""` in `run_21cm.sh` since 2026-11-15; `TK_REF=1e-3` rebuilds it), anchored per pixel to Lumina's own T at render snapshot 0 (`TK_REF_ANCHOR=1`, decided 2026-10-19; the Eq. 27 law was colder than Lumina's unheated gas; JALPHA_NOTES §6.2); `plot_global_Tb.py` | |
+| X-ray test runs (SonjaXrayPaper, 50 cMpc, with/without `MRT_XRAY`; from 2026-11-15) | everything in `xray/`, run from `xray/`; record in `xray/NOTES.md` (kept apart from the Lumina pipeline) | `/orcd/data/mvogelsb/004/chcho/xray/<run>/` |
 
 Test runs: `run_Jalpha_test.sh` (snapshots 156, 300, 406, 500). Checks: `check_*.py`, `bracket_Tb_He.py`, `check_tb_choices.py`.
 
