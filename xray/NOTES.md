@@ -63,7 +63,7 @@ Reading:
 
 Reading:
 - At z ≈ 13–8 X-rays raise the mean (+14 mK at z = 10) but remove most of the fluctuations (73–83% at z = 10, up to 15× at z = 9, k = 0.23). The no-X-ray IGM keeps a strong cold/warm (absorbing/emitting) contrast; X-ray heating makes T_S ≫ T_γ nearly everywhere, leaving density and ionization fluctuations.
-- The pattern changes too: r 0.98 (z = 13) → 0.71 (z = 9) → −0.23 (z = 8, k of the minimum to be checked; the lowest-k bins have few modes). Large-scale anticorrelation is expected when the field changes from temperature-driven (warm near sources, no X-rays) to ionization-driven (dark ionized regions near sources, with X-rays).
-- At z = 7 the large-scale power is 4.4× higher with X-rays (bubble/IGM contrast).
+- The pattern changes too: the two runs decorrelate, most at large scales. At z = 8, r(k) = −0.23 (k = 0.23, 13 modes, σ_r ≈ (1 − r²)/√n ≈ 0.26: consistent with 0), +0.32 (0.39, 25 modes), +0.49 (0.56), +0.56 (0.84), +0.64 (1.26), +0.66–0.67 (1.9–4.4), +0.72 (6.7), +0.75 (10.1); ratio flat at ~0.5 for k ≳ 1. **No anticorrelation is detected** (corrected 2026-11-16: the r_min column above is the lowest bin, 13 modes, at least at z = 8; do not quote it). Decorrelation fits a field changing from temperature-driven (warm near sources, no X-rays) to ionization-driven (dark ionized regions near sources, with X-rays).
+- The lowest bin (k = 0.23, 13 modes) is unreliable at all z, including the ratio 4.4 at z = 7: the shared ICs do not cancel the ratio's scatter once the maps decorrelate. Use k ≳ 0.4.
 - Identical at z ≥ 20 and again at z = 5 (reionized).
 - Caveats as for the mean: the z ≳ 10 pixel-T bias is largest in the no-X-ray run (its contrast and power are probably underestimated, so the true suppression is probably larger); RSLAFactor 0.2 (sign of its effect on the ratio not established); 34 cMpc/h box (few modes at k < 0.4; the shared ICs reduce the ratio's sample variance).
