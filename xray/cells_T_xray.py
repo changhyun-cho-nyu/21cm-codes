@@ -22,6 +22,7 @@ scan   (one run; a batch job, reads all gas cells of the snapshot, ~2e8):
 report (both runs, after the scans): tables side by side and data/cells_T_xray.png.
 
   python cells_T_xray.py scan --run withoutXrays --snap 24 --render 71
+Positions: Coordinates, or IntCoordinates (unsigned int x BoxSize / 2^bits, as Lumina's snapshots and test_cells_Tb.py).
   python cells_T_xray.py report --snap 24
 Inputs are read only (Oliver's runs); outputs only under /orcd/data/mvogelsb/004/chcho.
 """
@@ -117,16 +118,28 @@ def scan(a):
                 names = dict(x=pick(g, ("HII_Fraction",)), fII=pick(g, ("HeII_Fraction",)),
                              fIII=pick(g, ("HeIII_Fraction",)), ne=pick(g, ("ElectronAbundance",)),
                              sfr=pick(g, ("StarFormationRate",)))
-                need = ("Coordinates", "Masses", "Density", "InternalEnergy")
-                if any(k not in g for k in need) or names["x"] is None:
+                names["pos"] = pick(g, ("Coordinates", "IntCoordinates"))
+                need = ("Masses", "Density", "InternalEnergy")
+                if any(k not in g for k in need) or names["x"] is None or names["pos"] is None:
                     sys.exit(f"STOP: missing gas fields; available: {sorted(g.keys())}")
-                print(f"fields: {sorted(g.keys())}\n  Ne from {'ElectronAbundance' if names['ne'] else 'HII + HeII + 2 HeIII'}; "
+                pdt = g[names["pos"]].dtype
+                if np.issubdtype(pdt, np.integer) and not np.issubdtype(pdt, np.unsignedinteger):
+                    sys.exit(f"STOP: {names['pos']} is {pdt} (signed): the integer -> position mapping is not documented")
+                print(f"fields: {sorted(g.keys())}\n  positions from {names['pos']} ({pdt}"
+                      + (f", x BoxSize / 2^{8 * pdt.itemsize}" if np.issubdtype(pdt, np.integer) else "") + ")"
+                      + f"\n  Ne from {'ElectronAbundance' if names['ne'] else 'HII + HeII + 2 HeIII'}; "
                       f"He fractions {'present' if names['fII'] else 'MISSING (taken as 0)'}; "
                       f"SFR {'present' if names['sfr'] else 'MISSING (no star-forming cut)'}")
             n = g["Masses"].shape[0]
             if n == 0:
                 continue
-            pos = g["Coordinates"][()].astype(np.float64)
+            pos = g[names["pos"]][()]
+            if np.issubdtype(pos.dtype, np.integer):                # AREPO IntCoordinates: int x BoxSize / 2^bits
+                pos = pos.astype(np.float64) * (box / 2.0**(8 * pos.dtype.itemsize))
+            else:
+                pos = pos.astype(np.float64)
+            if pos.min() < 0.0 or pos.max() > box * (1.0 + 1e-6):
+                sys.exit(f"STOP: positions outside [0, BoxSize] in {p}: {pos.min()} .. {pos.max()}")
             m = g["Masses"][()].astype(np.float64)
             rho = g["Density"][()].astype(np.float64)
             u = g["InternalEnergy"][()].astype(np.float64)
