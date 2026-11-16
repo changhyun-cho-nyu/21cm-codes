@@ -51,3 +51,19 @@ Reading:
 - X-ray effect from z ≈ 15, maximal at z = 10 (+14.3 mK), gone by z = 6. With X-rays the trough is shallower (−1.18 mK at z = 13, against −2.83) and emission starts about Δz ≈ 1.5 earlier; emission peak +19.7 mK (z = 9) against +9.0 mK (z = 8).
 - withXrays tracks Lumina within 5% at z = 10–7 (−4.6% at 10, −1.4% at 9, 0.0% at 8, +1.5% at 7), but not at z = 6 (2.47 against 3.01 mK, −18%; corrected in review 2026-11-16, was "within 5% at z ≤ 10"; likely the end of reionization in a 50 cMpc box). **This agreement is expected: Lumina has the same X-ray model** (manuscript l. 216–219: HMXBs and shock-heated ISM, six bins with three X-ray bins below z = 4.75, i.e. `MRT_XRAY`). So withXrays is Lumina's physics in 50 cMpc, and withoutXrays is the counterfactual without X-rays: the comparison validates the pipeline on these runs, and shows that Lumina's neutral-IGM heating at z ≈ 10 (JALPHA_NOTES §7, check_ref_T: 10²–10³ K) is mostly X-ray heating. It lags at z ≥ 11: fewer early sources in 50 cMpc (J_α at z = 20 is 0.58 of Lumina's), and finer pixels (0.39 against 0.78 cMpc, less temperature mixing). Compare with Lumina only after 2×2×2 averaging.
 - Lower bounds on the X-ray difference: at z ≳ 10 the pixel T is biased high, most in the cold no-X-ray run (its trough is too shallow); and RSLAFactor 0.2 underestimates heating by the hardest X-rays.
+
+**Power spectra (`ps_xray.py`, 2026-11-16; `data/ps_xray*.{npz,csv,png}`):** from the maps of both runs at all 405 renders, Δ²(k) (the convention of `../check_ps.py`), ratio withX/noX and cross-correlation r(k), in 10 log bins (k_f = 0.186, k_Nyq = 11.9 h/cMpc). Tested on mock maps (planted ratio 4 → 4.000, r = 1.000; added independent noise → r ≈ 1/√2; white noise to 1–2%). Ratio withX/noX at k = 0.23 / 0.84 / 2.91 h/cMpc, and r_min:
+
+| z | 29–20 | 17.1 | 15.0 | 13.0 | 12.0 | 11.0 | 10.0 | 9.0 | 8.0 | 7.0 | 6.0 | 5.0 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| ratio | 1.000 | 1.006 / 1.005 / 1.001 | 0.996 / 0.994 / 0.964 | 1.071 / 0.910 / 0.843 | 0.803 / 0.590 / 0.538 | 0.369 / 0.290 / 0.301 | 0.166 / 0.180 / 0.265 | 0.066 / 0.228 / 0.345 | 0.410 / 0.615 / 0.500 | 4.361 / 1.197 / 0.725 | 1.656 / 1.548 / 0.958 | 1.000 / 1.020 / 0.988 |
+| r_min | 1.000 | 0.992 | 0.983 | 0.979 | 0.949 | 0.836 | 0.743 | 0.708 | −0.230 | 0.642 | 0.635 | 0.991 |
+
+Δ² without / with X-rays at k = 0.84: 67.7 / 61.6 (z = 13), 107 / 63 (12), 117 / 34 (11), 93 / 17 (10), 59 / 14 (9), 30 / 18 (8) mK².
+
+Reading:
+- At z ≈ 13–8 X-rays raise the mean (+14 mK at z = 10) but remove most of the fluctuations (73–83% at z = 10, up to 15× at z = 9, k = 0.23). The no-X-ray IGM keeps a strong cold/warm (absorbing/emitting) contrast; X-ray heating makes T_S ≫ T_γ nearly everywhere, leaving density and ionization fluctuations.
+- The pattern changes too: r 0.98 (z = 13) → 0.71 (z = 9) → −0.23 (z = 8, k of the minimum to be checked; the lowest-k bins have few modes). Large-scale anticorrelation is expected when the field changes from temperature-driven (warm near sources, no X-rays) to ionization-driven (dark ionized regions near sources, with X-rays).
+- At z = 7 the large-scale power is 4.4× higher with X-rays (bubble/IGM contrast).
+- Identical at z ≥ 20 and again at z = 5 (reionized).
+- Caveats as for the mean: the z ≳ 10 pixel-T bias is largest in the no-X-ray run (its contrast and power are probably underestimated, so the true suppression is probably larger); RSLAFactor 0.2 (sign of its effect on the ratio not established); 34 cMpc/h box (few modes at k < 0.4; the shared ICs reduce the ratio's sample variance).
