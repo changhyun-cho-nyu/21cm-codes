@@ -9,7 +9,7 @@ ps_xray.py
 The two runs have the same ICs and the same render times (checked here: the map redshifts must agree).
 
 Outputs (in --out, default data/):
-  ps_xray.npz                  all renders: z, k, D2_noX, D2_X, r, mean dT_b of each run, modes per bin
+  ps_xray.npz                  all renders: z, k, D2_noX, D2_X, r, mean dT_b of each run, independent modes per bin
   ps_xray_table.csv            the same, one row per render and k bin
   ps_xray_k.png                Delta^2(k), ratio and r(k) at selected redshifts
   ps_xray_z.png                Delta^2(z) and ratio at three k
@@ -53,13 +53,16 @@ def spectra(m1, m2, L, edges):
     ok = (b >= 0) & (b < len(edges) - 1)
     bb, kk = b[ok], k[ok]
     nb = len(edges) - 1
-    cnt = np.bincount(bb, minlength=nb).astype(float)
+    cnt = np.bincount(bb, minlength=nb).astype(float)              # rfft entries (averaging weights)
+    kz = np.broadcast_to(np.arange(N // 2 + 1)[None, None, :], k.shape)
+    half = np.where((kz == 0) | (kz == N // 2), 0.5, 1.0)          # those planes hold +-k twice
+    nind = np.bincount(bb, half[ok], minlength=nb)                 # independent complex modes
     norm = L**3 / float(N)**6
     P1 = np.bincount(bb, (np.abs(F1)**2)[ok], minlength=nb) / np.maximum(cnt, 1) * norm
     P2 = np.bincount(bb, (np.abs(F2)**2)[ok], minlength=nb) / np.maximum(cnt, 1) * norm
     X = np.bincount(bb, (F1 * np.conj(F2)).real[ok], minlength=nb) / np.maximum(cnt, 1) * norm
     kc = np.bincount(bb, kk, minlength=nb) / np.maximum(cnt, 1)
-    return P1, P2, X, kc, cnt
+    return P1, P2, X, kc, nind
 
 
 def main():
@@ -79,9 +82,16 @@ def main():
         raise SystemExit(f"the runs differ in BoxSize/N: {Lk}/{N} vs {Lk2}/{N2}")
     L = Lk / 1e3                                                   # cMpc/h
     kf = 2.0 * np.pi / L
-    edges = np.geomspace(kf, kf * N / 2, a.nbins + 1)
     r0, r1 = renders(a.base, RUNS[0]), renders(a.base, RUNS[1])
     common = sorted(set(r0) & set(r1))
+    if not common:
+        raise SystemExit("no render has a map in both runs")
+    with h5py.File(f"{a.base}/{RUNS[0]}/Tb_21cm/RIN_{common[0]}.hdf5", "r") as h:
+        Nm = h["rin"].shape[0]
+    if Nm != N:
+        print(f"maps are {Nm}^3 (renders {N}^3): k bins from the maps")
+        N = Nm
+    edges = np.geomspace(kf, kf * N / 2, a.nbins + 1)
     print(f"BoxSize {L:.3f} cMpc/h, N = {N}, k_f = {kf:.4f}, k_Nyq = {kf * N / 2:.3f} h/cMpc; "
           f"maps: {len(r0)} / {len(r1)}, {len(common)} in both")
     if len(common) < max(len(r0), len(r1)):
@@ -107,7 +117,7 @@ def main():
     np.savez(os.path.join(a.out, "ps_xray.npz"), render=np.array(common), z=z, k=kc, modes=cnt,
              D2_noX=D2[0], D2_X=D2[1], r=R, mean_noX=mu[0], mean_X=mu[1], box_cMpc_h=L, N=N)
     with open(os.path.join(a.out, "ps_xray_table.csv"), "w") as f:
-        f.write("render,z,k_h_cMpc,modes,D2_noX_mK2,D2_withX_mK2,ratio_withX_noX,r,mean_noX_mK,mean_withX_mK\n")
+        f.write("render,z,k_h_cMpc,independent_modes,D2_noX_mK2,D2_withX_mK2,ratio_withX_noX,r,mean_noX_mK,mean_withX_mK\n")
         for j, s in enumerate(common):
             for i in range(a.nbins):
                 f.write(f"{s},{z[j]:.5f},{kc[i]:.5f},{int(cnt[i])},{D2[0, j, i]:.6e},{D2[1, j, i]:.6e},"
@@ -135,7 +145,7 @@ def main():
                          "axes.facecolor": "#fcfcfb", "legend.frameon": False})
 
     nc = len(jz)
-    fig, ax = plt.subplots(3, nc, figsize=(2.6 * nc, 7.2), sharex=True, sharey="row",
+    fig, ax = plt.subplots(3, nc, figsize=(2.6 * nc, 7.2), sharex=True, sharey="row", squeeze=False,
                            gridspec_kw=dict(height_ratios=[2.2, 1.2, 1.0]))
     for c, j in enumerate(jz):
         for q, run in enumerate(RUNS):
@@ -161,7 +171,7 @@ def main():
     fig.tight_layout(rect=(0, 0, 1, 0.97))
     fig.savefig(os.path.join(a.out, "ps_xray_k.png"), dpi=200)
 
-    fig, ax = plt.subplots(2, len(ik), figsize=(3.2 * len(ik), 5.4), sharex=True, sharey="row",
+    fig, ax = plt.subplots(2, len(ik), figsize=(3.2 * len(ik), 5.4), sharex=True, sharey="row", squeeze=False,
                            gridspec_kw=dict(height_ratios=[2, 1.1]))
     for c, i in enumerate(ik):
         for q, run in enumerate(RUNS):

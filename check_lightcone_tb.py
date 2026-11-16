@@ -80,7 +80,7 @@ def main():
     p.add_argument("--z", type=float, nargs="+", default=[3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 11.0, 13.0, 15.0])
     p.add_argument("--dz", type=float, default=0.1, help="half width of each band in z")
     p.add_argument("--cones", nargs="+", default=CONES)
-    p.add_argument("--maps-H", default=f"{USER}/Tb_maps_prod/H_real")
+    p.add_argument("--maps-H", default=f"{USER}/Tb_maps_prod/H_real_wf")   # SPIN_MODEL 1, as cone_tb
     p.add_argument("--maps-He", default=f"{USER}/Tb_maps_prod/He")
     p.add_argument("--ion", default=f"{USER}/ion_history/ionization_history.csv")
     p.add_argument("--jdir", default=JDIR)

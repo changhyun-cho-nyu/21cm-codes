@@ -70,7 +70,7 @@ def open_out(path, line, shape, ze, ce, hd, a):
             commit = "unknown"
         f.attrs.update(line=line, unit=UNITS[line], time="linear", outside="hold", jdir=a.jdir, tag=a.tag,
                        cone_origin=np.array(CONE_ORIGIN), commit=commit, cones=";".join(a.cones),
-                       J_units="proper photons s^-1 cm^-2 Hz^-1 sr^-1")
+                       J_units="proper photons s^-1 cm^-2 Hz^-1 sr^-1", spin_model=a.spin_model)
         for k, v in hd.items():
             f.attrs[f"header_{k}"] = v
     else:
@@ -80,6 +80,10 @@ def open_out(path, line, shape, ze, ce, hd, a):
             raise ValueError(f"{path} exists with a different cone; move it away")
         if a.save_J and "J" not in f:
             raise ValueError(f"{path} was started without --save-J")
+        sm = int(f.attrs.get("spin_model", 0))                  # files made before 2026-11-15 have no tag: model 0
+        if line == "H" and sm != a.spin_model:
+            raise ValueError(f"{path} was made with spin model {sm}, this run uses {a.spin_model}: "
+                             "use another --out (do not mix models in one file)")
     return f
 
 
@@ -94,6 +98,8 @@ def main():
     ap.add_argument("--cones", nargs="+", default=CONES)
     ap.add_argument("--jdir", default=JDIR)
     ap.add_argument("--tag", default="tr_sfmask")
+    ap.add_argument("--spin-model", type=int, choices=[0, 1], default=1,
+                    help="21 cm spin model (tb_physics; 1 from 2026-11-15). Existing H files must match it")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
 
@@ -122,7 +128,7 @@ def main():
                 raise RuntimeError(f"slices {c0} - {c1 - 1}: read_cone returned {cone['Density'].shape[-1]} slices")
             for line in todo:
                 J, _ = cone_J(cone, line, np.s_[:, :], time="linear", outside="hold", jdir=a.jdir, tag=a.tag, verbose=False)
-                tb = cone_tb(cone, line, J)
+                tb = cone_tb(cone, line, J, spin_model=a.spin_model)
                 f = files[line]
                 f["dTb"][:, :, c0:c1] = tb
                 f["mean"][c0:c1] = tb.mean(axis=(0, 1), dtype=np.float64)

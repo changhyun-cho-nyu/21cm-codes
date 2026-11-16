@@ -102,6 +102,8 @@ def coarsen(F, f):
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--line", choices=["H", "He"], required=True)
+    p.add_argument("--spin-model", type=int, choices=[0, 1], default=1,
+                   help="21 cm spin model (tb_physics; 1 from 2026-11-15, 0 reproduces the results made before)")
     p.add_argument("--dir640", required=True)
     p.add_argument("--dir1280", required=True)
     p.add_argument("--dir2560", help="ren_2560 (Density, HII_Fraction, [HeII/HeIII_Fraction]); optional")
@@ -128,7 +130,7 @@ def main():
     ol = float(hd.get("OmegaLambda", OMEGA_L_DEFAULT))
     rho_unit = float(hd["UnitMass_in_g"]) * h**2 / float(hd["UnitLength_in_cm"])**3
     box = float(hd["BoxSize"]) / 1000.0                                   # cMpc/h
-    L = Line(a.line, z, h, om, ob, ol)
+    L = Line(a.line, z, h, om, ob, ol, spin_model=a.spin_model)
     n25 = sorted(R25.have) if R25 else []
     print(f"constants: {SRC}; snap {a.snap}, z = {z:.4f}, line {a.line}, prefactor {L.P:.6e} {L.unit}"
           f"{', no-heating reference x_HII < %g' % a.tk_ref if a.tk_ref is not None else ''}")

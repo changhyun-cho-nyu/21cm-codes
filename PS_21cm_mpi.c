@@ -371,7 +371,8 @@ int main(int argc, char **argv)
   double d_overdense = 0.0;
   long   d_ncells    = 0, d_nHI_zero = 0, d_Ts_neg = 0;
   double d_xcmb      = 0.0, d_xcmb_min  =  1e300;   /* SPIN_MODEL = 1 diagnostics */
-  long   d_wf_bad    = 0;
+  long   d_wf_bad    = 0, d_wf_inv = 0;
+  double d_xcmb_HI   = 0.0;                         /* H I-weighted x_CMB (sum w x_CMB) */
   double d_HI_cold   = 0.0, d_HI_tot    = 0.0;      /* H I mass with T_K or T_S < 2 K (Hirata fit range) */
   long   d_ref_cells = 0;                       /* TK_REFERENCE diagnostics (zero otherwise) */
   double d_ref_HI    = 0.0, d_all_HI = 0.0;
@@ -398,7 +399,7 @@ int main(int argc, char **argv)
             reduction(+:local_totmass,local_totmass2,local_volume,nzerocells, \
                         d_nH,d_Tgas,d_fHI,d_Jalpha,d_xa,d_xc,d_Tspin, \
                         d_sf,d_rin,d_overdense,d_ncells,d_nHI_zero,d_Ts_neg, \
-                        d_ref_cells,d_ref_HI,d_all_HI,d_xcmb,d_wf_bad,d_HI_cold,d_HI_tot) \
+                        d_ref_cells,d_ref_HI,d_all_HI,d_xcmb,d_wf_bad,d_wf_inv,d_HI_cold,d_HI_tot,d_xcmb_HI) \
             reduction(min:d_nH_min,d_Tgas_min,d_Jalpha_min,d_xa_min, \
                           d_xc_min,d_Tspin_min,d_sf_min,d_rin_min,d_xcmb_min) \
             reduction(max:d_nH_max,d_Tgas_max,d_Jalpha_max,d_xa_max, \
@@ -449,8 +450,10 @@ int main(int argc, char **argv)
             double xa     = wf.xa;
             double Tspin  = wf.Ts;
             double xcmb   = wf.xcmb;                                 /* (1 - exp(-tau_21))/tau_21 */
-            if (!wf.ok) d_wf_bad++;
+            if (wf.ok == 0) d_wf_bad++;
+            if (wf.ok < 0) d_wf_inv++;
             d_HI_tot += value1 * f_HI;
+            d_xcmb_HI += value1 * f_HI * xcmb;
             if (value2 < 2.0 || Tspin < 2.0) d_HI_cold += value1 * f_HI;
 #else
             double xa     = xa_const * compute_S_alpha(z, value2, f_HI) * Jalpha;
@@ -516,15 +519,22 @@ int main(int argc, char **argv)
   }
 #endif
   {   /* SPIN_MODEL diagnostics */
-    double ls[3] = {d_xcmb, d_HI_cold, d_HI_tot}, gs[3], gmin; long gbad;
-    MPI_Allreduce(ls, gs, 3, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+    double ls[4] = {d_xcmb, d_HI_cold, d_HI_tot, d_xcmb_HI}, gs[4], gmin; long lb[2] = {d_wf_bad, d_wf_inv}, gb[2];
+    MPI_Allreduce(ls, gs, 4, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
     MPI_Allreduce(&d_xcmb_min, &gmin, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD);
-    MPI_Allreduce(&d_wf_bad, &gbad, 1, MPI_LONG, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(lb, gb, 2, MPI_LONG, MPI_SUM, MPI_COMM_WORLD);
     if (ThisTask == 0) {
       printf("SPIN_MODEL %d: <x_CMB> = %.6f, min %.4e; H I mass with T_K or T_S < 2 K: %.3e of the H I; "
              "T_S iteration not converged in %ld cells\n", SPIN_MODEL, gs[0] / ((double)N * N * N), gmin,
-             gs[2] > 0 ? gs[1] / gs[2] : 0.0, gbad);
-      if (gbad > 0) fprintf(stderr, "WARNING: T_S iteration not converged in %ld cells\n", gbad);
+             gs[2] > 0 ? gs[1] / gs[2] : 0.0, gb[0]);
+      printf("SPIN_MODEL %d: H I-weighted <x_CMB> = %.6f; invalid T_S (T_K below ~0.4 K) in %ld cells\n",
+             SPIN_MODEL, gs[2] > 0 ? gs[3] / gs[2] : 1.0, gb[1]);
+      if (gb[0] > 0) fprintf(stderr, "WARNING: T_S iteration not converged in %ld cells\n", gb[0]);
+    }
+    if (gb[1] > 0) {
+      if (ThisTask == 0) fprintf(stderr, "FATAL: invalid T_S in %ld cells (Hirata's T_c undefined below ~0.4 K): "
+                                         "no map written\n", gb[1]);
+      MPI_Abort(MPI_COMM_WORLD, 1);
     }
   }
   /* --- MPI reductions for diagnostics --- */

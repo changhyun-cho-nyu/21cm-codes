@@ -17,8 +17,11 @@ def attrs(f, d):
 lum = {}
 for f in glob.glob(f"{B}/Jalpha/Jalpha_H_*.hdf5"):
     s = int(os.path.basename(f)[len("Jalpha_H_"):-len(".hdf5")])
-    z, js = attrs(f, "J_alpha")
-    _, ja = attrs(f"{B}/Jalpha/Jalpha_AGN_H_{s}.hdf5", "Jalpha_AGN_H")
+    try:
+        z, js = attrs(f, "J_alpha")
+        _, ja = attrs(f"{B}/Jalpha/Jalpha_AGN_H_{s}.hdf5", "Jalpha_AGN_H")
+    except Exception as e:
+        print(f"Lumina render {s} skipped: {e}"); continue
     lum[z] = js + ja
 zl = np.array(sorted(lum)); jl = np.array([lum[z] for z in zl])
 print(f"Lumina J files: {len(zl)}, z = {zl[0]:.3f} .. {zl[-1]:.3f}")
@@ -34,14 +37,16 @@ for run in ("withoutXrays", "withXrays"):
         if abs(z - z2) > 1e-6: bad.append((s, f"z stars {z} vs AGN {z2}"))
         if not (np.isfinite(js) and np.isfinite(ja)) or js < 0 or ja < 0: bad.append((s, f"J_mean {js} {ja}"))
         rows.append((s, z, js, ja))
+    if not rows:
+        raise SystemExit(f"{run}: no render readable")
     res[run] = np.array(rows)
     print(f"{run}: {len(rows)} renders read, {len(bad)} problems {bad[:5]}")
     zz = res[run][:, 1]
     print(f"  z = {zz[0]:.4f} .. {zz[-1]:.4f}, strictly decreasing: {bool(np.all(np.diff(zz) < 0))}; "
-          f"first render with J_stars > 0: {int(res[run][np.argmax(res[run][:, 2] > 0), 0])}, "
+          f"first render with J_stars > 0: {int(res[run][np.argmax(res[run][:, 2] > 0), 0]) if np.any(res[run][:, 2] > 0) else 'none'}, "
           f"first with J_AGN > 0: {int(res[run][np.argmax(res[run][:, 3] > 0), 0]) if np.any(res[run][:, 3] > 0) else 'none'}")
 a, b = res["withoutXrays"], res["withXrays"]
-print("same z grid in both runs:", bool(np.allclose(a[:, 1], b[:, 1], rtol=0, atol=1e-6)))
+print("same z grid in both runs:", bool(a.shape == b.shape and np.allclose(a[:, 1], b[:, 1], rtol=0, atol=1e-6)))
 print("render      z    J_tot(noX)   AGN share(noX)  J_tot withX/noX  J_tot noX/Lumina")
 for s in (0, 30, 60, 71, 100, 112, 154, 182, 207, 254, 302, 344, 404):
     i = np.flatnonzero(a[:, 0] == s); k = np.flatnonzero(b[:, 0] == s)

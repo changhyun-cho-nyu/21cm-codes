@@ -5,7 +5,7 @@ How much the 21 cm maps change if the Wouthuysen-Field coupling is computed more
 snapshot, delta T_b is recomputed over the whole box, in the production configuration (real space, mass-weighted
 spin-temperature inputs, J = stars + AGN), with four prescriptions that add one change at a time:
 
-  V0  production (PS_21cm_mpi.c): S_a = exp(-0.803 T^-2/3 (1e-6 tau)^1/3), tau = 3e5 x_HI ((1+z)/7)^1.5, T_c = T_K
+  V0  production before 2026-11-15 (PS_21cm_mpi.c SPIN_MODEL 0, maps Tb_maps_prod/H_real): S_a = exp(-0.803 T^-2/3 (1e-6 tau)^1/3), tau = 3e5 x_HI ((1+z)/7)^1.5, T_c = T_K
   V1  + exact Gunn-Peterson coefficient: tau = [pi e^2 f lambda / (m_e c)] <n_H>(z) x_HI / H(z)
       (Lumina cosmology, H with Lambda; 1.30 x the 3e5 form at z >= 10)
   V2  + local density: tau = ... x_HI (1 + delta), 1 + delta = rho / <rho> (the gas mean, as the maps)
@@ -205,6 +205,7 @@ def main():
     k = np.sqrt((ii[:, None, None] * kf)**2 + (ii[None, :, None] * kf)**2
                 + (np.arange(N // 2 + 1)[None, None, :] * kf)**2).astype(np.float32)
     edges = np.geomspace(kf, kf * N / 2, a.nbins + 1)
+    edges[0] *= 0.999                                              # k is float32: keep the fundamental modes in bin 0
     b = np.digitize(k, edges) - 1
     del k
     ok = (b >= 0) & (b < a.nbins)

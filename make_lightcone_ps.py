@@ -72,7 +72,7 @@ def main():
     ap.add_argument("--lines", nargs="+", default=["H", "He"], choices=["H", "He"])
     ap.add_argument("--z", type=float, nargs="+", default=[3.5, 4.5, 5.5, 6.5, 7.5, 8.5, 9.5, 11.0, 13.0, 15.0])
     ap.add_argument("--depth", type=float, nargs="+", default=[338.3, 150.0], help="band depths [cMpc/h]")
-    ap.add_argument("--maps-H", default=f"{USER}/Tb_maps_prod/H_real")
+    ap.add_argument("--maps-H", default=f"{USER}/Tb_maps_prod/H_real_wf")   # SPIN_MODEL 1, as cone_tb
     ap.add_argument("--maps-He", default=f"{USER}/Tb_maps_prod/He")
     ap.add_argument("--ion", default=f"{USER}/ion_history/ionization_history.csv")
     ap.add_argument("--box", type=float, default=None, help="map box [cMpc/h]; default the cone header BoxSize")

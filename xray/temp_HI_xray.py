@@ -10,7 +10,8 @@ hot and cold gas reports the mass-weighted T, biased high for the cold neutral I
 Per render and run:
   H I-weighted percentiles 1/10/50/90/99 % of T, the harmonic mean <1/T>^-1 (what a coupled T_S responds to),
   the H I share below 2 K (edge of Hirata's fit), below T_gamma = 2.7255 (1+z) and below 10 K,
-  the adiabatic reference T_ad = T_med(z0) [(1+z)/(1+z0)]^2 at mean density (z0 = first render, no heating yet),
+  the adiabatic reference at mean density T_ad = 2.7255 (1+z)^2 / 125.8 (the adiabatic IGM; it matches the H I at
+  1+delta < 1 at the first render, 20 K at z = 29),
   and the H I share and median T in bins of 1 + delta = rho/<rho>: < 1, 1-3, 3-10, > 10;
   by the pixel's ionized fraction x_HII (HII_Fraction, mass-weighted; bins < 1e-3, 1e-3-0.01, 0.01-0.1, 0.1-0.5, > 0.5):
   the H I share, median T, harmonic mean and share below T_gamma, and for neutral pixels (x_HII < 1e-3) the H I share
@@ -117,15 +118,11 @@ def main():
         raise SystemExit("the two runs have different render lists")
     zr = np.array([redshift(a.base, RUNS[0], s) for s in ren])
     pick = sorted({int(np.argmin(abs(zr - zq))) for zq in a.z + a.zfig})
-    s0 = ren[0]
     rows, hists = [], {}
     for run in RUNS:
-        d0 = load(a.base, run, s0)
-        w0 = d0["Density"] * (1.0 - d0["HII_Fraction"])
-        T0, z0 = wpct(d0["Temperature"], w0, (50,))[0], zr[0]
         for j in pick:
             s, z = ren[j], zr[j]
-            st, h = stats(load(a.base, run, s), z, T0 * ((1.0 + z) / (1.0 + z0))**2)
+            st, h = stats(load(a.base, run, s), z, 2.7255 * (1.0 + z)**2 / 125.8)
             st.update(run=run, render=s)
             rows.append(st); hists[(run, s)] = h
 
@@ -192,9 +189,10 @@ def main():
         axx.set_ylabel(r"H I mass fraction per dex")
     for k in range(len(jf), nr * nc):
         ax[k // nc, k % nc].set_visible(False)
-        above = ax[k // nc - 1, k % nc]
-        above.xaxis.set_tick_params(labelbottom=True)
-        above.set_xlabel(r"pixel $T$ [K]")
+        if k // nc >= 1:
+            above = ax[k // nc - 1, k % nc]
+            above.xaxis.set_tick_params(labelbottom=True)
+            above.set_xlabel(r"pixel $T$ [K]")
     h, l = ax[0, 0].get_legend_handles_labels()
     fig.legend(h, l, loc="upper right", ncol=2)
     fig.suptitle("H I temperature distribution, X-ray test runs (128³ pixels)", color=INK, fontsize=11, x=0.02, ha="left")

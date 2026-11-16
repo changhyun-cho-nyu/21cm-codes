@@ -185,7 +185,7 @@ At z = 14.4 the individual steps are V1/V0 = 0.988–0.994, V2/V0 = 1.000–1.00
 - **Run:** 305/305 maps, 0 failed; 0 unconverged pixels in every snapshot; no H I at T_K or T_S < 2 K in any snapshot.
 - **Check:** `check_Tb_maps.py --real-space` at render 80 (z = 14.42): worst cell 2.1×10⁻⁵, best-fit ratio 0.99998, the same level as the SPIN_MODEL 0 checks.
 - **Check at low z (2026-11-16):** `check_Tb_maps.py --real-space` at render 300 (z = 6.35; 3 slabs, 4.9×10⁶ cells): best-fit C/independent 0.9999852, worst cell 1.48×10⁻⁵ (the same constant offset as the earlier verified maps, e.g. the reference at 242); `check_ps.py` at 300: Δ² C/numpy 0.999996–1.000001 over 1240 k bins (0.019–6 h/cMpc). OK.
-- **x_CMB (change 4):** volume mean 0.9912 (z = 27.6), 0.9925 (21.9), 0.9932 (18.4), 0.9937 (15.9), 0.9943 (14.1), 0.9957 (12.4), 0.9971 (11.4), 0.9983 (10.5), 0.9995 (9.0), ≥ 0.99999 at z ≤ 6; pixel minimum ≥ 0.987. So τ₂₁ ≲ 0.026 everywhere. The earlier estimate "linear τ makes |δT_b| ~4% too high at mean density at z ≈ 20" assumed cold adiabatic gas; Lumina's gas is warmer.
+- **x_CMB (change 4):** volume mean 0.9912 (z = 27.6), 0.9925 (21.9), 0.9932 (18.4), 0.9937 (15.9), 0.9943 (14.1), 0.9957 (12.4), 0.9971 (11.4), 0.9983 (10.5), 0.9995 (9.0), ≥ 0.99999 at z ≤ 6; pixel minimum ≥ 0.987. So τ₂₁ ≲ 0.026 everywhere, and the optical-depth factor on δT_b is ≤ 1.3% in every pixel, whatever the weighting. (The volume mean includes ionized pixels at exactly 1; from 2026-11-16 the log also prints the H I-weighted mean.) The earlier estimate "linear τ makes |δT_b| ~4% too high at mean density at z ≈ 20" assumed cold adiabatic gas; Lumina's gas is warmer.
 - **At z ≈ 29, J_α = 0 and x_c ≪ 1:** δT_b ∝ x_CMB x_c/(x_CMB + x_c) (1 − T_γ/T_K) ≈ x_c (1 − T_γ/T_K), so the two x_CMB factors cancel to first order (measured −2.506 vs −2.507 mK).
 
 Global ⟨δT_b⟩ [mK], SPIN_MODEL 1 vs SPIN_MODEL 0 (`plot_global_Tb.py`, logs 29237390 vs 25884455):
@@ -227,6 +227,31 @@ This is consistent with the V0–V3 measurement above (+14% at z = 14.4 for chan
 3. **Cost:** about 260 ns per pixel, i.e. about 70 s extra per 640³ map single-threaded. That is about 280 s per snapshot, about 24 h for 305 maps serially, about 3 h as the 8-task array.
 
 ---
+
+**Independent review (2026-11-16):** a separate reviewer re-derived every coefficient from the paper text and tested the code.
+- **Confirmed:**
+  - Hirata Eqs. 38–42 (coefficients, where T_S⁻¹ enters S̃_α, ξ, the sign of T_c), Venumadhav Eqs. 2, 13–15, gp_coef and tauTs_coef (units, proper densities);
+  - the map normalisation with x_CMB, and the OpenMP and MPI reductions (identical for 1 vs 4 threads, 1 vs 2 ranks);
+  - SPIN_MODEL=0 bit-identical to the pre-change code (rin and PS files, two optimisation levels, three mock snapshots);
+  - C iteration vs Python bisection over 2×10⁵ random inputs, max 1.1×10⁻⁹;
+  - vector-z broadcasting.
+
+  No defect changes the production SPIN_MODEL 1 maps.
+- **Fixed after the review** (re-tested: SPIN_MODEL=0 still bit-identical to the original code; SPIN_MODEL 1 maps identical before and after the fixes):
+  1. Hirata's Eq. 42 gives 1/T_c ≤ 0 below T_K ≈ 0.4 K. `wf_spin` now flags it, and `PS_21cm_mpi.c` stops with "FATAL: invalid T_S" and writes no map. Unreachable with Lumina's MinGasTemp but reachable with the no-heating reference; tested with four 0.3 K pixels. The Python bisection already raised.
+  2. The iteration is damped after 100 steps. It could stall when τ₂₁ ≫ 1 and T_K ≫ T_S; such a case now converges in 106 steps.
+  3. `run_21cm.sh`:
+     - a fixed NTASK = 8, so a partial resubmission (`--array=3`) does its share instead of nothing;
+     - the compile flags are stored in `bin/PS_21cm_mpi.flags` and checked at run time (rebuild once: `bash run_21cm.sh compile`);
+     - OUT_DIR must match the model (`H_real_wf` ⇔ SPIN_MODEL 1).
+  4. `check_Tb_maps.py` reads the model from the map's `content` attribute and stops on a mismatch.
+  5. `tb_physics` callers take the model explicitly:
+     - `test_cells_Tb.py`, `test_resolution_Tb.py`, `make_lightcone_tb.py` take `--spin-model` (default 1; 0 reproduces earlier results);
+     - `make_lightcone_tb.py` tags its files and refuses to resume a file of the other model;
+     - `check_lightcone_tb.py` and `make_lightcone_ps.py` now compare with `H_real_wf` by default.
+  6. `check_wf_variants.py`: the fundamental modes were lost from the first k bin (float32 rounding); fixed.
+  7. The log adds the H I-weighted ⟨x_CMB⟩ (the volume mean includes ionized pixels at 1).
+- **Kept, documented:** τ₂₁ for x_CMB uses the absolute n_HI, while the signal normalises to the gas mean; the two differ by ⟨ρ_gas⟩/(Ω_b ρ_c) ≈ 1.004, i.e. ≲ 4×10⁻⁵ in δT_b.
 
 ## 7. What is still approximate in the 21 cm spin temperature
 

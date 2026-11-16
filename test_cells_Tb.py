@@ -261,7 +261,7 @@ GRIDS_SLIM = ("V", "V_tb")       # --grids slim: only what the result needs (the
 
 class Phys:
     """constants and delta T_b of one line for a snapshot (tb_physics.py, the C-code physics)"""
-    def __init__(self, S, line):
+    def __init__(self, S, line, spin_model=1):
         self.z, self.box, h = S.z, S.box, S.h
         om = float(S.hd.get("Omega0", 0.30964144)); ob = float(S.hd.get("OmegaBaryon", 0.048975))
         ol = float(S.hd.get("OmegaLambda", OMEGA_L_DEFAULT))
@@ -270,7 +270,7 @@ class Phys:
         H0 = 100.0 * h * 1e5 / MPC
         self.rho_mean = ob * 3.0 * H0**2 / (8.0 * np.pi * G) / self.rho_unit
         self.line = line
-        self.L = Line(line, self.z, h, om, ob, ol)
+        self.L = Line(line, self.z, h, om, ob, ol, spin_model=spin_model)
 
     def tb(self, rho, T, xHII, fII, fIII, J):
         nH = X_H * rho * self.rho_unit * (1.0 + self.z)**3 / M_H
@@ -332,7 +332,7 @@ def cube_origins(n_cube, side, seed, Nc):
 def scan(a):
     """one task: rows task::ntask blocks of the snapshot -> 640^3 sums (whole box) and the cells of the cubes"""
     S = Snapshot(a.snapdir, a.snap, a.gas_file)
-    P = Phys(S, a.line)
+    P = Phys(S, a.line, a.spin_model)
     box = S.box
     os.makedirs(a.out, exist_ok=True)
     out = os.path.join(a.out, f"scan_{a.line}_{a.snap:03d}_{a.task:03d}.hdf5")
@@ -439,7 +439,7 @@ def ladder(c, P, box, R_tb, order, N):
 
 def merge(a):
     S = Snapshot(a.snapdir, a.snap, a.gas_file)
-    P = Phys(S, a.line)
+    P = Phys(S, a.line, a.spin_model)
     box, z, unit = S.box, S.z, P.L.unit
     files = sorted(glob.glob(os.path.join(a.out, f"scan_{a.line}_{a.snap:03d}_*.hdf5")))
     files = [f for f in files if not f.endswith(".part")]
@@ -612,6 +612,8 @@ def main():
         q = sub.choices[name]
         q.add_argument("--snap", type=int, required=True)
         q.add_argument("--line", choices=["H", "He"], default="He")
+        q.add_argument("--spin-model", type=int, choices=[0, 1], default=1,
+                       help="21 cm spin model (tb_physics; 1 from 2026-11-15, 0 for results made before); He unaffected")
         q.add_argument("--J", action="append", required=True, help="640^3 J_alpha files of the line (stars, AGN), summed; 'none' (alone) = J = 0")
         q.add_argument("--render", required=True, help="ren_640 directory of the matching render snapshot")
         q.add_argument("--render-snap", type=int, required=True)

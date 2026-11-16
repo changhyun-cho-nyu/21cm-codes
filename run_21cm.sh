@@ -12,8 +12,10 @@
 #
 # 21 cm delta T_b maps (RIN_NNN.hdf5) and power spectra (PS_NNN.out)
 #   1. bash run_21cm.sh compile     (needs the MPI + FFTW + HDF5 modules: mpicc, fftw3-mpi.h, parallel hdf5.h)
-#   2. mkdir -p logs && sbatch run_21cm.sh   (an array: task i does every NTASK-th snapshot of SNAPS; resumable:
-#      resubmit to finish what a task did not reach). Partition: sbatch -p ou_mki while orcd_ug_pi_mki_mvogelsb_all
+#   2. mkdir -p logs && sbatch run_21cm.sh   (an array of NTASK = 8 tasks: task i does every 8th snapshot of SNAPS;
+#      resumable: resubmit the whole array or single tasks, e.g. --array=3, to finish what a task did not reach).
+#      The compile flags are stored in bin/PS_21cm_mpi.flags and must equal EXTRA_CFLAGS at run time; change
+#      OUT_DIR together with SPIN_MODEL (H_real = SPIN_MODEL 0, H_real_wf = SPIN_MODEL 1). Partition: sbatch -p ou_mki while orcd_ug_pi_mki_mvogelsb_all
 #      does not exist (JALPHA_NOTES §6.1 item 6).
 # Spin-temperature physics: SPIN_MODEL=1 (2026-11-15, WF_PHYSICS.md: Hirata S~/T_c, exact local tau_GP, x_CMB);
 #   -DSPIN_MODEL=0 reproduces the maps made before (Tb_maps_prod/H_real) bit for bit.
@@ -56,6 +58,7 @@ if [ "$1" = "compile" ]; then
     mpicc -O3 -fopenmp -DH5_USE_16_API $EXTRA_CFLAGS $INC PS_21cm_mpi.c functions.c collisions.c -o bin/PS_21cm_mpi.new $LIBS \
         && mv bin/PS_21cm_mpi.new bin/PS_21cm_mpi \
         || { echo "COMPILE FAILED: bin/PS_21cm_mpi was not rebuilt; do not submit"; exit 1; }
+    echo "$EXTRA_CFLAGS" > bin/PS_21cm_mpi.flags
     echo "built bin/PS_21cm_mpi (EXTRA_CFLAGS: ${EXTRA_CFLAGS:-none})   commit $(git rev-parse --short HEAD)"
     if [ -n "$TK_REF" ]; then
         mpicc -O3 -fopenmp -DH5_USE_16_API $EXTRA_CFLAGS -DTK_REFERENCE -DTK_REF_XTHRESH=$TK_REF \
@@ -74,6 +77,7 @@ if [ -n "$TK_REF" ]; then
     [ "$(cat bin/PS_21cm_mpi_tkref.thr 2>/dev/null)" = "$TK_REF $TK_REF_ANCHOR $TK_REF_SNAP0" ] || { echo "bin/PS_21cm_mpi_tkref was not built with TK_REF = $TK_REF, TK_REF_ANCHOR = $TK_REF_ANCHOR, TK_REF_SNAP0 = $TK_REF_SNAP0: run 'bash $0 compile'"; exit 1; }
 fi
 [ -x $BIN ] || { echo "run 'bash $0 compile' first"; exit 1; }
+[ "$(cat bin/PS_21cm_mpi.flags 2>/dev/null)" = "$EXTRA_CFLAGS" ] || { echo "bin/PS_21cm_mpi was built with other flags (\"$(cat bin/PS_21cm_mpi.flags 2>/dev/null)\") than EXTRA_CFLAGS (\"$EXTRA_CFLAGS\"): run 'bash $0 compile'"; exit 1; }
 for f in PS_21cm_mpi.c functions.c collisions.c spin_wf.h; do    # a binary older than its source was not rebuilt
     [ $BIN -nt $f ] || { echo "$BIN is older than $f: run 'bash $0 compile' (and check it succeeds)"; exit 1; }
 done
@@ -90,6 +94,10 @@ if [ -n "$TK_REF" ]; then
     if [ "$TK_REF_ANCHOR" = 1 ]; then OUT_DIR=${OUT_DIR}_tkref${TK_REF}_pix${TK_REF_SNAP0}; else OUT_DIR=${OUT_DIR}_tkref${TK_REF}; fi
     export TK_REF_DIR0=$INPUT_DIR                     # the anchor snapshot is in the first render directory
 fi
+case "$EXTRA_CFLAGS" in                                  # OUT_DIR must match the spin model
+    *SPIN_MODEL=0*) case "$OUT_DIR" in *H_real_wf*) echo "SPIN_MODEL=0 must not write to $OUT_DIR"; exit 1;; esac ;;
+    *)              case "$OUT_DIR" in *H_real_wf*) ;; *) echo "SPIN_MODEL=1 maps go to .../H_real_wf, not $OUT_DIR"; exit 1;; esac ;;
+esac
 mkdir -p "$OUT_DIR"
 
 # -------------------------
@@ -120,7 +128,8 @@ if [ -n "$TK_REF" ]; then              # the reference: a subset of SNAPS (TK_RE
     echo "no-heating reference (x_HII < $TK_REF): ${#SNAPS[@]} snapshots, ${SNAPS[0]} .. ${SNAPS[${#SNAPS[@]}-1]}"
 fi
 
-NTASK=${SLURM_ARRAY_TASK_COUNT:-1}; TASK=${SLURM_ARRAY_TASK_ID:-0}
+NTASK=8; TASK=${SLURM_ARRAY_TASK_ID:-0}   # = the --array size 0-7; a partial resubmission (--array=3) keeps its share
+[ "$TASK" -lt "$NTASK" ] || { echo "task $TASK >= NTASK $NTASK"; exit 1; }
 nfail=0; n=-1
 echo "commit $(git rev-parse --short HEAD), host $(hostname), $(date), task $TASK of $NTASK, $(grep -o 'SPIN_MODEL=[0-9]' <<< "$EXTRA_CFLAGS")"
 for SNAP in "${SNAPS[@]}"; do

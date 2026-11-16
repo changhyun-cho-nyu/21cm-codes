@@ -102,7 +102,7 @@ def units(hd):
     return rho_unit, ob * 3.0 * H0**2 / (8.0 * np.pi * G) / rho_unit
 
 
-def cone_tb(cone, line, J, chunk=256):
+def cone_tb(cone, line, J, chunk=256, spin_model=1):
     """delta T_b [mK for line="H", uK for "He"] of every light-cone cell; J broadcastable to cone["Density"]"""
     hd = cone["header"]
     h, om, ob = float(hd["HubbleParam"]), float(hd["Omega0"]), float(hd["OmegaBaryon"])
@@ -123,7 +123,7 @@ def cone_tb(cone, line, J, chunk=256):
     z = cone["z"]
     for j0 in range(0, len(z), chunk):                            # chunks of slices (memory)
         s = np.s_[..., j0:j0 + chunk]
-        L = Line(line, z[j0:j0 + chunk], h, om, ob, ol)           # z per slice, broadcast along the last axis
+        L = Line(line, z[j0:j0 + chunk], h, om, ob, ol, spin_model=spin_model)   # z per slice, broadcast
         r, xh = rho[s].astype(np.float64), xHII[s].astype(np.float64)
         f2, f3 = fII[s].astype(np.float64), fIII[s].astype(np.float64)
         nH = X_H * r * rho_unit * (1.0 + L.z)**3 / M_H           # proper cm^-3

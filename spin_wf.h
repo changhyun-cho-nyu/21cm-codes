@@ -30,10 +30,12 @@
 
 #define WF_TOL   1e-10
 #define WF_ITMAX 500
+#define WF_DAMP_AFTER 100   /* iterations; then T_S <- (T_S + T_new)/2 (the plain map can stall when tau_21 >> 1, T_K >> T_S) */
 
 typedef struct {
     double Ts, xa, S, xcmb, tau21;
-    int iter, ok;
+    int iter, ok;          /* ok: 1 converged, 0 not converged, -1 invalid (1/T_c <= 0, or T_S not finite or <= 0:
+                              Hirata Eq. 42 gives 1/T_c <= 0 for T_K below ~0.4 K, far outside the fit's T_K >= 2 K) */
 } wf_result;
 
 /* (1 - exp(-tau))/tau, accurate for small tau */
@@ -55,9 +57,12 @@ static inline wf_result wf_spin(double Tg, double Tk, double A, double xc, doubl
         S     = (1.0 - 0.0631789 * Ti + 0.115995 * Ti * Ti - 0.401403 * Tsi * Ti + 0.336463 * Tsi * Ti * Ti) / den;
         xa    = A * S;
         const double Tci = Ti + 0.405535 * Ti * (Tsi - Ti);                       /* Hirata Eq. 42 */
+        if (!(Tci > 0.0)) { ok = -1; break; }                     /* 1/T_c <= 0: T_K far below the fit's range */
         tau21 = tauTs * Tsi;
         xcmb  = wf_xcmb(tau21);
-        const double Tnew = (xcmb + xa + xc) / (xcmb / Tg + xa * Tci + xc * Ti);
+        double Tnew = (xcmb + xa + xc) / (xcmb / Tg + xa * Tci + xc * Ti);
+        if (!(Tnew > 0.0) || !isfinite(Tnew)) { Ts = Tnew; ok = -1; break; }
+        if (it > WF_DAMP_AFTER) Tnew = 0.5 * (Ts + Tnew);
         const double d = fabs(Tnew - Ts);
         Ts = Tnew;
         if (d <= WF_TOL * Ts) { ok = 1; break; }

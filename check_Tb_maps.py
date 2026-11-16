@@ -74,8 +74,9 @@ def main():
     p.add_argument("--real-space", action="store_true", help="H: map made with -DH_REDSHIFT_SPACE=0")
     p.add_argument("--he-rs", action="store_true", help="He: map made with the code default HE_REDSHIFT_SPACE=1")
     p.add_argument("--ts-volume", action="store_true", help="map made with -DTS_VOLUME_WEIGHTED=1")
-    p.add_argument("--spin-model", type=int, choices=[0, 1], default=1,
-                   help="21 cm: SPIN_MODEL of the map (1: from 2026-11-15, default; 0: the maps made before)")
+    p.add_argument("--spin-model", type=int, choices=[0, 1], default=None,
+                   help="21 cm: SPIN_MODEL of the map (1: from 2026-11-15; 0: the maps made before). Default: read from the "
+                        "map's content attribute ('SPIN_MODEL 1' -> 1; no tag or 'SPIN_MODEL 0' -> 0); a mismatch stops")
     p.add_argument("--tk-ref", type=float, metavar="THRESH",
                    help="H: map made with -DTK_REFERENCE -DTK_REF_XTHRESH=THRESH (no-heating reference where x_HII < THRESH)")
     p.add_argument("--tk-ref-anchor", choices=["pixel", "eq27"], default="pixel",
@@ -111,7 +112,17 @@ def main():
         rho_mean += fld("Density")[i0:i0 + 32].astype(np.float64).sum()
     rho_mean /= float(N)**3
 
-    L = Line(a.line, z, h, om, ob, ol, spin_model=a.spin_model)
+    with h5py.File(a.rin, "r") as rf0:                            # the map's spin model, from its content attribute
+        content = rf0[find_3d(rf0, "rin")].attrs.get("content", b"")
+    content = content.decode() if isinstance(content, bytes) else str(content)
+    sm_map = 1 if "SPIN_MODEL 1" in content else 0
+    if a.line == "H":
+        if a.spin_model is None:
+            a.spin_model = sm_map
+        elif a.spin_model != sm_map:
+            sys.exit(f"STOP: --spin-model {a.spin_model}, but the map's content says spin model {sm_map}: {content!r}")
+        print(f"  21 cm spin model {a.spin_model} (map content: {'SPIN_MODEL 1' if sm_map else 'no SPIN_MODEL 1 tag'})")
+    L = Line(a.line, z, h, om, ob, ol, spin_model=a.spin_model if a.spin_model is not None else 1)
     unit = L.unit
     print(f"  T* = {L.Tst:.7f} K, A10 = {L.A:.5e} s^-1, prefactor = {L.P:.6e} {unit}, x_alpha const = {L.xa_c:.5e} / (S J)")
     ts = {"HII": "HII_VolumeFraction", "T": "TemperatureVolumeWeighted", "HeII": "HeII_VolumeFraction",
