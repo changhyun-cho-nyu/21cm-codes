@@ -134,9 +134,13 @@ class Line:
         T(p, z0) [(1+z)/(1+z0)]^2 [rho(p, z)/rho(p, z0)]^(2/3), comoving densities"""
         return T0 * ((1.0 + self.z) / (1.0 + z0))**2 * (rho / rho0)**(2.0 / 3.0)
 
-    def tb(self, sig, nH, T, xHII, fII, fIII, J):
-        """delta T_b [mK or uK] and (x_c, x_a); nH proper cm^-3, fII/fIII per H nucleus, sig = x(1+delta)"""
+    def tb(self, sig, nH, T, xHII, fII, fIII, J, nHI_gp=None, full=False):
+        """delta T_b [mK or uK] and (x_c, x_a); nH proper cm^-3, fII/fIII per H nucleus, sig = x(1+delta).
+        21 cm, spin_model 1 only: nHI_gp [proper cm^-3] replaces the local n_HI in tau_GP (default: x_HI nH, as the
+        maps; tau_21 always uses the local n_HI); full=True also returns {TS, xcmb, tauGP, tau21}."""
         z = self.z
+        if (nHI_gp is not None or full) and not (self.line == "H" and self.spin_model == 1):
+            raise ValueError("nHI_gp / full are options of the 21 cm spin_model 1 only")
         ne = nH * (xHII + fII + 2.0 * fIII)
         if self.line == "H":
             xHI = 1.0 - xHII
@@ -144,9 +148,13 @@ class Line:
                                                   + kappa(T, T_E, K_PH) * xHII * nH)
             if self.spin_model == 1:
                 nHI = xHI * nH
-                tauGP, tauTs, A = self.gp_c * nHI, self.tauTs_c * nHI, self.xa_c * J
+                tauGP = self.gp_c * (nHI if nHI_gp is None else nHI_gp)
+                tauTs, A = self.tauTs_c * nHI, self.xa_c * J
                 TS = solve_ts_wf(self.Tg, T, A, xc, tauGP, tauTs)
                 S, _, xcmb = wf_terms(TS, self.Tg, T, A, tauGP, tauTs)
+                if full:
+                    return (self.P * sig * (1.0 - self.Tg / TS) * xcmb, xc, A * S,
+                            {"TS": TS, "xcmb": xcmb, "tauGP": tauGP, "tau21": tauTs / TS})
                 return self.P * sig * (1.0 - self.Tg / TS) * xcmb, xc, A * S
             S = np.exp(-0.803 * T**(-2.0 / 3.0) * (1e-6 * 3.0e5 * xHI * ((1.0 + z) / 7.0)**1.5)**(1.0 / 3.0))
         else:
