@@ -11,7 +11,10 @@ Per render and run:
   H I-weighted percentiles 1/10/50/90/99 % of T, the harmonic mean <1/T>^-1 (what a coupled T_S responds to),
   the H I share below 2 K (edge of Hirata's fit), below T_gamma = 2.7255 (1+z) and below 10 K,
   the adiabatic reference T_ad = T_med(z0) [(1+z)/(1+z0)]^2 at mean density (z0 = first render, no heating yet),
-  and the H I share and median T in bins of 1 + delta = rho/<rho>: < 1, 1-3, 3-10, > 10.
+  and the H I share and median T in bins of 1 + delta = rho/<rho>: < 1, 1-3, 3-10, > 10;
+  by the pixel's ionized fraction x_HII (HII_Fraction, mass-weighted; bins < 1e-3, 1e-3-0.01, 0.01-0.1, 0.1-0.5, > 0.5):
+  the H I share, median T, harmonic mean and share below T_gamma, and for neutral pixels (x_HII < 1e-3) the H I share
+  and median T by 1 + delta (separates heating of neutral gas from pixels mixing ionized and neutral gas).
 Outputs (--out, default data/): temp_HI_xray.csv (one row per render, run), temp_HI_xray.npz (H I-weighted
 histograms in log T), temp_HI_xray.png (distributions at selected z, both runs).
 Run from xray/:  python temp_HI_xray.py        (BASE=<dir> overrides /orcd/data/mvogelsb/004/chcho/xray)
@@ -33,6 +36,8 @@ LABELS = {"withoutXrays": "no X-rays", "withXrays": "with X-rays"}
 COLORS = {"withoutXrays": "#2a78d6", "withXrays": "#eb6834"}     # categorical slots 1, 2 (validated pair)
 INK, INK2, GRID = "#1f1f1e", "#6b6b68", "#e6e6e3"
 DBINS = ((0.0, 1.0), (1.0, 3.0), (3.0, 10.0), (10.0, np.inf))
+XBINS = ((0.0, 1e-3), (1e-3, 1e-2), (1e-2, 0.1), (0.1, 0.5), (0.5, 1.01))   # pixel HII_Fraction (mass-weighted)
+XLAB = ("x<1e-3", "1e-3-0.01", "0.01-0.1", "0.1-0.5", ">0.5")
 LOGT_EDGES = np.linspace(0.0, 7.0, 141)                           # log10 T [K], 0.05 dex
 
 
@@ -80,6 +85,19 @@ def stats(d, z, T_ad):
         tag = f"d{lo:g}-{hi:g}".replace("inf", "")
         out[f"share_{tag}"] = w[m].sum() / W
         out[f"T50_{tag}"] = wpct(T[m], w[m], (50,))[0] if m.any() else np.nan
+    for i, (lo, hi) in enumerate(XBINS):                          # by the pixel's ionized fraction
+        m = (xH >= lo) & (xH < hi)
+        wm = w[m]
+        out[f"xb{i}_share"] = wm.sum() / W
+        out[f"xb{i}_T50"] = wpct(T[m], wm, (50,))[0] if wm.sum() > 0 else np.nan
+        out[f"xb{i}_Tharm"] = wm.sum() / np.sum(wm / T[m]) if wm.sum() > 0 else np.nan
+        out[f"xb{i}_fltTg"] = w[m & (T < Tg)].sum() / wm.sum() if wm.sum() > 0 else np.nan
+    neu = xH < XBINS[0][1]                                        # neutral pixels, by 1 + delta
+    for lo, hi in DBINS[:3]:
+        m = neu & (one >= lo) & (one < hi)
+        tag = f"{lo:g}-{hi:g}"
+        out[f"xneu_d{tag}_share"] = w[m].sum() / W
+        out[f"xneu_d{tag}_T50"] = wpct(T[m], w[m], (50,))[0] if w[m].sum() > 0 else np.nan
     hist = np.histogram(np.log10(np.clip(T, 1.0001, 9.99e6)), LOGT_EDGES, weights=w / W)[0]
     return out, hist
 
@@ -113,7 +131,7 @@ def main():
 
     os.makedirs(a.out, exist_ok=True)
     keys = ["run", "render", "z", "T_gamma", "T_ad", "HI_mass_frac", "T01", "T10", "T50", "T90", "T99", "T50_vol",
-            "T_harm", "f_lt2K", "f_ltTg", "f_lt10K"] + [k for k in rows[0] if k.startswith(("share_", "T50_d"))]
+            "T_harm", "f_lt2K", "f_ltTg", "f_lt10K"] + [k for k in rows[0] if k.startswith(("share_", "T50_d", "xb", "xneu"))]
     with open(os.path.join(a.out, "temp_HI_xray.csv"), "w") as f:
         f.write(",".join(keys) + "\n")
         for r in rows:
@@ -134,6 +152,17 @@ def main():
             print(f"  {r['z']:5.2f} {r['T_gamma']:6.1f} {r['T_ad']:6.1f} | {r['T01']:6.1f} {r['T10']:7.1f} {r['T50']:7.1f} "
                   f"{r['T90']:7.0f} {r['T99']:7.0f} {r['T50_vol']:8.1f}  {r['T_harm']:8.1f} | {r['f_lt2K']:.3f} "
                   f"{r['f_ltTg']:6.3f} {r['f_lt10K']:6.3f} | {dd}")
+
+    for run in RUNS:
+        print(f"\n{LABELS[run]}: H I by the pixel's ionized fraction x_HII (HII_Fraction): "
+              "H I share / median T / <1/T>^-1 [K] / share of it below T_gamma")
+        print("     z | " + " | ".join(f"{l:^26s}" for l in XLAB) + " | neutral (x<1e-3) by 1+delta: share/T50 <1, 1-3, 3-10")
+        for j in sorted(zt, key=lambda j: -zr[j]):
+            r = by[(run, ren[j])]
+            cells = " | ".join(f"{r[f'xb{i}_share']:.3f} {r[f'xb{i}_T50']:6.0f} {r[f'xb{i}_Tharm']:6.0f} {r[f'xb{i}_fltTg']:5.2f}"
+                               for i in range(len(XBINS)))
+            nd = "  ".join(f"{r[k]:.3f}/{r[k.replace('_share', '_T50')]:.0f}" for k in r if k.startswith("xneu") and k.endswith("_share"))
+            print(f"  {r['z']:5.2f} | {cells} | {nd}")
 
     import matplotlib
     matplotlib.use("Agg")
