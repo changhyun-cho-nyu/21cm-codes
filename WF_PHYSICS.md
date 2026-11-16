@@ -184,6 +184,7 @@ At z = 14.4 the individual steps are V1/V0 = 0.988–0.994, V2/V0 = 1.000–1.00
 **Production result (job 29237390, 2026-11-16; all four changes, `Tb_maps_prod/H_real_wf`):**
 - **Run:** 305/305 maps, 0 failed; 0 unconverged pixels in every snapshot; no H I at T_K or T_S < 2 K in any snapshot.
 - **Check:** `check_Tb_maps.py --real-space` at render 80 (z = 14.42): worst cell 2.1×10⁻⁵, best-fit ratio 0.99998, the same level as the SPIN_MODEL 0 checks.
+- **Check at low z (2026-11-16):** `check_Tb_maps.py --real-space` at render 300 (z = 6.35; 3 slabs, 4.9×10⁶ cells): best-fit C/independent 0.9999852, worst cell 1.48×10⁻⁵ (the same constant offset as the earlier verified maps, e.g. the reference at 242); `check_ps.py` at 300: Δ² C/numpy 0.999996–1.000001 over 1240 k bins (0.019–6 h/cMpc). OK.
 - **x_CMB (change 4):** volume mean 0.9912 (z = 27.6), 0.9925 (21.9), 0.9932 (18.4), 0.9937 (15.9), 0.9943 (14.1), 0.9957 (12.4), 0.9971 (11.4), 0.9983 (10.5), 0.9995 (9.0), ≥ 0.99999 at z ≤ 6; pixel minimum ≥ 0.987. So τ₂₁ ≲ 0.026 everywhere. The earlier estimate "linear τ makes |δT_b| ~4% too high at mean density at z ≈ 20" assumed cold adiabatic gas; Lumina's gas is warmer.
 - **At z ≈ 29, J_α = 0 and x_c ≪ 1:** δT_b ∝ x_CMB x_c/(x_CMB + x_c) (1 − T_γ/T_K) ≈ x_c (1 − T_γ/T_K), so the two x_CMB factors cancel to first order (measured −2.506 vs −2.507 mK).
 
