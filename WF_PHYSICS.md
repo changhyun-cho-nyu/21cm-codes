@@ -21,9 +21,9 @@ From 2026-11-15 the code uses (`SPIN_MODEL = 1`):
 | 1 | τ_GP from first principles, 1.30× the rounded 3×10⁵ form | Hirata 2006 Eq. 35 | ≤ 1.8% (mean), ≤ 1.2% (Δ²) |
 | 2 | τ_GP with the pixel's own n_HI, i.e. x_HI(1+δ) | Hirata 2006 §3.2 | ≤ 1.4% (Δ²), opposite in sign to 1 |
 | 3 | Hirata's S̃_α(T_K, T_S, τ_GP) and colour temperature T_c ≠ T_K | Hirata 2006 Eqs. 38–42; Chuzhoy & Shapiro 2006 | **up to −9% in Δ², +14% (+0.19 mK) in the mean, at z = 12.7–16** |
-| 4 | Finite 21 cm optical depth: x_CMB = (1 − e^{−τ₂₁})/τ₂₁ in T_S, and δT_b ∝ 1 − e^{−τ₂₁} instead of τ₂₁ | Venumadhav et al. 2018 Eqs. 13–15 | to be measured from the new maps (the linear-τ error was ~4% at mean density at z ≈ 20) |
+| 4 | Finite 21 cm optical depth: x_CMB = (1 − e^{−τ₂₁})/τ₂₁ in T_S, and δT_b ∝ 1 − e^{−τ₂₁} instead of τ₂₁ | Venumadhav et al. 2018 Eqs. 13–15 | ⟨x_CMB⟩ ≥ 0.991 (pixels ≥ 0.987): ≲ 0.3% on δT_b (measured in production, §4) |
 
-Effects 1–3 were measured on the full 640³ Lumina box at 15 snapshots (Section 4). All four act only while the Lyα coupling is building up: in Lumina, x̄_α goes from 0.05 (z = 16.3) to 1.3 (z = 12.7). At z ≲ 11 every change is below 0.6%.
+Effects 1–3 were measured on the full 640³ Lumina box at 15 snapshots (Section 4), and all four together by the production run (job 29237390): the global signal changes by +17% (+0.16 mK) at z = 15, +7% at z = 17, +2.5% at z = 13, and ≤ 0.5% at z ≤ 12. All four act only while the Lyα coupling is building up: in Lumina, x̄_α goes from 0.05 (z = 16.3) to 1.3 (z = 12.7). At z ≲ 11 every change is below 0.6%.
 
 ---
 
@@ -180,6 +180,22 @@ At z = 14.4 the individual steps are V1/V0 = 0.988–0.994, V2/V0 = 1.000–1.00
 - **The mean rises while the power falls (z ≈ 12.7–16).** The colour temperature makes cold absorbing gas absorb less (T_c > T_K when T_S > T_K). That lowers the contrast between warm emitting and cold absorbing pixels, so Δ² falls by up to 9% while the mean, a near-cancellation of the two, moves towards emission by up to 14%.
 - **The sign flips at z ≈ 12.** Where the coupled gas is warm (10²–10³ K), Hirata's S̃_α is 1–2% below the old exponential because of fine structure (his Fig. 2, "Old" vs "+FS"), so emission falls slightly.
 - **Change 3 dominates; changes 1 and 2 are ≲ 1–2% and partly cancel.**
+
+**Production result (job 29237390, 2026-11-16; all four changes, `Tb_maps_prod/H_real_wf`):**
+- **Run:** 305/305 maps, 0 failed; 0 unconverged pixels in every snapshot; no H I at T_K or T_S < 2 K in any snapshot.
+- **Check:** `check_Tb_maps.py --real-space` at render 80 (z = 14.42): worst cell 2.1×10⁻⁵, best-fit ratio 0.99998, the same level as the SPIN_MODEL 0 checks.
+- **x_CMB (change 4):** volume mean 0.9912 (z = 27.6), 0.9925 (21.9), 0.9932 (18.4), 0.9937 (15.9), 0.9943 (14.1), 0.9957 (12.4), 0.9971 (11.4), 0.9983 (10.5), 0.9995 (9.0), ≥ 0.99999 at z ≤ 6; pixel minimum ≥ 0.987. So τ₂₁ ≲ 0.026 everywhere. The earlier estimate "linear τ makes |δT_b| ~4% too high at mean density at z ≈ 20" assumed cold adiabatic gas; Lumina's gas is warmer.
+- **At z ≈ 29, J_α = 0 and x_c ≪ 1:** δT_b ∝ x_CMB x_c/(x_CMB + x_c) (1 − T_γ/T_K) ≈ x_c (1 − T_γ/T_K), so the two x_CMB factors cancel to first order (measured −2.506 vs −2.507 mK).
+
+Global ⟨δT_b⟩ [mK], SPIN_MODEL 1 vs SPIN_MODEL 0 (`plot_global_Tb.py`, logs 29237390 vs 25884455):
+
+| z | 28.97 | 24.92 | 19.93 | 16.96 | 14.95 | 12.98 | 11.98 | 10.98 | 10.01 | 9.01 | 8.00 | 7.01 | 6.00 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| SPIN_MODEL 1 | −2.506 | −0.834 | +0.424 | +0.719 | +1.073 | +4.930 | +10.355 | +16.547 | +19.986 | +19.996 | +16.815 | +10.943 | +3.007 |
+| SPIN_MODEL 0 | −2.507 | −0.834 | +0.421 | +0.671 | +0.917 | +4.809 | +10.382 | +16.622 | +20.035 | +20.017 | +16.823 | +10.945 | +3.008 |
+| change | 0.0% | 0.0% | +0.7% | +7.2% | **+17.0%** | +2.5% | −0.26% | −0.45% | −0.24% | −0.10% | −0.05% | −0.02% | −0.03% |
+
+This is consistent with the V0–V3 measurement above (+14% at z = 14.4 for changes 1–3); x_CMB adds about −0.1 to −0.3% at z ≈ 10–12.
 
 ---
 
