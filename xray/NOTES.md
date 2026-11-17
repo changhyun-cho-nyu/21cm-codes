@@ -108,3 +108,34 @@ Reading:
 - Caveats as for the mean: the z ≳ 10 pixel-T bias is largest in the no-X-ray run (its contrast and power are probably underestimated, so the true suppression is probably larger); RSLAFactor 0.2 (sign of its effect on the ratio not established); 34 cMpc/h box (few modes at k < 0.4; the shared ICs reduce the ratio's sample variance).
 
 **Job bookkeeping:** the 21 cm job was submitted twice (29270984 and 29271014, both still pending); 29271014 was cancelled before it ran, 29270984 made all maps. SFR_eff (29237034) and J_α (29237051) ran from the repo root (logs in `../logs`, J binaries in `../bin`); the 21 cm job from `xray/` (logs in `xray/logs`).
+
+**Gas-cell 21 cm δT_b pilot (`cells_Tb_xray.py` + `run_cells_Tb_xray.sh`; written and tested on mocks 2026-11-16, two rounds of independent audit; not yet run).** Question (user, 2026-11-16): at z ≳ 10 the pixel maps mix cold and warm neutral gas (above); how much absorption do the gas cells give? A pilot on these runs before any Lumina gas-cell 21 cm run (`../test_cells_Tb.py --line H`, never run on Lumina). Scope (user, 2026-11-16): every full snapshot at z > 10 (024, 036, 048), both runs; τ_GP both ways. Added 066 (z = 7.995, render 207) as a validation in the X-ray run only: there T_S ≫ T_γ, so cells and pixels must agree. Without X-rays the void cells are still cold (~6–7 K at z = 10), so a cell–pixel difference at 066 is physics, not a failure.
+- **Per cell:** δT_b from `tb_physics.Line('H', spin_model=1)` (the production physics), with the render conventions:
+  - T from u and the snapshot's Ne; star-forming cells set neutral afterwards (as `test_cells_Tb.py`; negligible for δT_b, since x_c ≫ 1 there);
+  - J_α of the cell's 128³ pixel;
+  - sig = ρ(1 − x_HII)/⟨ρ⟩_gas;
+  - x_HII clipped to [0, 1] (float32 rounding; the count is printed).
+- **τ_GP both ways (user, 2026-11-16), via `Line.tb(nHI_gp=)`:** "cell" uses the cell's own n_HI; "pix" uses the n_HI of its 128³ render pixel. The `tb_physics` change (`nHI_gp`, `full`, commit 31fb4ad) is bit-identical for existing callers (checked by three people, H and He, spin models 0 and 1).
+  - **Neither is the cell-level physics.** The photons that set S̃_α scatter within ~(aτ_GP)^{1/3} b ≈ 7–24 km/s of line centre, a Hubble length of ~40–110 ckpc/h (1–2 void cells, 0.15–0.4 of a 128³ pixel). And τ_GP = n_HI/(dv/dr) contains the local velocity gradient, which is not used (Hubble flow only).
+  - The two options bracket this choice: S̃_α changes 13–17% for a factor 3 in τ_GP at 5 K.
+  - τ_21 uses the cell's n_HI with the Hubble flow only, as the real-space maps do. Cold cells reach τ_21 ≈ 0.1–0.3 at z = 15 (x_CMB 0.95–0.86); collapsing gas would have more.
+- **References:**
+  - tb_physics on the 128³ render, which must reproduce `RIN_<render>.hdf5` in the mean and per pixel (99.9% within 10⁻³; non-finite values stop the run);
+  - the render coarsened to 64³ (0.53 cMpc/h, Lumina's pixel size);
+  - "NGP pixels", the baseline for Δ² and r(k): fields built from the same cells with the same nearest-pixel deposit and the same normalisation as the cell map. Density is Σm / ΣV of the cells in the pixel, so in the linear limit the two maps are identical pixel by pixel.
+    - First version (density = Σm / pixel volume) was wrong: it carried cell-count noise that the cell map does not. In the linear limit that alone gave Δ² cells / NGP = 0.72–0.88 at Nyquist and r = 0.95 (audit 2). Fixed: now 1.000 at all k on the auditors' Voronoi-like mocks with a cube-deposit render.
+  - Cells vs the render pixels also contains the deposit difference (the render deposits cubes): up to ~10–25% in Δ² in the top k bins.
+- **Means:** Σ V δT_b / box³. Σ V sig = Σ m_HI / ⟨ρ⟩ exactly, so in the linear limit this equals the pixel mean (cells / pixels = 1.000 in the linear mocks). The printed means of the cell map and the NGP map are plain pixel averages, kept for the spectra; compare only the volume mean.
+- **Outputs:** means, Δ²(k), r(k), the split of the cell-level mean (by class / 1+δ / T, absorbing vs emitting), and diagnostics (⟨S̃_α⟩, τ_GP histogram with under- and overflow, τ_21, min x_CMB, H I with T_S < T_γ). Written to `$BASE/<run>/cells_Tb/cells_Tb_NNN.npz`; `report` writes the tables and `data/cells_Tb_xray.png`.
+- **Caveats:**
+  - In the 64³ comparison the cells keep the 128³ J (and the 128³ n_HI for "pix"); the J scatter inside 64³ blocks is printed.
+  - "Neutral" means x_HII < 10⁻³, so X-ray-warmed, partly ionized gas sits in the x_HII ≥ 10⁻³ row.
+  - The pixel "star-forming" row is every pixel holding any star-forming gas, IGM included.
+- **Tests:**
+  - My mocks (16³, 8 cells tiling each pixel, render axis order (2,1,0)): identical cells reproduce the pixels exactly; cold/hot, dense/underdense cells match a direct per-cell calculation to 10⁻⁸ for both τ_GP options (−52.233 / −54.613 mK, against +12.44 mK from the pixels).
+  - The auditors' mocks: Voronoi-like cells, cube and NGP renders, N = 16/20/32, all axis orders.
+  - Checks: a production map off by 1%, a transposed map, and NaN in the map or the render all stop the run; output outside `/orcd/data/mvogelsb/004/chcho` is refused.
+- **Audits (2026-11-16):**
+  - Round 1 (one reviewer): no defect in the means. Added the NGP baseline, the per-pixel map check, a non-finite stop, the τ_GP histogram range and clearer labels.
+  - Round 2 (physics/conventions and code/numerics, separately): units, normalisation, conventions and indexing were confirmed. Fixed: the NGP normalisation above; means normalised by box³ instead of ΣV; NaN-safe map checks; x_HII clipping (NaN inside the T_S solve otherwise returns a finite wrong value); empty pixels filled consistently in both maps; the 066 expectation; the τ_GP and τ_21 caveats; report row order; memory request lowered to 64 GB.
+- **Cost:** about 2.2×10⁸ cells per task, ~26 GB peak measured by scaling, two T_S solves per cell, ~1–1.5 h per task. 8 tasks. **Commit before submitting:** the array tasks read the working tree, and the log records the commit.

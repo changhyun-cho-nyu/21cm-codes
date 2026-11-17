@@ -22,15 +22,16 @@
 #      (%10: at most 10 tasks at once; resubmitting the same line later redoes only the missing outputs)
 #   3. bash run_Jalpha_prod.sh status                      # which outputs exist / are missing
 #   ONLY="280" bash run_Jalpha_prod.sh count               # other snapshots than the list (export ONLY to sbatch too)
+#   BAND, TR_TAG and J_OUT (output directory) can also be set in the environment (run_J_interp_test.sh does)
 # Then set J_DIR=$J in run_21cm.sh (and run_3cm.sh, with its TR_TAG = the TR_TAG here).
 
 #BAND=H                     # H or He
 #TR_TAG=                    # BAND=He only: e.g. tr_sfmask (bin/Jalpha_He_<TR_TAG>); empty = no IGM absorption
-BAND=He
-TR_TAG=tr_sfmask
+BAND=${BAND:-He}
+TR_TAG=${TR_TAG-tr_sfmask}
 
 OUT=/orcd/data/mvogelsb/004/chcho/SFR_eff                       # make_SFR_eff.py output
-J=/orcd/data/mvogelsb/004/chcho/Jalpha                          # production output directory
+J=${J_OUT:-/orcd/data/mvogelsb/004/chcho/Jalpha}               # production output directory
 R=/orcd/data/mvogelsb/005/mkilab001/mvogelsblab003/Lab/Thesan-XL/Flagship_new/postprocessing/ren_640
 RB=/orcd/data/mvogelsb/005/mkilab001/mvogelsblab003/Lab/Thesan-XL/Flagship_below_z_4p75_new/postprocessing/ren_640
 SED=agn_sed_full.hdf5                                           # in the repository
