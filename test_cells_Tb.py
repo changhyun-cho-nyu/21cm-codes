@@ -32,6 +32,10 @@ Usage
   python test_cells_Tb.py scan  --snapdir D --snap 136 --line He --J <J stars> --J <J AGN> --render <ren_640> \
          --render-snap 501 --out <dir> --task 0 --ntask 16
   python test_cells_Tb.py merge --snapdir D --snap 136 --line He --J ... --J ... --render ... --render-snap 501 --out <dir>
+Full snapshots that fall between renders (11, 17, 24: |dz| = 0.03-0.07): --render-snap A (nearest; the pixel
+reference) with --max-dz above |dz|, plus --J-b <files> --render-snap-b B (the other side): J linear in z between A
+and B at the snapshot's z, for the cells and the reference alike (user decision 2026-11-17). Mock-tested with a
+planted answer (5e-7, float32) and the refusals (no bracket, J file at another z, merge/scan J mismatch).
 Memory: scan ~20 GB (six 640^3 float64 sums, J, chunk); merge ~40 GB. Disk: ~6 GB per task plus the cube cells
 (~45 B per cell; 64 cubes of 16^3 pixels ~ 0.8% of the cells, ~75 GB).
 """
@@ -149,6 +153,54 @@ def load_J(files, N):
         print("J = 0 (--J none)")
         return np.zeros((N,) * 3, np.float32)
     return sum(first_3d(h5py.File(fn, "r"))[()].astype(np.float32) for fn in files)
+
+
+def render_z(render, snap):
+    with h5py.File(os.path.join(render, "All", f"All_{snap:03d}.hdf5"), "r") as f:
+        return float(f["Header"].attrs["Redshift"])
+
+
+def check_J_z(files, zr, tag):
+    """the J files' own Redshift attribute (written by the J codes) must be the render's z"""
+    if list(files) == ["none"]:
+        return
+    for fn in files:
+        with h5py.File(fn, "r") as f:
+            zj = first_3d(f).attrs.get("Redshift")
+        if zj is None:
+            print(f"  note: {fn} has no Redshift attribute (not checked against render {tag})")
+        elif abs(float(zj) - zr) > 1e-4:
+            sys.exit(f"STOP: {fn} is at z = {float(zj)}, render {tag} at z = {zr}")
+
+
+def J_at(a, N, z):
+    """J at the snapshot's z: the --J files (render --render-snap), or, with --J-b, linear in z between render
+    --render-snap (a) and --render-snap-b (b), which must bracket z (user decision 2026-11-17 for the full
+    snapshots 11, 17, 24, which fall between renders)"""
+    za = render_z(a.render, a.render_snap)
+    if abs(za - z) > a.max_dz:
+        sys.exit(f"ERROR: render snapshot {a.render_snap} z = {za} vs snapshot z = {z} (|dz| > --max-dz {a.max_dz})")
+    if not a.J_b:
+        J = load_J(a.J, N)
+        return J, {"J_interp": 0}
+    if a.render_snap_b is None or list(a.J) == ["none"] or list(a.J_b) == ["none"]:
+        sys.exit("ERROR: --J-b needs --render-snap-b and J files on both sides")
+    zb = render_z(a.render, a.render_snap_b)
+    if not (min(za, zb) < z < max(za, zb)):
+        sys.exit(f"STOP: snapshot z = {z} is not strictly between render {a.render_snap} (z = {za}) and "
+                 f"{a.render_snap_b} (z = {zb})")
+    check_J_z(a.J, za, f"{a.render_snap}")
+    check_J_z(a.J_b, zb, f"{a.render_snap_b}")
+    w = (z - za) / (zb - za)                                      # weight of render b, linear in z
+    Ja = load_J(a.J, N)
+    Jb = load_J(a.J_b, N)
+    ma, mb = float(Ja.mean(dtype=np.float64)), float(Jb.mean(dtype=np.float64))
+    J = ((1.0 - w) * Ja + w * Jb).astype(np.float32)
+    del Ja, Jb
+    print(f"J linear in z: render {a.render_snap} (z = {za:.5f}, <J> {ma:.4e}) and {a.render_snap_b} (z = {zb:.5f}, "
+          f"<J> {mb:.4e}); snapshot z = {z:.5f}, weight of {a.render_snap_b} {w:.4f}; <J> {J.mean(dtype=np.float64):.4e} "
+          f"(<J_b>/<J_a> = {mb / ma:.4f})")
+    return J, {"J_interp": 1, "render_snap_b": a.render_snap_b, "z_render_a": za, "z_render_b": zb, "J_weight_b": w}
 
 
 def render_redshifts(dirs):
@@ -338,14 +390,10 @@ def scan(a):
     out = os.path.join(a.out, f"scan_{a.line}_{a.snap:03d}_{a.task:03d}.hdf5")
     if os.path.exists(out):
         print(f"{out} exists: task done"); return
-    with h5py.File(os.path.join(a.render, "All", f"All_{a.render_snap:03d}.hdf5"), "r") as f:
-        zr = float(f["Header"].attrs["Redshift"])
-    if abs(zr - S.z) > 1e-4:
-        sys.exit(f"ERROR: render snapshot {a.render_snap} z = {zr} vs snapshot z = {S.z}")
     p = os.path.join(a.render, "Density", f"Density_{a.render_snap:03d}.hdf5")
     Rd = h5py.File(p if os.path.exists(p) else os.path.join(a.render, "All", f"All_{a.render_snap:03d}.hdf5"), "r")["Density"][()]
     N = Rd.shape[0]
-    J = load_J(a.J, N)
+    J, Jinfo = J_at(a, N, S.z)
     if J.shape != (N,) * 3:
         sys.exit(f"ERROR: J is {J.shape}, render {Rd.shape}")
     edges = np.linspace(0, S.n, a.ntask + 1).astype(np.int64)
@@ -363,7 +411,7 @@ def scan(a):
     fo = h5py.File(part, "w")
     fo.attrs.update({"snap": a.snap, "z": S.z, "line": a.line, "order": order, "rows": (r0, r1), "n_cube": a.n_cube,
                      "cube_side": a.cube_side, "seed": a.seed, "render_snap": a.render_snap, "grids": a.grids,
-                     "igm_cuts": list(a.igm_cuts or []), "rho_mean": P.rho_mean})
+                     "igm_cuts": list(a.igm_cuts or []), "rho_mean": P.rho_mean, **Jinfo})
     cg = {}
     CF = ("pos", "m", "rho", "V", "T", "xHII", "fII", "fIII", "J", "tb")
     t0, sV, sVtb, ncell = time.time(), 0.0, 0.0, 0
@@ -447,6 +495,14 @@ def merge(a):
     with h5py.File(files[0], "r") as f:
         A = dict(f.attrs)
     order, ntask = tuple(int(x) for x in A["order"]), None
+    for fn in files:                                   # the cells' J (scan) and the reference J (here) must be the same
+        with h5py.File(fn, "r") as f:
+            fa = dict(f.attrs)
+        if int(fa.get("J_interp", 0)) != (1 if a.J_b else 0) or int(fa["render_snap"]) != a.render_snap or \
+                (a.J_b and int(fa["render_snap_b"]) != a.render_snap_b):
+            sys.exit(f"ERROR: {fn} was scanned with render {fa['render_snap']}, J_interp {fa.get('J_interp', 0)}, "
+                     f"render b {fa.get('render_snap_b', '-')}; this merge: {a.render_snap}, {1 if a.J_b else 0}, "
+                     f"{a.render_snap_b if a.J_b else '-'}")
     rows = sorted(tuple(int(x) for x in h5py.File(fn, "r").attrs["rows"]) for fn in files)
     covered = sum(r1 - r0 for r0, r1 in rows)
     gaps = [(rows[i][1], rows[i + 1][0]) for i in range(len(rows) - 1) if rows[i][1] != rows[i + 1][0]]
@@ -475,7 +531,7 @@ def merge(a):
     for k in ("Density", "Temperature", "HII_Fraction", "HeII_Fraction", "HeIII_Fraction"):
         p = os.path.join(a.render, k, f"{k}_{a.render_snap:03d}.hdf5")
         R[k] = h5py.File(p if os.path.exists(p) else os.path.join(a.render, "All", f"All_{a.render_snap:03d}.hdf5"), "r")[k]
-    J = load_J(a.J, N)
+    J, _ = J_at(a, N, z)
     R_tb = np.empty((N,) * 3, np.float32)
     for i0 in range(0, N, 32):
         sl = slice(i0, i0 + 32)
@@ -617,6 +673,12 @@ def main():
         q.add_argument("--J", action="append", required=True, help="640^3 J_alpha files of the line (stars, AGN), summed; 'none' (alone) = J = 0")
         q.add_argument("--render", required=True, help="ren_640 directory of the matching render snapshot")
         q.add_argument("--render-snap", type=int, required=True)
+        q.add_argument("--max-dz", type=float, default=1e-4,
+                       help="largest |z_snapshot - z_render| accepted for --render-snap (the pixel reference)")
+        q.add_argument("--J-b", action="append", default=[],
+                       help="J files of a second render (--render-snap-b, same --render directory): J linear in z "
+                            "between the two renders, which must bracket the snapshot z")
+        q.add_argument("--render-snap-b", type=int)
         q.add_argument("--out", required=True, help="directory of the task files")
     q = sub.choices["scan"]
     q.add_argument("--task", type=int, required=True)

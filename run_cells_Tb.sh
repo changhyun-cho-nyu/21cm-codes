@@ -45,13 +45,25 @@ if [ "$LINE" = H ]; then J1=$JDIR/Jalpha_H_$JSNAP.hdf5; J2=$JDIR/Jalpha_AGN_H_$J
 else J1=$JDIR/Jalpha_He_${JSNAP}_$TR_TAG.hdf5; J2=$JDIR/Jalpha_AGN_He_${JSNAP}_$TR_TAG.hdf5; fi
 JARGS="--J $J1 --J $J2"
 if [ "$JSNAP" = none ]; then J1=none; J2=; JARGS="--J none"; fi   # JSNAP=none: J = 0 (He above z = 10.01, no J files)
+MAX_DZ=${MAX_DZ:-1e-4}                 # largest |z_snapshot - z_render RSNAP| accepted
+RSNAP_B=${RSNAP_B:-}                   # second render bracketing the snapshot z: J linear in z between RSNAP and RSNAP_B
+JSNAP_B=${JSNAP_B:-$RSNAP_B}           # (full snapshots 11, 17, 24, which fall between renders; user decision 2026-11-17)
+JB1=; JB2=
+if [ -n "$RSNAP_B" ]; then
+    if [ "$JSNAP" != "$RSNAP" ] || [ "$JSNAP_B" != "$RSNAP_B" ]; then echo "RSNAP_B needs J at the renders themselves (JSNAP = RSNAP, JSNAP_B = RSNAP_B)"; exit 1; fi
+    if [ $(( RSNAP <= 428 )) != $(( RSNAP_B <= 428 )) ]; then echo "RSNAP and RSNAP_B must be in the same render directory"; exit 1; fi
+    if [ "$LINE" = H ]; then JB1=$JDIR/Jalpha_H_$JSNAP_B.hdf5; JB2=$JDIR/Jalpha_AGN_H_$JSNAP_B.hdf5
+    else JB1=$JDIR/Jalpha_He_${JSNAP_B}_$TR_TAG.hdf5; JB2=$JDIR/Jalpha_AGN_He_${JSNAP_B}_$TR_TAG.hdf5; fi
+    JARGS="$JARGS --J-b $JB1 --J-b $JB2 --render-snap-b $RSNAP_B"
+fi
+JARGS="$JARGS --max-dz $MAX_DZ"
 
 source ~/.bashrc
 conda activate jupyter_env
 set -eo pipefail
 cd "$SLURM_SUBMIT_DIR"
-[ "$JSNAP" = none ] || for f in "$J1" "$J2"; do [ -s "$f" ] || { echo "missing $f"; exit 1; }; done
-echo "scan task $SLURM_ARRAY_TASK_ID/$NTASK: $LINE, $RUN snapshot $SNAP, render $RSNAP, J $J1 $J2, $(date), commit $(git rev-parse --short HEAD)"
+[ "$JSNAP" = none ] || for f in "$J1" "$J2" $JB1 $JB2; do [ -s "$f" ] || { echo "missing $f"; exit 1; }; done
+echo "scan task $SLURM_ARRAY_TASK_ID/$NTASK: $LINE, $RUN snapshot $SNAP, render $RSNAP${RSNAP_B:+ (J linear in z with $RSNAP_B)}, J $J1 $J2 $JB1 $JB2, $(date), commit $(git rev-parse --short HEAD)"
 python -u test_cells_Tb.py scan --snapdir $SD --snap $SNAP --line $LINE $JARGS --render $REN --render-snap $RSNAP \
     --out $OUT_DIR --task $SLURM_ARRAY_TASK_ID --ntask $NTASK --grids $GRIDS --n-cube $NCUBE ${IGM_CUTS:+--igm-cuts $IGM_CUTS}
 echo "done $(date)"

@@ -118,7 +118,7 @@ Reading:
 
 **Job bookkeeping:** the 21 cm job was submitted twice (29270984 and 29271014, both still pending); 29271014 was cancelled before it ran, 29270984 made all maps. SFR_eff (29237034) and J_α (29237051) ran from the repo root (logs in `../logs`, J binaries in `../bin`); the 21 cm job from `xray/` (logs in `xray/logs`).
 
-**Gas-cell 21 cm δT_b pilot (`cells_Tb_xray.py` + `run_cells_Tb_xray.sh`; written and tested on mocks 2026-11-16, two rounds of independent audit; not yet run).** Question (user, 2026-11-16): at z ≳ 10 the pixel maps mix cold and warm neutral gas (above); how much absorption do the gas cells give? A pilot on these runs before any Lumina gas-cell 21 cm run (`../test_cells_Tb.py --line H`, never run on Lumina). Scope (user, 2026-11-16): every full snapshot at z > 10 (024, 036, 048), both runs; τ_GP both ways. Added 066 (z = 7.995, render 207) as a validation in the X-ray run only: there T_S ≫ T_γ, so cells and pixels must agree. Without X-rays the void cells are still cold (~6–7 K at z = 10), so a cell–pixel difference at 066 is physics, not a failure.
+**Gas-cell 21 cm δT_b pilot (`cells_Tb_xray.py` + `run_cells_Tb_xray.sh`; written and tested on mocks 2026-11-16, two rounds of independent audit; run 2026-11-17, job 29467469, results below).** Question (user, 2026-11-16): at z ≳ 10 the pixel maps mix cold and warm neutral gas (above); how much absorption do the gas cells give? A pilot on these runs before any Lumina gas-cell 21 cm run (`../test_cells_Tb.py --line H`, never run on Lumina). Scope (user, 2026-11-16): every full snapshot at z > 10 (024, 036, 048), both runs; τ_GP both ways. Added 066 (z = 7.995, render 207) as a validation in the X-ray run only: there T_S ≫ T_γ, so cells and pixels must agree. Without X-rays the void cells are still cold (~6–7 K at z = 10), so a cell–pixel difference at 066 is physics, not a failure.
 - **Per cell:** δT_b from `tb_physics.Line('H', spin_model=1)` (the production physics), with the render conventions:
   - T from u and the snapshot's Ne; star-forming cells set neutral afterwards (as `test_cells_Tb.py`; negligible for δT_b, since x_c ≫ 1 there);
   - J_α of the cell's 128³ pixel;
@@ -148,3 +148,26 @@ Reading:
   - Round 1 (one reviewer): no defect in the means. Added the NGP baseline, the per-pixel map check, a non-finite stop, the τ_GP histogram range and clearer labels.
   - Round 2 (physics/conventions and code/numerics, separately): units, normalisation, conventions and indexing were confirmed. Fixed: the NGP normalisation above; means normalised by box³ instead of ΣV; NaN-safe map checks; x_HII clipping (NaN inside the T_S solve otherwise returns a finite wrong value); empty pixels filled consistently in both maps; the 066 expectation; the τ_GP and τ_21 caveats; report row order; memory request lowered to 64 GB.
 - **Cost:** about 2.2×10⁸ cells per task, ~26 GB peak measured by scaling, two T_S solves per cell, ~1–1.5 h per task. 8 tasks. **Commit before submitting:** the array tasks read the working tree, and the log records the commit.
+- **Results (job 29467469, 2026-11-17; 8/8 COMPLETED, 1 h 19 min – 1 h 39 min each; `python cells_Tb_xray.py report`, `data/cells_Tb_xray.png`).** Checks in every log read so far (task 0 in full): tb_physics reproduces `RIN_71` (ratio 0.999998, per pixel ≤ 2.2×10⁻⁵), dz = 0, gas mass cells/render 1.000000, axis order (0,1,2) at 0.74 against ≤ 0.02, NGP/render Δ² within 1% to k = 4.4 (4.7% at k = 10), r ≥ 0.994. ⟨δT_b⟩ [mK], production 128³ | 64³ | cells (τ_GP cell) | cells (τ_GP pix); share of the H I with T_S < T_γ, cells / 128³:
+
+  | run | z | 128³ | 64³ | cells (cell) | cells (pix) | T_S < T_γ |
+  |---|---|---|---|---|---|---|
+  | no X-rays | 15.016 | −1.108 | +1.065 | −8.005 | −7.824 | 0.578 / 0.439 |
+  | no X-rays | 11.931 | −1.521 | +7.291 | −29.710 | −29.420 | 0.499 / 0.320 |
+  | no X-rays | 10.014 | +4.733 | +12.888 | −21.492 | −21.410 | 0.437 / 0.249 |
+  | no X-rays | 7.995 | +8.969 | +12.942 | −3.623 | −3.612 | 0.342 / 0.172 |
+  | X-rays | 15.016 | −1.023 | +1.087 | −7.662 | −7.488 | 0.577 / 0.438 |
+  | X-rays | 11.931 | +5.564 | +10.592 | −8.665 | −8.562 | 0.445 / 0.264 |
+  | X-rays | 10.014 | +19.067 | +20.066 | +17.467 | +17.468 | 0.001 / 0.000 |
+  | X-rays | 7.995 | +16.812 | +16.926 | +16.672 | +16.672 | 0.000 / 0.000 |
+
+  - **Validation (X-rays, z = 7.995): cells / pixels 0.992.** At z = 10.0 with X-rays 0.916.
+  - **The gas cells absorb far more than the pixels at z ≳ 10:** ×7 at z = 15; at z = 11.93 −29.7 against −1.5 mK without X-rays, and −8.7 against +5.6 mK (sign flip) with X-rays. Without X-rays the cells still absorb at z = 8 (−3.6 against +9.0 mK). The 64³ pixels (Lumina's pixel size) are in emission at every snapshot. τ_GP from the cell or the pixel changes the result by ≤ 2.3%.
+  - **Where (task 0, no X-rays, z = 15):** neutral gas at T < 5.5 K (the 5 K floor) gives −8.23 mK in cells against −0.60 in 128³ pixels; neutral 1+δ = 0.5–1 gives −9.61 against −3.63 mK. ⟨1 − T_γ/T_S⟩_HI = −0.235, ⟨S̃_α⟩_HI 0.805, min x_CMB 0.934, max τ_21 0.137.
+  - **Δ² (task 0):** cells / NGP pixels 0.35 at k = 0.23, 0.62 at 0.56, ≈ 1 at k ≳ 3 h/cMpc, r ≥ 0.88; the cells deepen the mean but carry ~3× less large-scale power (reason not yet established).
+  - **Still far from the −100 to −200 mK of typical models.** At z = 11.93 the prefactor is ≈ 30.8 mK; logs of tasks 1 and 5 (z = 11.93):
+    - No X-rays: ⟨1 − T_γ/T_S⟩_HI = −0.997, ⟨S̃_α⟩_HI 0.84, H I with T_S < T_γ 0.50 (pixels 0.32). Absorbing −37.6, emitting +7.9 mK. By T: < 5.5 K (floor) −27.2 (pixels −1.4), 5.5–35 K −10.5, > 35 K +7.6 mK. By 1+δ: 0.3–1 −36.4, > 1 +6.4 mK. The floor gas is ≈ 25% of the H I (cells_T 036: 57% of 4.6% + 54% of 42%); fully coupled at 5.25 K it would give 30.8 × 0.25 × (1 − 35.24/5.25) ≈ −44 mK, so its coupling is ≈ 0.6 (≈ 0.1 at z = 15: −8.2 against ≈ −83 mK for 33% of the H I). Estimate, three limits: (a) about half the H I (1+δ > 1, median 91–1166 K) is shock-heated and emits; (b) coupling ≈ 0.6 at z = 12, ≈ 0.1 at z = 15; (c) the floor: at adiabatic 2.1–3.0 K the cold gas's 1 − T_γ/T_K would be ≈ ×2 larger (rough; the coupling of colder gas also changes).
+    - X-rays: ⟨1 − T_γ/T_S⟩_HI = −0.29, ⟨S̃_α⟩_HI 0.88, T_S < T_γ 0.445. Floor gas only −1.3 mK; the X-ray-warmed voids (12–13 K) carry −15.9 mK (5.5–35 K); emitting +8.6. So with Lumina's physics the z ≈ 12 trough is set by X-ray heating of the voids (1 − T_γ/T_K ≥ −1.8) and partial coupling; the floor matters only before X-ray heating (z ≈ 15, where both runs agree: −8.0 / −7.7 mK).
+    - Δ² cells / render pixels at 128³: no X-rays 0.88–1.05 (r ≥ 0.79); X-rays 1.71 at k = 0.23 falling to ≈ 1 at k ≈ 2 (r ≥ 0.88).
+  - Only four snapshots: the cell-level trough minimum between z = 15 and 10 is not resolved (no full snapshot between 15.02 and 11.93).
+
