@@ -539,6 +539,10 @@ The code is Neyer's mfp-bubbles-thesan (arXiv:2310.03783) adapted to the Lumina 
   Dense He II inside the bubbles stops the rays (the same gas that carries the gas-cell 3.46 cm signal).
 - **New code:** `mfp/lumina-mfp-hist-grid.cc` (volume fractions; `-DLINE_HE` for He; 64-bit histograms; read errors stop the run; falls back to `All_NNN.hdf5`).
 - **To run:** `mfp/run_mfp.sh` for the snapshots without volume-weighted output (H 8, He 47). `BSD.ipynb` cell 2 reads `LUMINA_*_Vol`.
+- **Provenance of the existing `_Vol` files (job 29695919, `mfp/check_mfp_outputs.py`):** the ray count equals 192 × N(x > 0.5) exactly, which identifies the field.
+  - All 17 H and 52 He files (the May files plus the first new ones) are the volume field; the mass field would give 2–12% fewer start cells.
+  - Reruns with the new 64-bit build: H 177 is bit-identical. He 450 has the same start cells, with 139 of 8.2 × 10⁹ rays one bin over (2 × 10⁻⁸). The May He build applied 1/y as the double 12.666667, the new one as a float, so x differs in the last bit. Medians and percentiles are unchanged.
+  - So the old and new outputs can be mixed.
 - **Caveats:**
   - Rays capped at 1000 cMpc: 3.2% at H z = 5.55, 1–4.4% at He z = 3.17–3.04, so the means there are biased low; medians and p84 are not.
   - Medians reach about 200 cMpc, nearly half the 500 cMpc box, at the latest points.

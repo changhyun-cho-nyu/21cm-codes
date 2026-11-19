@@ -115,12 +115,19 @@ def main():
                 _, h2, _ = hists(q)
                 same = [k for k in h if np.array_equal(h[k], h2[k])]
                 diff = [k for k in h if k not in same]
-                if diff:
-                    bad += 1
-                    d = h["mfp_hist"] - h2["mfp_hist"]
-                    notes.append(f"DIFFERS from {q} in {diff} (mfp_hist: {int(np.abs(d).sum())} rays moved)")
-                else:
+                d = h["mfp_hist"] - h2["mfp_hist"]
+                moved = int(np.abs(d).sum()) // 2           # each moved ray leaves one bin and enters another
+                frac = moved / max(rays, 1)
+                if not diff:
                     notes.append("identical to the comparison build")
+                elif int(h2["mfp_hist"].sum()) == rays and frac < 1e-6:
+                    # same start cells, a few rays one bin over: float rounding of x (the May He build scaled by the
+                    # double 12.666667, the 2026-11-19 build by a float; H, unscaled, is bit-identical). He 450: 139 of
+                    # 8.2e9 rays (2026-11-19, job 29695919)
+                    notes.append(f"agrees with the comparison build ({moved} of {rays} rays one bin over, {frac:.0e}: rounding)")
+                else:
+                    bad += 1
+                    notes.append(f"DIFFERS from {q} in {diff} (mfp_hist: {moved} rays moved, {frac:.1e})")
         print(f"{s:5d} {float(H['Redshift']):7.3f} {rays / nd:13.0f} {nV:12d} {nM:12d}  {field:7s} {med:8.2f} {p84:8.2f}  "
               + "; ".join(notes), flush=True)
     print(f"\n{len(snaps)} files, {bad} problem(s)")
