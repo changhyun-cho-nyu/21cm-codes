@@ -40,7 +40,8 @@ import make_vid
 from make_vid import BOX_CMPC, cell_maps, get_redshift, write_vid
 
 N_SPLIT = 5                       # 500 cMpc / 100 cMpc
-MAX_DCOUNT = 3                    # voxels per bin allowed to differ from the reference VID (bin-edge round-off)
+MAX_DCOUNT = 3                    # voxels per bin allowed to differ from the reference VID (bin-edge round-off) ...
+REL_DCOUNT = 1e-4                 # ... plus this fraction of the bin's voxels (edge shift 2e-6 / log width >= 0.1: <= 4e-5)
 
 
 def voxel_counts(df, nvox):
@@ -135,18 +136,35 @@ def main():
             # Not bit-identical in general: the maps are float32 and numpy's float32 log10 (the bin edges) is CPU-dispatched,
             # so edges computed on another machine can differ by ~1e-6 and move a voxel lying on an edge (2026-11-19:
             # render 177, VID/H_wf from compute nodes vs the login node: edges 2.2e-6, one voxel in the top bin). So:
-            # same bins (centres to 1e-5) and the same voxel count in every bin to within MAX_DCOUNT.
+            # A shift d of the edges moves ~ C d / dln voxels of a bin of C voxels and log width dln (He gas-cell map,
+            # 2026-11-19: d = 1.8e-6, bins of ~1e7 voxels, 135 voxels in total moved). So: (1) the same map: the
+            # statistics equal the reference's _stats.csv to 1e-5; (2) the same VID: bin centres to 1e-5 and every bin's
+            # voxel count within MAX_DCOUNT + REL_DCOUNT * count (the counts are reconstructed from the CSV, ~1e-6 C).
             r, h = pd.read_csv(ref), pd.read_csv(os.path.join(out, "VID_full.csv"))
+            rs = ref.replace(".csv", "_stats.csv")
+            if os.path.exists(rs):
+                q = pd.read_csv(rs).iloc[0]
+                dst = max(abs(q[k] - full[k]) / max(abs(q[k]), 1e-300) for k in ("mean", "std", "skewness", "kurtosis"))
+                ok_map = dst < 1e-5
+                print(f"  check: statistics vs {rs}: max rel diff {dst:.1e} (mean, std, skewness, kurtosis): "
+                      f"{'same map' if ok_map else 'DIFFERENT'}")
+            else:
+                ok_map = True
+                print(f"  check: no {rs}, statistics not compared")
             ok = len(r) == len(h) and list(r["side"]) == list(h["side"])
             if ok:
                 dtb = float(np.max(np.abs(r["Tb"] - h["Tb"]) / np.abs(r["Tb"])))
-                dc = np.abs(voxel_counts(r, N**3) - voxel_counts(h, N**3))
-                ok = dtb < 1e-5 and dc.max() <= MAX_DCOUNT
-                print(f"  check: full-box VID vs {ref}: bin centres max rel diff {dtb:.1e}, voxel counts max |diff| "
-                      f"{dc.max():.2f} (total {dc.sum():.2f} of {N**3:,}): {'same' if ok else 'DIFFERENT'}")
+                cr = voxel_counts(r, N**3)
+                dc = np.abs(cr - voxel_counts(h, N**3))
+                lim = MAX_DCOUNT + REL_DCOUNT * cr
+                ok = dtb < 1e-5 and bool(np.all(dc <= lim))
+                i = int(np.argmax(dc / lim))
+                print(f"  check: full-box VID vs {ref}: bin centres max rel diff {dtb:.1e}; voxel counts: total |diff| "
+                      f"{dc.sum():.1f} of {N**3:,}, worst bin {dc[i]:.1f} of {cr[i]:.0f} (limit {lim[i]:.1f}): "
+                      f"{'same' if ok else 'DIFFERENT'}")
             else:
                 print(f"  check: full-box VID vs {ref}: {len(r)} vs {len(h)} rows or different sides: DIFFERENT")
-            if not ok:
+            if not (ok and ok_map):
                 sys.exit("STOP: the full-box VID differs from the VID figure's (different map or estimator)")
     print(f"wrote {out}: VID_full.csv, {len(sub)} VID_sub_*.csv, stats.csv")
 
