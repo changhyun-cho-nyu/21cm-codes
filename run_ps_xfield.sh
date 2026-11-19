@@ -25,7 +25,7 @@ OUT=${OUT:-$U/xfield_ps}
 # x_HII: the snapshots of visual_PS cells 3-5 (and PS2Bubble); x_HeIII: visual_PS cell 10's renders and the renders of
 # the full snapshots used for the gas-cell delta T_b^He spectra (116 ... 146 -> 406, 428, 452, 476, 501, 516, 528, 552, 582)
 H_SNAPS=${H_SNAPS:-"177 203 220 242 264 283 300 318 338"}
-HE_SNAPS=${HE_SNAPS:-"406 428 450 452 471 476 487 500 501 514 516 528 529 552 558 582 596"}
+HE_SNAPS=${HE_SNAPS:-"406 428 450 452 471 476 487 500 501 514 516 528 529 552 558 582 596 614"}
 Y_INV=12.666666666666666          # 1/y, y = (1 - 0.76) / (4 x 0.76)
 
 source ~/.bashrc
