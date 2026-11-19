@@ -173,6 +173,40 @@ def check_J_z(files, zr, tag):
             sys.exit(f"STOP: {fn} is at z = {float(zj)}, render {tag} at z = {zr}")
 
 
+TAG_NEW = ("spin_model", "J_files", "J_b_files", "ntask")      # task-file attributes written from 2026-11-19 on
+
+
+def _same(got, want):
+    if isinstance(got, bytes):
+        got = got.decode()
+    if isinstance(want, str):
+        return str(got) == want
+    if isinstance(want, (list, tuple)):
+        return [float(x) for x in np.atleast_1d(got)] == [float(x) for x in want]
+    return float(got) == float(want)
+
+
+def check_tag(fa, a, fn, extra=None):
+    """a task file must come from the same line, spin model, render(s) and J files as this run (scan reuse, merge);
+    audit 2026-11-19: before, a rescan reused any existing task file and the merge checked only the renders.
+    Task files written before 2026-11-19 have no TAG_NEW attributes: those are not checked (a note is printed)."""
+    want = {"line": a.line, "spin_model": a.spin_model, "render_snap": a.render_snap, "J_interp": 1 if a.J_b else 0,
+            "J_files": ";".join(os.path.basename(x) for x in a.J), "J_b_files": ";".join(os.path.basename(x) for x in a.J_b)}
+    if a.J_b:
+        want["render_snap_b"] = a.render_snap_b
+    want.update(extra or {})
+    bad, unchecked = [], []
+    for k, v in want.items():
+        got = fa.get(k, 0 if k == "J_interp" else None)
+        if got is None:
+            (unchecked if k in TAG_NEW else bad).append(k)
+        elif not _same(got, v):
+            bad.append(f"{k} = {got!r} (this run: {v!r})")
+    if bad:
+        sys.exit(f"ERROR: {fn} was made with different settings: {'; '.join(map(str, bad))}. Remove it (or use another --out).")
+    return unchecked
+
+
 def J_at(a, N, z):
     """J at the snapshot's z: the --J files (render --render-snap), or, with --J-b, linear in z between render
     --render-snap (a) and --render-snap-b (b), which must bracket z (user decision 2026-11-17 for the full
@@ -181,6 +215,7 @@ def J_at(a, N, z):
     if abs(za - z) > a.max_dz:
         sys.exit(f"ERROR: render snapshot {a.render_snap} z = {za} vs snapshot z = {z} (|dz| > --max-dz {a.max_dz})")
     if not a.J_b:
+        check_J_z(a.J, za, f"{a.render_snap}")                    # audit 2026-11-19: was checked only with --J-b
         J = load_J(a.J, N)
         return J, {"J_interp": 0}
     if a.render_snap_b is None or list(a.J) == ["none"] or list(a.J_b) == ["none"]:
@@ -388,16 +423,23 @@ def scan(a):
     box = S.box
     os.makedirs(a.out, exist_ok=True)
     out = os.path.join(a.out, f"scan_{a.line}_{a.snap:03d}_{a.task:03d}.hdf5")
-    if os.path.exists(out):
-        print(f"{out} exists: task done"); return
+    if not 0 <= a.task < a.ntask:
+        sys.exit(f"ERROR: --task {a.task} outside 0..{a.ntask - 1} (--ntask {a.ntask})")
+    edges = np.linspace(0, S.n, a.ntask + 1).astype(np.int64)
+    r0, r1 = int(edges[a.task]), int(edges[a.task + 1])
+    if os.path.exists(out):                       # reuse only a task file of the same run (audit 2026-11-19)
+        with h5py.File(out, "r") as f:
+            fa = dict(f.attrs)
+        un = check_tag(fa, a, out, {"snap": a.snap, "rows": (r0, r1), "n_cube": a.n_cube, "cube_side": a.cube_side,
+                                    "seed": a.seed, "grids": a.grids, "igm_cuts": list(a.igm_cuts or []), "ntask": a.ntask})
+        print(f"{out} exists, same settings{' (not recorded, not checked: ' + ', '.join(un) + ')' if un else ''}: task done")
+        return
     p = os.path.join(a.render, "Density", f"Density_{a.render_snap:03d}.hdf5")
     Rd = h5py.File(p if os.path.exists(p) else os.path.join(a.render, "All", f"All_{a.render_snap:03d}.hdf5"), "r")["Density"][()]
     N = Rd.shape[0]
     J, Jinfo = J_at(a, N, S.z)
     if J.shape != (N,) * 3:
         sys.exit(f"ERROR: J is {J.shape}, render {Rd.shape}")
-    edges = np.linspace(0, S.n, a.ntask + 1).astype(np.int64)
-    r0, r1 = int(edges[a.task]), int(edges[a.task + 1])
     print(f"snapshot {a.snap} z = {S.z:.5f}, line {a.line}, task {a.task}/{a.ntask}: rows {r0:,}-{r1:,} of {S.n:,}")
     order = choose_order(S, (r0, min(r1, r0 + 5_000_000)), Rd, box)
     del Rd
@@ -411,7 +453,10 @@ def scan(a):
     fo = h5py.File(part, "w")
     fo.attrs.update({"snap": a.snap, "z": S.z, "line": a.line, "order": order, "rows": (r0, r1), "n_cube": a.n_cube,
                      "cube_side": a.cube_side, "seed": a.seed, "render_snap": a.render_snap, "grids": a.grids,
-                     "igm_cuts": list(a.igm_cuts or []), "rho_mean": P.rho_mean, **Jinfo})
+                     "igm_cuts": list(a.igm_cuts or []), "rho_mean": P.rho_mean, **Jinfo,
+                     "spin_model": a.spin_model, "ntask": a.ntask,
+                     "J_files": ";".join(os.path.basename(x) for x in a.J),
+                     "J_b_files": ";".join(os.path.basename(x) for x in a.J_b)})
     cg = {}
     CF = ("pos", "m", "rho", "V", "T", "xHII", "fII", "fIII", "J", "tb")
     t0, sV, sVtb, ncell = time.time(), 0.0, 0.0, 0
@@ -495,20 +540,26 @@ def merge(a):
     with h5py.File(files[0], "r") as f:
         A = dict(f.attrs)
     order, ntask = tuple(int(x) for x in A["order"]), None
+    if not files:
+        sys.exit(f"ERROR: no task files scan_{a.line}_{a.snap:03d}_*.hdf5 in {a.out}")
+    unchecked = set()
+    same = ("ntask", "n_cube", "cube_side", "seed", "grids")       # must agree between the task files
     for fn in files:                                   # the cells' J (scan) and the reference J (here) must be the same
         with h5py.File(fn, "r") as f:
             fa = dict(f.attrs)
-        if int(fa.get("J_interp", 0)) != (1 if a.J_b else 0) or int(fa["render_snap"]) != a.render_snap or \
-                (a.J_b and int(fa["render_snap_b"]) != a.render_snap_b):
-            sys.exit(f"ERROR: {fn} was scanned with render {fa['render_snap']}, J_interp {fa.get('J_interp', 0)}, "
-                     f"render b {fa.get('render_snap_b', '-')}; this merge: {a.render_snap}, {1 if a.J_b else 0}, "
-                     f"{a.render_snap_b if a.J_b else '-'}")
+        unchecked |= set(check_tag(fa, a, fn, {"snap": a.snap, **{k: A[k] for k in same if k in A}}))
+    if unchecked:
+        print(f"  note: task files without {', '.join(sorted(unchecked))} (written before 2026-11-19): not checked")
     rows = sorted(tuple(int(x) for x in h5py.File(fn, "r").attrs["rows"]) for fn in files)
     covered = sum(r1 - r0 for r0, r1 in rows)
     gaps = [(rows[i][1], rows[i + 1][0]) for i in range(len(rows) - 1) if rows[i][1] != rows[i + 1][0]]
-    print(f"  rows covered {covered:,} of {S.n:,}" + (f"; GAPS {gaps[:5]}" if gaps or covered != S.n else ""))
-    if covered != S.n:
-        print("  WARNING: not the whole snapshot (some tasks missing): whole-box numbers are partial")
+    ends_ok = rows[0][0] == 0 and rows[-1][1] == S.n
+    print(f"  rows covered {covered:,} of {S.n:,}" + (f"; GAPS/OVERLAPS {gaps[:5]}" if gaps or not ends_ok or covered != S.n else ""))
+    if gaps or not ends_ok or covered != S.n:          # audit 2026-11-19: was a warning, and the maps were still written
+        msg = "not the whole snapshot exactly once (tasks missing, or task files of different --ntask)"
+        if not a.allow_partial:
+            sys.exit(f"ERROR: {msg}; rerun the missing tasks, or --allow-partial for a test")
+        print(f"  WARNING (--allow-partial): {msg}: whole-box numbers and maps are partial")
     G_ = None
     sV = sVtb = 0.0
     for fn in files:
@@ -566,6 +617,16 @@ def merge(a):
         del r
     # whole box: cell level vs production
     cellmap = np.where(G_["V"] > 0, G_["V_tb"] / np.maximum(G_["V"], 1e-300), R_tb).astype(np.float32)
+    n_empty = int((G_["V"] == 0).sum())                # pixels with no cell centre: production value (recorded in the maps)
+    if n_empty:
+        print(f"  NOTE: {n_empty:,} pixels hold no cell centre; the cell-level map uses the production value there")
+    prov = {"line": a.line, "spin_model": a.spin_model, "render_snap": a.render_snap, "snap_full": a.snap,
+            "J_files": ";".join(os.path.basename(x) for x in a.J), "J_interp": 1 if a.J_b else 0,
+            "n_empty_pixels_production": n_empty}
+    if a.J_b:
+        prov.update({"render_snap_b": a.render_snap_b, "J_b_files": ";".join(os.path.basename(x) for x in a.J_b),
+                     "J_weight_b": (z - render_z(a.render, a.render_snap)) / (render_z(a.render, a.render_snap_b)
+                                                                               - render_z(a.render, a.render_snap))})
     mean_cell = sVtb / sV
     mean_prod = float(R_tb.astype(np.float64).mean())
     print(f"\n  WHOLE BOX, <dT_b> [{unit}]: production ({N}^3 render inputs) {mean_prod:+.5e}, cell level {mean_cell:+.5e}; "
@@ -599,20 +660,20 @@ def merge(a):
             f["dTb_cell"] = cellmap; f["dTb_production"] = R_tb
             for cut, mi in igm_maps.items():
                 f[f"dTb_cell_igm_lt{cut:g}"] = mi
-            f.attrs.update({"z": z, "unit": unit, "order": order, "box": box})
+            f.attrs.update({"z": z, "unit": unit, "order": order, "box": box, **prov})
         # the cell-level map in the format of the production maps (RIN_NNN.hdf5: dataset "rin", render index order),
         # for the bispectrum, VID or PS codes that read those
         with h5py.File(os.path.join(a.out, f"RIN_cell_{a.line}_{a.snap:03d}.hdf5"), "w") as f:
             f["rin"] = cellmap
             f["rin"].attrs["content"] = np.bytes_(f"delta T_b{'^He' if a.line == 'He' else ''} [{unit}], real space; gas-cell level "
                                                   f"(volume-weighted mean of the Voronoi cells in each pixel), test_cells_Tb.py")
-            f.attrs.update({"z": z, "snap_full": a.snap, "render_snap": a.render_snap, "box_ckpc_h": box})
+            f.attrs.update({"z": z, "box_ckpc_h": box, "order": order, **prov})
         for cut, mi in igm_maps.items():
             with h5py.File(os.path.join(a.out, f"RIN_cell_igm{cut:g}_{a.line}_{a.snap:03d}.hdf5"), "w") as f:
                 f["rin"] = mi
                 f["rin"].attrs["content"] = np.bytes_(f"delta T_b{'^He' if a.line == 'He' else ''} [{unit}], real space; gas-cell "
                                                       f"level, only cells with 1 + delta < {cut:g} (sum over them / pixel gas volume)")
-                f.attrs.update({"z": z, "snap_full": a.snap, "render_snap": a.render_snap, "box_ckpc_h": box, "igm_cut": cut})
+                f.attrs.update({"z": z, "box_ckpc_h": box, "order": order, "igm_cut": cut, **prov})
     # cubes: the resolution ladder
     nc = int(A["n_cube"])
     names = [str(n) for n in levels(N)] + ["cell", "production"]
@@ -693,6 +754,8 @@ def main():
                    help="full: 6 640^3 sums incl. the render checks (~7.3 GB per task); slim: volume and volume x dT_b (2.1 GB)")
     sub.choices["merge"].add_argument("--save-map", action="store_true",
                                       help="write the 640^3 cell-level and production maps (and RIN_cell_<line>_<snap>.hdf5)")
+    sub.choices["merge"].add_argument("--allow-partial", action="store_true",
+                                      help="merge although the task files do not cover the snapshot exactly once (tests only)")
     a = p.parse_args()
     {"inspect": inspect, "scan": scan, "merge": merge}[a.mode](a)
 

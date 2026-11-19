@@ -51,6 +51,10 @@ def spectrum(m, L):
     binfac = BINS_PS / (np.log(Kmax) - np.log(Kmin))
     cnt = np.zeros(BINS_PS)
     Ps = np.zeros(BINS_PS)
+    # As the C estimator, every rfft element with 0 <= kz < N/2 + 1 is counted, so on the kz = 0 plane both k and -k
+    # enter (audit 2026-11-19): unbiased for isotropic (real-space) maps, but CountModes overstates the independent modes
+    # (x 5/3 at the lowest |n|^2, x 1.1 at k ~ 0.05-0.1 h/cMpc) and a redshift-space monopole is a few % low. Kept to
+    # reproduce the C files; new estimators (bispectrum, bubble sizes) should count each mode once (cross_spectrum.py).
     for i in range(N):                                    # one x plane at a time (memory)
         k = np.sqrt(kxy2[i][:, None] + kz2[None, :])
         ok = (k >= Kmin) & (k < Kmax)
@@ -111,7 +115,7 @@ def main():
               f"median {np.median(r):.6f}, range {r.min():.6f} - {r.max():.6f} ({use.sum()} bins); "
               f"z {float(head[0]):g} vs {z:g}")
         if not same_counts or np.max(np.abs(r - 1)) > 1e-3:
-            sys.exit(1)
+            sys.exit(3)                     # 3 = the check failed (run_ps_cell.sh tells it from a crash)
 
 
 if __name__ == "__main__":

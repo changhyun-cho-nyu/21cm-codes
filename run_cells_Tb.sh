@@ -62,6 +62,9 @@ source ~/.bashrc
 conda activate jupyter_env
 set -eo pipefail
 cd "$SLURM_SUBMIT_DIR"
+# NTASK must be the array size: else part of the snapshot is never scanned (audit 2026-11-19; the merge now stops too)
+[ -z "$SLURM_ARRAY_TASK_COUNT" ] || [ "$SLURM_ARRAY_TASK_COUNT" = "$NTASK" ] || \
+    { echo "ERROR: NTASK=$NTASK but the array has $SLURM_ARRAY_TASK_COUNT tasks (sbatch --array=0-$((NTASK - 1)))"; exit 1; }
 [ "$JSNAP" = none ] || for f in "$J1" "$J2" $JB1 $JB2; do [ -s "$f" ] || { echo "missing $f"; exit 1; }; done
 echo "scan task $SLURM_ARRAY_TASK_ID/$NTASK: $LINE, $RUN snapshot $SNAP, render $RSNAP${RSNAP_B:+ (J linear in z with $RSNAP_B)}, J $J1 $J2 $JB1 $JB2, $(date), commit $(git rev-parse --short HEAD)"
 python -u test_cells_Tb.py scan --snapdir $SD --snap $SNAP --line $LINE $JARGS --render $REN --render-snap $RSNAP \

@@ -85,6 +85,9 @@ def wf_terms(Ts, Tg, T, A, tauGP, tauTs):
 def solve_ts_wf(Tg, T, A, xc, tauGP, tauTs, nbis=200):
     """T_S of 1/T_S = (x_CMB/T_g + x~_a/T_c + x_c/T_K)/(x_CMB + x~_a + x_c) by bisection in ln T_S"""
     Tg, T, A, xc, tauGP, tauTs = np.broadcast_arrays(*(np.asarray(v, dtype=float) for v in (Tg, T, A, xc, tauGP, tauTs)))
+    bad = ~(np.isfinite(T) & np.isfinite(A) & np.isfinite(xc) & np.isfinite(tauGP) & np.isfinite(tauTs) & (T > 0))
+    if np.any(bad):                     # audit 2026-11-19: NaN passed both bracket tests and came back as T_S = NaN
+        raise ValueError(f"T_S: {int(bad.sum())} cells with non-finite or non-positive inputs (T_K, J, x_c, tau)")
 
     def F(Ts):
         S, Tci, xcmb = wf_terms(Ts, Tg, T, A, tauGP, tauTs)
@@ -102,7 +105,14 @@ def solve_ts_wf(Tg, T, A, xc, tauGP, tauTs, nbis=200):
         llo, lhi = np.where(pos, mid, llo), np.where(pos, lhi, mid)
         if np.max(lhi - llo) < 1e-14:
             break
-    return np.exp(0.5 * (llo + lhi))
+    Ts = np.exp(0.5 * (llo + lhi))
+    # as spin_wf.h (ok = -1, fatal in PS_21cm_mpi.c): its iteration starts at T_S = T_g and stops if 1/T_c <= 0 there or
+    # later; 1/T_c falls with T_S, so the test is at max(T_S, T_g). T_K below ~0.4 K, far outside the fit's T_K >= 2 K
+    _, Tci, _ = wf_terms(np.maximum(Ts, Tg), Tg, T, A, tauGP, tauTs)
+    if np.any(Tci <= 0):
+        raise ValueError(f"T_S: 1/T_c <= 0 in {int(np.sum(Tci <= 0))} cells (T_K min {float(T.min()):.3g} K; Hirata Eq. 42 "
+                         f"needs T_K >~ 0.4 K)")
+    return Ts
 
 
 class Line:
@@ -139,6 +149,9 @@ class Line:
         21 cm, spin_model 1 only: nHI_gp [proper cm^-3] replaces the local n_HI in tau_GP (default: x_HI nH, as the
         maps; tau_21 always uses the local n_HI); full=True also returns {TS, xcmb, tauGP, tau21}."""
         z = self.z
+        for nm, v in (("nH", nH), ("T", T), ("J", J), ("sig", sig)):     # audit 2026-11-19: one NaN cell would poison a map
+            if not np.all(np.isfinite(v)):
+                raise ValueError(f"tb: {int(np.size(v) - np.count_nonzero(np.isfinite(v)))} non-finite values of {nm}")
         if (nHI_gp is not None or full) and not (self.line == "H" and self.spin_model == 1):
             raise ValueError("nHI_gp / full are options of the 21 cm spin_model 1 only")
         ne = nH * (xHII + fII + 2.0 * fIII)

@@ -7,7 +7,9 @@ coefficient
 in log bins of |k| (rfft half-space, each independent mode once). r = +1: B is A times a positive factor in that k
 bin (up to the bin's mode scatter); r = -1: a negative factor; r ~ 0: no linear relation at that scale. Also prints
 the "bias" b_AB = P_AB / P_BB (A ~ b B + uncorrelated part) and the 1-sigma error of r for Gaussian fields,
-(1 - r^2) / sqrt(N_modes).
+(1 - r^2) / sqrt(2 N_modes) (each complex mode has two real degrees of freedom; before 2026-11-19 the code printed
+(1 - r^2) / sqrt(N_modes), sqrt(2) too large). Bin edges at 10^(j/per_decade) h/cMpc (from 2026-11-19; before,
+k_f 10^(j/per_decade)), so r(k) and the notebooks' rebinned Delta^2(k) share bins.
 
 For the 3.46 cm question (user, 2026-11-18): does the gas-cell delta T_b^He map carry the He III bubbles? A =
 cell_test*/RIN_cell_He_NNN.hdf5 (gas-cell delta T_b^He), B = the render fields at the matched render:
@@ -56,7 +58,12 @@ class Bins:
         ii = np.abs(np.fft.fftfreq(N, 1.0 / N))
         k = kf * np.sqrt(ii[:, None, None]**2 + ii[None, :, None]**2 + np.arange(N // 2 + 1)[None, None, :]**2)
         lo, hi = kf, kf * N / 2
-        self.edges = lo * 10.0**(np.arange(0.0, np.log10(hi / lo) + 1e-9, 1.0 / per_decade))
+        # edges at 10^(j/per_decade) h/cMpc, the grid of the notebooks' rebinned auto spectra (audit 2026-11-19: they
+        # were at k_f 10^(j/per_decade), 0.07 dex off), plus k_f and k_f N/2 at the ends (partial first/last bins)
+        j = np.arange(np.ceil(np.log10(lo) * per_decade - 1e-9), np.floor(np.log10(hi) * per_decade + 1e-9) + 1)
+        e = 10.0**(j / per_decade)
+        e = e[(e > lo * (1 + 1e-9)) & (e < hi * (1 - 1e-9))]
+        self.edges = np.concatenate([[lo], e, [hi]])
         self.idx = np.digitize(k, self.edges).ravel()            # 0: k = 0; len(edges): beyond the last edge
         # each independent mode once: on the planes kz = 0 and kz = N/2 the half (ky, kx) < 0 duplicates the rest
         w = np.ones(k.shape)
@@ -102,8 +109,9 @@ def main():
         PBB = bins.sum(np.abs(FB)**2) / np.maximum(bins.n, 1) * norm
         PAB = bins.sum((FA * np.conj(FB)).real) / np.maximum(bins.n, 1) * norm
         del FB
-        r = PAB / np.sqrt(PAA * PBB)
-        err = (1 - r**2) / np.sqrt(np.maximum(bins.n, 1))
+        with np.errstate(invalid="ignore", divide="ignore"):        # bins without modes (not printed or saved)
+            r = PAB / np.sqrt(PAA * PBB)
+        err = (1 - r**2) / np.sqrt(2.0 * np.maximum(bins.n, 1))      # 2 real d.o.f. per complex mode (audit 2026-11-19)
         print(f"\n  B{j} = {nameB}")
         print(f"  {'k [h/cMpc]':>10} {'modes':>9} {'r_AB':>8} {'+-':>6} {'b = P_AB/P_BB':>14}")
         for i in np.flatnonzero(use):

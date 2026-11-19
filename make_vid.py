@@ -103,10 +103,14 @@ def snaps_in(maps):
 def cell_maps(root, line):
     """{full snapshot: (file, dataset)} of the gas-cell maps: RIN_cell_<line>_NNN.hdf5, else cellmap_<line>_NNN.hdf5"""
     out = {}
-    for f in glob.glob(os.path.join(root, "cell_test*", f"cellmap_{line}_*.hdf5")):
-        out[int(re.search(r"_(\d+)\.hdf5$", f).group(1))] = (f, "dTb_cell")
-    for f in glob.glob(os.path.join(root, "cell_test*", f"RIN_cell_{line}_*.hdf5")):
-        out[int(re.search(r"_(\d+)\.hdf5$", f).group(1))] = (f, "rin")
+    for pat, ds in ((f"cellmap_{line}_*.hdf5", "dTb_cell"), (f"RIN_cell_{line}_*.hdf5", "rin")):
+        seen = {}
+        for f in sorted(glob.glob(os.path.join(root, "cell_test*", pat))):
+            s = int(re.search(r"_(\d+)\.hdf5$", f).group(1))
+            if s in seen:                     # audit 2026-11-19: was the last one in glob order, silently
+                sys.exit(f"ERROR: full snapshot {s} has two gas-cell maps: {seen[s]} and {f}")
+            seen[s] = f
+            out[s] = (f, ds)                  # RIN_cell (second pattern) wins over cellmap of the same snapshot
     return out
 
 

@@ -28,6 +28,8 @@ cd "${SLURM_SUBMIT_DIR:-$PWD}"
 [ -f ps_from_map.py ] || { echo "submit from the 21cm-codes directory"; exit 1; }
 mkdir -p "$OUT"
 echo "host $(hostname), $(date), commit $(git rev-parse --short HEAD)"
+dup=$(ls $U/cell_test*/cellmap_He_*.hdf5 | sed 's#.*/cellmap_He_##' | sort | uniq -d)
+[ -z "$dup" ] || { echo "ERROR: full snapshot(s) $dup have cellmap_He files in more than one cell_test* directory"; exit 1; }
 n=0
 for cm in $U/cell_test*/cellmap_He_*.hdf5; do
     s=$(basename "$cm" .hdf5 | sed 's/cellmap_He_//')
@@ -42,7 +44,7 @@ for cm in $U/cell_test*/cellmap_He_*.hdf5; do
     chk=""
     [ -n "$r" ] && [ -f "$U/Tb_maps_prod/He/PS_$r.out" ] && chk="--check $U/Tb_maps_prod/He/PS_$r.out"
     python -u ps_from_map.py --map "$cm" --dset dTb_production --out "$OUT/PS_prod_He_$s.out" $chk \
-        || echo "  NOTE: production map of full snapshot $s differs from Tb_maps_prod/He/PS_$r.out (see above)"
+        || { rc=$?; [ $rc = 3 ] || exit $rc; echo "  NOTE: production map of full snapshot $s differs from Tb_maps_prod/He/PS_$r.out (see above)"; }
     n=$((n + 1))
 done
 echo "$n full snapshots done $(date)"
