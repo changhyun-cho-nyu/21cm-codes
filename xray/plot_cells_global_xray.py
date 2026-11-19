@@ -4,7 +4,8 @@ plot_cells_global_xray.py
 21 cm global signal of the two 50 cMpc test runs (with / without MRT_XRAY): the 128^3 pixel maps at every render
 (data/compare_xray.csv, compare_xray.py) as lines, and the gas-cell level (cells_Tb_xray.py: mean_cells_cell, tau_GP
 from the cell) at every full snapshot that has a $BASE/<run>/cells_Tb/cells_Tb_NNN.npz, as markers. Run on ORCD to read
-the npz files; without them (e.g. on a laptop) it falls back to the four pilot values of NOTES.md (job 29467469).
+the npz files; without them (e.g. on a laptop) it reads data/cells_Tb_xray_global.csv (the gas-cell means of all 14 full
+snapshots per run, taken from the task logs of jobs 29467469 and 29598529), else the four pilot values of NOTES.md.
 Writes data/xray_cells_global.png. Quick look (user, 2026-11-18).
 
   python plot_cells_global_xray.py [--base /orcd/data/mvogelsb/004/chcho/xray]
@@ -45,6 +46,11 @@ def main():
         ax.plot(df["z"], df[col], color=c, lw=2, label=f"{lab}: $128^3$ pixels")
         cc = cells(a.base, run)
         src = "npz"
+        tab = os.path.join(HERE, "data", "cells_Tb_xray_global.csv")
+        if not cc and os.path.exists(tab):
+            t = pd.read_csv(tab)
+            t = t[t["run"] == run]
+            cc, src = dict(zip(t["z"], t["cells_mK"])), "data/cells_Tb_xray_global.csv"
         if not cc:
             cc, src = PILOT[run], "NOTES.md pilot values"
         zc = np.array(sorted(cc)); tc = np.array([cc[z] for z in zc])
