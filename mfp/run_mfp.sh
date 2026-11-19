@@ -19,6 +19,10 @@
 #   mkdir -p logs
 #   LINE=H  sbatch --array=0-7%8   mfp/run_mfp.sh
 #   LINE=He sbatch --array=0-46%12 mfp/run_mfp.sh
+# Other snapshots: SNAPS_OVERRIDE="374" (space-separated render numbers; the array size must match), e.g.
+#   LINE=H SNAPS_OVERRIDE=374 sbatch --array=0 mfp/run_mfp.sh
+# A rerun of existing snapshots into another directory (to compare with check_mfp_outputs.py):
+#   LINE=H SNAPS_OVERRIDE="112 338" OUT_ROOT=/orcd/data/mvogelsb/004/chcho/mfp_rerun sbatch --array=0-1 mfp/run_mfp.sh
 # Run time grows with the bubble size: minutes at z >~ 8, about a day for the latest He snapshots (660, 695); the
 # 2026-05 runs used 32 threads.
 
@@ -33,12 +37,14 @@ else
            374 378 380 387 394 403 406 445 452 469 473 489 502 513 516 525 558 598 624 660 695)
     OUT=$OUT_ROOT/LUMINA_helium_Vol
 fi
+[ -z "$SNAPS_OVERRIDE" ] || SNAPS=($SNAPS_OVERRIDE)
 
 source ~/.bashrc
 conda activate jupyter_env
 set -eo pipefail
 cd "$SLURM_SUBMIT_DIR"
 [ "${#SNAPS[@]}" -ge "${SLURM_ARRAY_TASK_COUNT:-0}" ] || { echo "ERROR: ${#SNAPS[@]} snapshots, array of $SLURM_ARRAY_TASK_COUNT"; exit 1; }
+[ -n "${SNAPS[$SLURM_ARRAY_TASK_ID]}" ] || { echo "ERROR: no snapshot for task $SLURM_ARRAY_TASK_ID"; exit 1; }
 EXE=mfp/lumina-mfp-$LINE
 [ -x "$EXE" ] || { echo "ERROR: no $EXE: run bash mfp/build_mfp.sh first"; exit 1; }
 [ "$EXE" -nt mfp/lumina-mfp-hist-grid.cc ] || { echo "ERROR: $EXE is older than the source: rebuild (bash mfp/build_mfp.sh)"; exit 1; }
@@ -52,5 +58,13 @@ mkdir -p "$OUT"
 F=$OUT/mfp_$(printf %03d $S).hdf5
 echo "MFP $LINE render $S ($REN) -> $F, $(date), commit $(git rev-parse --short HEAD), $OMP_NUM_THREADS threads"
 [ -f "$F" ] && { echo "$F exists: skipped"; exit 0; }
-./$EXE "$REN" "$OUT" $S
-echo "done $(date)"
+# one writer per snapshot: a lock directory (mkdir is atomic); a second job for the same snapshot stops here
+LOCK=$F.lock
+mkdir "$LOCK" 2>/dev/null || { echo "ERROR: $LOCK exists: another job is running this snapshot (remove it if none is)"; exit 1; }
+trap 'rm -rf "$LOCK"' EXIT
+# write into a private directory, move into place only when complete (a killed job leaves no partial mfp_NNN.hdf5)
+TMP=$OUT/.tmp_${SLURM_JOB_ID}_$S
+mkdir -p "$TMP"
+./$EXE "$REN" "$TMP" $S
+mv "$TMP/$(basename "$F")" "$F" && rmdir "$TMP"
+echo "done $(date) -> $F"
