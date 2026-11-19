@@ -22,6 +22,10 @@ Usage
 -----
   python make_vid.py vid   --line H --maps /orcd/data/mvogelsb/004/chcho/Tb_maps_prod/H_real --out <dir> [--task 0 --ntask 8]
   python make_vid.py table --line H --out <dir>
+  python make_vid.py vid   --line He --cell-root /orcd/data/mvogelsb/004/chcho --out <dir>     # gas-cell maps
+--cell-root (2026-11-18): the gas-cell-level 3.46 cm maps of test_cells_Tb.py merge instead of --maps:
+<root>/cell_test*/RIN_cell_He_NNN.hdf5 (dataset rin), else cellmap_He_NNN.hdf5 (dataset dTb_cell); z from the file's
+attribute; NNN = full snapshot (the output names use it).
 Snapshots that already have both outputs are skipped (resumable).
 """
 import argparse
@@ -96,23 +100,47 @@ def snaps_in(maps):
     return out
 
 
+def cell_maps(root, line):
+    """{full snapshot: (file, dataset)} of the gas-cell maps: RIN_cell_<line>_NNN.hdf5, else cellmap_<line>_NNN.hdf5"""
+    out = {}
+    for f in glob.glob(os.path.join(root, "cell_test*", f"cellmap_{line}_*.hdf5")):
+        out[int(re.search(r"_(\d+)\.hdf5$", f).group(1))] = (f, "dTb_cell")
+    for f in glob.glob(os.path.join(root, "cell_test*", f"RIN_cell_{line}_*.hdf5")):
+        out[int(re.search(r"_(\d+)\.hdf5$", f).group(1))] = (f, "rin")
+    return out
+
+
 def vid(a):
     os.makedirs(a.out, exist_ok=True)
-    names = snaps_in(a.maps)
+    if a.cell_root:
+        cells = cell_maps(a.cell_root, a.line)
+        names = {s: str(s) for s in cells}
+        src = f"gas-cell maps under {a.cell_root}"
+    elif a.maps:
+        names = snaps_in(a.maps)
+        src = a.maps
+    else:
+        sys.exit("give --maps or --cell-root")
     snaps = [s for s in sorted(names) if a.smin <= s <= a.smax][a.task::a.ntask]
-    print(f"{a.line}: {len(snaps)} snapshots for task {a.task}/{a.ntask} from {a.maps}")
+    print(f"{a.line}: {len(snaps)} snapshots for task {a.task}/{a.ntask} from {src}")
     nfail = 0
     for s in snaps:
         f_vid = os.path.join(a.out, f"VID_{a.line}_{s:03d}.csv")
         f_st = os.path.join(a.out, f"VID_{a.line}_{s:03d}_stats.csv")
         if os.path.exists(f_vid) and os.path.exists(f_st):
             continue
-        ps = os.path.join(a.maps, f"PS_{names[s]}.out")
-        if not os.path.exists(ps):
-            print(f"  snap {s:03d}: no {ps}, skipped"); nfail += 1; continue
-        z = get_redshift(ps)
-        with h5py.File(os.path.join(a.maps, f"RIN_{names[s]}.hdf5"), "r") as f:
-            m = f["rin"][()]
+        if a.cell_root:
+            fn, dset = cells[s]
+            with h5py.File(fn, "r") as f:
+                m = f[dset][()]
+                z = float(f.attrs["z"])
+        else:
+            ps = os.path.join(a.maps, f"PS_{names[s]}.out")
+            if not os.path.exists(ps):
+                print(f"  snap {s:03d}: no {ps}, skipped"); nfail += 1; continue
+            z = get_redshift(ps)
+            with h5py.File(os.path.join(a.maps, f"RIN_{names[s]}.hdf5"), "r") as f:
+                m = f["rin"][()]
         N = m.shape[0]
         pos, neg, st = vid_logbins(m.ravel(), BOX_CMPC / N, a.bins)
         write_vid(pos, neg, f_vid)
@@ -142,7 +170,8 @@ def main():
     sub = p.add_subparsers(dest="mode", required=True)
     q = sub.add_parser("vid")
     q.add_argument("--line", choices=["H", "He"], required=True)
-    q.add_argument("--maps", required=True, help="directory with RIN_NNN.hdf5 and PS_NNN.out")
+    q.add_argument("--maps", help="directory with RIN_NNN.hdf5 and PS_NNN.out")
+    q.add_argument("--cell-root", help="instead of --maps: the gas-cell maps under <root>/cell_test*/ (z from the files)")
     q.add_argument("--out", required=True)
     q.add_argument("--bins", type=int, default=100, help="bin edges per side (the notebook used 100)")
     q.add_argument("--smin", type=int, default=0)
