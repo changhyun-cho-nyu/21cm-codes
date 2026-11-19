@@ -20,7 +20,11 @@ Usage
   python ps_from_map.py --map Tb_maps_prod/He/RIN_500.hdf5 --out PS_test.out --check Tb_maps_prod/He/PS_500.out
   python ps_from_map.py --map ren_640/HeIII_VolumeFraction/HeIII_VolumeFraction_406.hdf5 --dset HeIII_VolumeFraction \
          --scale 12.6667 --header ren_640/All/All_406.hdf5 --out PS_xHeIII_406.out      # x_HeIII = field / y
+  python ps_from_map.py --map ren_640/Density/Density_406.hdf5 --dset Density --overdensity \
+         --header ren_640/All/All_406.hdf5 --out PS_delta_406.out                              # gas overdensity
 --scale: multiply the map first (Delta^2 scales as scale^2), e.g. 1/y for the per-H He fractions.
+--overdensity: use delta = map / <map> - 1 (after --scale), so Delta^2 is dimensionless (the gas density field of the
+renders: Delta^2_delta; 2026-11-19).
 --header: an HDF5 file with a Header group (a render's All_NNN.hdf5): z = Redshift, L = BoxSize, used when the map
 file has no z / box attributes (the render field files).
 --check: compare with an existing C PS file of the same map, bin by bin (Delta^2 and mode counts); exit 1 if
@@ -74,6 +78,7 @@ def main():
     p.add_argument("--z", type=float, help="redshift, if the file has no z attribute")
     p.add_argument("--box", type=float, help="BoxSize [ckpc/h], if the file has no box attribute (Lumina: 338300)")
     p.add_argument("--scale", type=float, default=1.0, help="multiply the map by this first (e.g. 1/y)")
+    p.add_argument("--overdensity", action="store_true", help="delta = map / <map> - 1 (dimensionless Delta^2)")
     p.add_argument("--header", help="HDF5 file with a Header group (Redshift, BoxSize), e.g. the render's All_NNN.hdf5")
     p.add_argument("--check", help="a C PS file of the same map to compare with")
     a = p.parse_args()
@@ -93,6 +98,12 @@ def main():
     z, L = float(z), float(L)
     if not np.all(np.isfinite(m)):
         sys.exit(f"ERROR: {a.map}:{a.dset} has {np.count_nonzero(~np.isfinite(m))} non-finite values")
+    if a.overdensity:
+        mu = m.mean()
+        if not mu > 0:
+            sys.exit(f"ERROR: --overdensity needs a positive mean ({a.map}:{a.dset} mean {mu:g})")
+        print(f"overdensity: <map> = {mu:.6e}")
+        m = m / mu - 1.0
     N = m.shape[0]
     kc, D2, Pb, cnt = spectrum(m, L)
     with open(a.out, "w") as fo:

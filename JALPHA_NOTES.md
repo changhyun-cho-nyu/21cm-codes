@@ -509,6 +509,12 @@ Collected from the §7 rows. prod/cell: whole-box ⟨δT_b^He⟩ of the 640³ pr
 
 prod/cell, the IGM share and the three ladder columns are monotonic in z (checked); r_min is not. The cell-level mean peaks at z ≈ 5.5 (0.094 µK), the production mean at z ≈ 6.0–6.3 (0.028 µK). r_min stays ≥ 0.95 down to z = 5.0, then falls (0.90 at 4.75, 0.58 at 4.25, < 0 at 3.75–3.13) and recovers at 3.0 (0.66). The IGM (1+δ < 10) share falls from 0.74 to 0.005; prod/IGM passes 1 at z ≈ 4.5. 10240³ recovers 0.97 (z = 11.9) to 0.59 (z = 3.0) of the cell level.
 
+**Gas-cell density spectra (2026-11-19, set up, not yet run):** to compare the 3.46 cm power with the density field it lives in, with the same cells, pixels and weighting as the gas-cell δT_b^He maps (user: not the 640³ render density).
+- `cell_density_map.py`: ρ_cell = Σm/ΣV per 640³ pixel from the He scan task files (`--grids full` keeps m and V). On a mock snapshot it equals the direct calculation to 10⁻⁷.
+- `ps_from_map.py --overdensity`: Δ²_δ of δ = ρ/⟨ρ⟩ − 1.
+- `run_cell_density.sh`: runs both for the nine full snapshots of the helium figure (116 … 150; 136's task files are gone), giving `cell_test_ps/PS_cell_delta_NNN.out`.
+- `visual_PS` cell 11 plots Δ²_δ and Δ²_He/Δ²_δ (the squared effective bias, µK²). Not a paper figure.
+
 ### 7.2 Code audit (2026-11-19, five independent reviews with mock tests; before the bubble MFP and the bispectrum)
 **No defect that changes a map, spectrum, VID or quoted number.**
 - tb_physics.py = the C codes term by term (H and He, SPIN_MODEL 0/1) on 2.2 × 10⁶ random cells: ≤ 5 × 10⁻⁴ in δT_b, from the C's rounded constants.
