@@ -18,6 +18,11 @@ Usage
   python ps_from_map.py --map RIN_cell_He_131.hdf5 --out PS_cell_He_131.out
   python ps_from_map.py --map cellmap_He_136.hdf5 --dset dTb_cell --out PS_cell_He_136.out
   python ps_from_map.py --map Tb_maps_prod/He/RIN_500.hdf5 --out PS_test.out --check Tb_maps_prod/He/PS_500.out
+  python ps_from_map.py --map ren_640/HeIII_VolumeFraction/HeIII_VolumeFraction_406.hdf5 --dset HeIII_VolumeFraction \
+         --scale 12.6667 --header ren_640/All/All_406.hdf5 --out PS_xHeIII_406.out      # x_HeIII = field / y
+--scale: multiply the map first (Delta^2 scales as scale^2), e.g. 1/y for the per-H He fractions.
+--header: an HDF5 file with a Header group (a render's All_NNN.hdf5): z = Redshift, L = BoxSize, used when the map
+file has no z / box attributes (the render field files).
 --check: compare with an existing C PS file of the same map, bin by bin (Delta^2 and mode counts); exit 1 if
 it differs by more than 1e-3 in any bin with modes (the C file has 6 significant digits).
 """
@@ -64,12 +69,19 @@ def main():
     p.add_argument("--out", required=True)
     p.add_argument("--z", type=float, help="redshift, if the file has no z attribute")
     p.add_argument("--box", type=float, help="BoxSize [ckpc/h], if the file has no box attribute (Lumina: 338300)")
+    p.add_argument("--scale", type=float, default=1.0, help="multiply the map by this first (e.g. 1/y)")
+    p.add_argument("--header", help="HDF5 file with a Header group (Redshift, BoxSize), e.g. the render's All_NNN.hdf5")
     p.add_argument("--check", help="a C PS file of the same map to compare with")
     a = p.parse_args()
 
     with h5py.File(a.map, "r") as f:
-        m = f[a.dset][()].astype(np.float64)
+        m = f[a.dset][()].astype(np.float64) * a.scale
         at = dict(f.attrs)
+    if a.header:
+        with h5py.File(a.header, "r") as f:
+            hd = dict(f["Header"].attrs)
+        at.setdefault("z", hd.get("Redshift"))
+        at.setdefault("box", hd.get("BoxSize"))
     z = a.z if a.z is not None else at.get("z")
     L = a.box if a.box is not None else at.get("box_ckpc_h", at.get("box"))
     if z is None or L is None:
@@ -84,7 +96,7 @@ def main():
         for i in range(BINS_PS):
             fo.write(f"{kc[i]:g} {D2[i]:g} {Pb[i]:g} {cnt[i]:g} 0\n")
     sel = cnt > 0
-    print(f"{a.map}:{a.dset}: z = {z:g}, N = {N}, L = {L:g} ckpc/h, <map> = {m.mean():.5e}, "
+    print(f"{a.map}:{a.dset}{f' x {a.scale:g}' if a.scale != 1 else ''}: z = {z:g}, N = {N}, L = {L:g} ckpc/h, <map> = {m.mean():.5e}, "
           f"{int(sel.sum())} bins with modes -> {a.out}")
 
     if a.check:
