@@ -516,6 +516,34 @@ prod/cell, the IGM share and the three ladder columns are monotonic in z (checke
 - `run_cell_density.sh`: runs both for the nine full snapshots of the helium figure (116 … 150; 136's task files are gone), giving `cell_test_ps/PS_cell_delta_NNN.out`.
 - `visual_PS` cell 11 plots Δ²_δ and Δ²_He/Δ²_δ (the squared effective bias, µK²). Not a paper figure.
 
+### 7.1b MFP bubble sizes (2026-11-19)
+The code is Neyer's mfp-bubbles-thesan (arXiv:2310.03783) adapted to the Lumina renders. It was not in this repo; now `mfp/` (MIT licence kept). Checked on 2026-11-19:
+- **Correct:**
+  - the ray tracing (192 HEALPix rays per ionized cell, stop at the interpolated x = 0.5, cap at 2 box lengths);
+  - the Lumina input reading and the He scaling by 1/y;
+  - the notebook's conversion to cMpc;
+  - the x labels (volume-weighted, match `ionization_history.csv`).
+  - Mock test (one spherical bubble, R = 12 cells): mean ray length 8.99 vs exact 9.01 cells, median 8.31 vs 8.35.
+- **Bug:** the 32-bit `mfp_hist` overflowed in the capped last bin at He 695 (z = 3.04; 2.19e9 rays). The figure showed median 192 / p84 463 cMpc instead of 218 / 582. It is the only overflowed bin in the 111 outputs. Fixed: 64-bit counters in `mfp/`, and the notebook restores wrapped bins (+2³²) of old files.
+- **Field (user decision 2026-11-19: volume-weighted):** the figure used the mass-weighted builds (`HII_Fraction`, `HeIII_Fraction`; their sources were lost, only the binaries remained).
+
+  | | mass-weighted median | volume-weighted median | ratio |
+  |---|---|---|---|
+  | H | | | ≤ 1.03 |
+  | He 450, z = 4.5 | 4.6 cMpc | 5.9 cMpc | 1.27 |
+  | He 500, z = 4.0 | 9.8 cMpc | 13.6 cMpc | 1.39 |
+  | He 560, z = 3.6 | 27.5 cMpc | 49.7 cMpc | 1.81 |
+  | He 596, z = 3.44 | 50.2 cMpc | 106.5 cMpc | 2.12 |
+
+  Dense He II inside the bubbles stops the rays (the same gas that carries the gas-cell 3.46 cm signal).
+- **New code:** `mfp/lumina-mfp-hist-grid.cc` (volume fractions; `-DLINE_HE` for He; 64-bit histograms; read errors stop the run; falls back to `All_NNN.hdf5`).
+- **To run:** `mfp/run_mfp.sh` for the snapshots without volume-weighted output (H 8, He 47). `BSD.ipynb` cell 2 reads `LUMINA_*_Vol`.
+- **Caveats:**
+  - Rays capped at 1000 cMpc: 3.2% at H z = 5.55, 1–4.4% at He z = 3.17–3.04, so the means there are biased low; medians and p84 are not.
+  - Medians reach about 200 cMpc, nearly half the 500 cMpc box, at the latest points.
+  - At z ≳ 10 the H medians are below one cell (shown at the 0.78 cMpc resolution line).
+  - H render 374 hit its 96 h limit, so the last H point is z = 5.55.
+
 ### 7.2 Code audit (2026-11-19, five independent reviews with mock tests; before the bubble MFP and the bispectrum)
 **No defect that changes a map, spectrum, VID or quoted number.**
 - tb_physics.py = the C codes term by term (H and He, SPIN_MODEL 0/1) on 2.2 × 10⁶ random cells: ≤ 5 × 10⁻⁴ in δT_b, from the C's rounded constants.
