@@ -40,6 +40,21 @@ import make_vid
 from make_vid import BOX_CMPC, cell_maps, get_redshift, write_vid
 
 N_SPLIT = 5                       # 500 cMpc / 100 cMpc
+MAX_DCOUNT = 3                    # voxels per bin allowed to differ from the reference VID (bin-edge round-off)
+
+
+def voxel_counts(df, nvox):
+    """voxels per bin from a VID file: count = vid_prob * N_voxels * width; for log-spaced edges e_i = e_0 q^i the
+    centre is c_i = e_i (1+q)/2 and the width e_i (q-1), so width = 2 c (q-1)/(q+1), q = c_{i+1}/c_i (per side)"""
+    out = np.zeros(len(df))
+    for side in ("neg", "pos"):
+        idx = np.flatnonzero(df["side"].values == side)
+        if len(idx) == 0:
+            continue
+        c = np.abs(df["Tb"].values[idx])
+        q = c[1] / c[0] if len(c) > 1 else 1.01
+        out[idx] = df["vid_prob"].values[idx] * nvox * 2.0 * c * (q - 1.0) / (q + 1.0)
+    return out
 
 
 def load_map(a):
@@ -117,12 +132,21 @@ def main():
         elif a.floor is not None:
             print("  check: --floor differs from make_vid's: not compared with the VID figure")
         else:
+            # Not bit-identical in general: the maps are float32 and numpy's float32 log10 (the bin edges) is CPU-dispatched,
+            # so edges computed on another machine can differ by ~1e-6 and move a voxel lying on an edge (2026-11-19:
+            # render 177, VID/H_wf from compute nodes vs the login node: edges 2.2e-6, one voxel in the top bin). So:
+            # same bins (centres to 1e-5) and the same voxel count in every bin to within MAX_DCOUNT.
             r, h = pd.read_csv(ref), pd.read_csv(os.path.join(out, "VID_full.csv"))
-            same = (len(r) == len(h) and list(r["side"]) == list(h["side"])
-                    and np.allclose(r[["Tb", "vid_prob", "vid_phys"]].values, h[["Tb", "vid_prob", "vid_phys"]].values,
-                                    rtol=1e-12, atol=0))
-            print(f"  check: full-box VID = {ref}: {'yes' if same else 'NO'}")
-            if not same:
+            ok = len(r) == len(h) and list(r["side"]) == list(h["side"])
+            if ok:
+                dtb = float(np.max(np.abs(r["Tb"] - h["Tb"]) / np.abs(r["Tb"])))
+                dc = np.abs(voxel_counts(r, N**3) - voxel_counts(h, N**3))
+                ok = dtb < 1e-5 and dc.max() <= MAX_DCOUNT
+                print(f"  check: full-box VID vs {ref}: bin centres max rel diff {dtb:.1e}, voxel counts max |diff| "
+                      f"{dc.max():.2f} (total {dc.sum():.2f} of {N**3:,}): {'same' if ok else 'DIFFERENT'}")
+            else:
+                print(f"  check: full-box VID vs {ref}: {len(r)} vs {len(h)} rows or different sides: DIFFERENT")
+            if not ok:
                 sys.exit("STOP: the full-box VID differs from the VID figure's (different map or estimator)")
     print(f"wrote {out}: VID_full.csv, {len(sub)} VID_sub_*.csv, stats.csv")
 
