@@ -341,8 +341,33 @@ Test, on a mock render (N = 32) against an independent Python calculation:
       - Expected, from `tb_physics` with assumed (δ, T), not yet measured: at z = 23 (x_a ≈ 1.6 × 10⁻⁵) the mean-density IGM gives −0.3 to −1.6 mK (x_c ~ 10⁻³), while 1 + δ = 10–100 at T = 300–1000 K gives +0.2 to +3.6 K (x_c = 2–32). At z = 15 (x_a ≈ 0.11–0.17) cold diffuse gas at 5–20 K gives −5 to −25 mK.
       - Mock test (z = 20, the real scan of `test_cells_Tb.py` on 60,000 cells, three gas types): the shares by class, the emission share (+2.904), the star-forming cells (600 = the Sfr > 0 cells), the 2D table and the concentration all match an independent calculation; the CHECK line equals the merge's CUBES "cell" line (+1.429163 mK); variance and signal shares each sum to 1; stops on missing or overlapping scan rows (the Lumina H scans have no `ntask` attribute).
       - `tb_physics.Line.xc_H` (new, used by `Line.tb`): bit-identical `tb` output for both spin models, checked at z = 23, 15, 8.
-      - **X-ray test run, 10 more full snapshots (job 29598529, 2026-11-19; xray/NOTES.md):** with X-rays (Lumina's physics), gas cells / 64³ pixels 0.964 (z = 8.90), 0.991 (7.46), 0.994 (6.99), 0.995 (6.63), 0.996 (6.29, 5.99), 0.988 (5.73), 0.969 (5.50), 0.960 (5.23): the pixels are good to ≤ 1% at z = 7.5–6 (support for the low-z side of the plan).
+      - Submitted 2026-11-20 as job 29735144 (array 0–3: 011, 024, 036, 048; commit f64c701); all four running at ~1 cube per minute.
+    - **X-ray test run, 10 more full snapshots (job 29598529, 2026-11-19; xray/NOTES.md):** with X-rays (Lumina's physics), gas cells / 64³ pixels 0.964 (z = 8.90), 0.991 (7.46), 0.994 (6.99), 0.995 (6.63), 0.996 (6.29, 5.99), 0.988 (5.73), 0.969 (5.50), 0.960 (5.23): the pixels are good to ≤ 1% at z = 7.5–6 (support for the low-z side of the plan).
 12. **Sub-volume VID figure (fig:subbox, `figs/subbox_VID.png`) from the current results (user, 2026-11-19).** `make_subbox_vid.py` cuts a 640³ map into 5³ sub-boxes of 128³ (100 cMpc) and writes the full-box and 125 sub-box VIDs with `make_vid.vid_logbins` (the VID figure's estimator; the old notebook copy had an H positive-side floor of 10⁻³ mK, make_vid 10⁻⁹; `--floor` reproduces the old one) to `VID/subbox/<line>_<snap>/` (`VID_full.csv`, `VID_sub_i_j_k.csv`, `stats.csv`); with `--ref` it checks the full-box VID against the VID figure's file: the same map (mean, std, skewness, kurtosis equal the reference `_stats.csv` to 10⁻⁵) and the same VID (bin centres to 10⁻⁵; every bin's voxel count within 3 + 10⁻⁴ of the bin's count: an edge shift δ moves ~C δ/Δln voxels, ≤ 4×10⁻⁵ C for δ = 2×10⁻⁶ and bins of log width ≥ 0.1). Not bit-identical in general: the maps are float32 and numpy's float32 log10 (the bin edges) is CPU-dispatched; first run (2026-11-19, render 177, login node vs `VID/H_wf` from compute nodes): edges 2.2×10⁻⁶ apart, one voxel in the top bin (1 vs 2 of 2.6×10⁸), same mean and std; the first, exact-equality version of the check stopped there. He (full snapshot 116, gas-cell map): edges 1.8×10⁻⁶ apart, 135 voxels moved in total (bins of ~10⁷ voxels); the second version (≤ 3 voxels per bin) stopped there. H: `Tb_maps_prod/H_real_wf`, render 177 (⟨x_HII⟩_V = 0.1, z = 9.17); He: gas-cell map, full snapshot 116 (⟨x_HeIII⟩_V = 0.0997, z = 5.00; was the 640³ map at render 406). Mock test (20³, planted sub-box means, both lines): sub-box means = direct means to 1.4×10⁻⁷ (float32), full-box VID = make_vid.py's exactly, He refused without `--cell-root`; the repointed figure cell of `subvol_VID.ipynb` (cell 8) runs on the mock outputs and saves `VID/subbox/subbox_VID.{png,pdf}`. **Run on Lumina (2026-11-19, login node; checks: same map to 5×10⁻⁸ / 2.7×10⁻⁸, same VID):** H, render 177 (z = 9.165): full box ⟨δT_b⟩ 20.21 mK, std 10.11, skew 1.09, kurt 2.23; 125 sub-box means 19.29–20.90 mK, rms scatter 1.5% of the full-box mean; sub-box std 9.69–10.60. He, full snapshot 116 (z = 5.000, gas cells): full box 0.0905 µK, std 0.302, skew 11.9, kurt 244; sub-box means 0.0736–0.1065 µK, rms scatter 7.4%; sub-box std 0.244–0.361.
+13. **Bispectra of the production maps (`bispec_maps.py` + `run_bispec.sh`, BiFFT in h/cMpc; written 2026-11-19, commits 817ece1, 04d7904).**
+    - **Self-test of the patched BiFFT (job 29729092, 2026-11-19/20, 59 min, peak 38 GB including the float64 reference): passed.** A skewed random 640³ field (g + 0.3 (g² − 1)) through BiFFT's isosceles code vs an independent float64 calculation of the same bin (same mode selection), k1 = 0.2 h/cMpc:
+
+      | | θ = π/3 (equilateral) | θ = 0.1π (squeezed) |
+      |---|---|---|
+      | N_tri | 3,162,930 | 885,286 |
+      | k3 [h/cMpc] | 0.2031692 | 0.0700765 |
+      | P1, P3 | 17.57376, 17.46139 | 17.57376, 15.34334 |
+      | B | 401.3215 vs 401.3213 | 1797.784 |
+      | B_norm | 0.4926600 vs 0.4926598 | 1.382704 |
+
+      Every ratio is 1.000000 (largest difference 5 × 10⁻⁷). The original float32 build gave P ≈ 0.5× and B_norm ≈ 2.8× at 640³. BiFFT time per call 1409 s / 1922 s (one thread).
+    - **k units:** the old `get_*.py` (`PS_21cm/bispec/`) used `BOX_LEN = 500` cMpc, so the old figures' k values are in 1/cMpc. **Decided 2026-11-20 (user): run both** the old numbers read as h/cMpc and the old physical scales converted (÷ h = 0.6766):
+
+      | | iso k1 [h/cMpc] | gen k1 / k2 [h/cMpc] |
+      |---|---|---|
+      | H, same numbers | 0.2, 0.5, 1.0, 2.0 | 0.6 / 1.2 |
+      | H, old scales | 0.2956, 0.739, 1.478, 2.956 | 0.8868 / 1.774 |
+      | He, same numbers | 0.07, 0.2, 0.4, 1.2 | 0.3 / 0.6 |
+      | He, old scales | 0.1035, 0.2956, 0.5912, 1.774 | 0.4434 / 0.8868 |
+
+    - **Fields and snapshots:** H (`Tb_maps_prod/H_real_wf`) and xHI = 1 − `HII_VolumeFraction` (B(xHI) = −B(xHII) exactly; pairs with xHeII) at renders 177 203 220 242 264 283 300 318 338 (the old figure's); He from the gas-cell maps (`RIN_cell_He_NNN`) at full snapshots 116 121 126 131 139 141 144 146 150 (the helium PS figure set, z = 5.00–3.37) and xHeII = `HeII_VolumeFraction`/y at the matching renders 406 428 452 476 516 528 552 582 614.
+    - **Submitted 2026-11-20 (user):** jobs 29737186–29737193 (per field: iso `--array=0-17%4`, gen `--array=0-8%4`; 128 GB per task, kept by the user), output `/orcd/data/mvogelsb/004/chcho/bispec_prod/<field>/BS_<config>_<field>_<snap>_<k>.txt`, 90 files per field when complete. Pending at submission: the partition's memory was taken by the cell scans and MFP runs.
+    - Not yet done: `bispec_H/He.ipynb` still read the old files (`PS_21cm/bispec*/final_Tb`); repoint after the runs.
 
 ### 6.2 Decisions still open
 - **Helium IGM absorption** (implemented, 4.5):
