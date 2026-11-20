@@ -144,6 +144,15 @@ class Line:
         T(p, z0) [(1+z)/(1+z0)]^2 [rho(p, z)/rho(p, z0)]^(2/3), comoving densities"""
         return T0 * ((1.0 + self.z) / (1.0 + z0))**2 * (rho / rho0)**(2.0 / 3.0)
 
+    def xc_H(self, nH, T, xHII, fII, fIII):
+        """21 cm collisional coupling x_c (H-H, e-H, p-H), the expression used by tb (decompose_cells_H.py uses it
+        alone: no T_S solve)"""
+        if self.line != "H":
+            raise ValueError("xc_H is the 21 cm coupling")
+        ne = nH * (xHII + fII + 2.0 * fIII)
+        return self.Tst / (self.A * self.Tg) * (kappa(T, T_HH, K_HH) * (1.0 - xHII) * nH + kappa(T, T_E, K_EH) * ne
+                                                + kappa(T, T_E, K_PH) * xHII * nH)
+
     def tb(self, sig, nH, T, xHII, fII, fIII, J, nHI_gp=None, full=False):
         """delta T_b [mK or uK] and (x_c, x_a); nH proper cm^-3, fII/fIII per H nucleus, sig = x(1+delta).
         21 cm, spin_model 1 only: nHI_gp [proper cm^-3] replaces the local n_HI in tau_GP (default: x_HI nH, as the
@@ -157,8 +166,7 @@ class Line:
         ne = nH * (xHII + fII + 2.0 * fIII)
         if self.line == "H":
             xHI = 1.0 - xHII
-            xc = self.Tst / (self.A * self.Tg) * (kappa(T, T_HH, K_HH) * xHI * nH + kappa(T, T_E, K_EH) * ne
-                                                  + kappa(T, T_E, K_PH) * xHII * nH)
+            xc = self.xc_H(nH, T, xHII, fII, fIII)
             if self.spin_model == 1:
                 nHI = xHI * nH
                 tauGP = self.gp_c * (nHI if nHI_gp is None else nHI_gp)
