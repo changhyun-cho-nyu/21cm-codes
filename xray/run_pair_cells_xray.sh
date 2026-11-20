@@ -17,7 +17,7 @@
 # (z = 11.93, 10.01; renders 112, 154). Reads Oliver's snapshots and raw renders (read only), writes
 # /orcd/data/mvogelsb/004/chcho/xray/pair_cells/pair_cells_NNN.npz (~100 MB with the 2e6-pair subsample).
 #   cd xray && mkdir -p logs && sbatch -p ou_mki run_pair_cells_xray.sh
-#   other snapshots:  sbatch -p ou_mki --array=0-3 --export=ALL,SNAPS="57 66 74 80" run_pair_cells_xray.sh
+#   other snapshots:  SNAPS="24 57 66" sbatch -p ou_mki --array=0-2 run_pair_cells_xray.sh
 # then:  python pair_cells_xray.py report
 SNAPS=(${SNAPS:-36 48})
 
