@@ -28,6 +28,8 @@ per-bin sums of w and w/T go to <out>/TX_compare/TX_{lumina,pair_withXrays,pair_
   python compare_TX_lumina.py lumina --snap 48
   python compare_TX_lumina.py pair --snap 48
   python compare_TX_lumina.py compare
+  python compare_TX_lumina.py evolution   (T vs z: Lumina, Lumina without X-rays as predicted, the 50 cMpc pair;
+                                           data/T_evolution_noX.{png,csv})
 Inputs read only; outputs only under /orcd/data/mvogelsb/004/chcho.
 """
 import argparse
@@ -357,6 +359,108 @@ def compare(a):
     print(f"\nwrote {a.data}/TX_lumina_pair.png")
 
 
+def predict_noX(wl, N, Tg):
+    """Own-rank prediction from 1+delta bins: weights wl (H I per 0.05-dex bin of the target) x the 50 cMpc no-X-ray
+    per-bin T distribution N (npz of TX_pair_withoutXrays). Empty bins of N borrow the nearest filled bin.
+    Returns <1/T>^-1, <1 - Tg/T>, T quantiles QS."""
+    swN, siN, hN = N["sw"].sum(0), N["swinv"].sum(0), N["h"].sum(0).astype(np.float64)
+    ok = (swN > 0) & (hN.sum(1) > 0)
+    near = np.flatnonzero(ok)
+    fill = near[np.abs(np.arange(ND)[:, None] - near[None, :]).argmin(1)]
+    r = (siN / np.where(ok, swN, 1.0))[fill]                       # <1/T> per bin
+    cond = (hN / np.where(ok, hN.sum(1), 1.0)[:, None])[fill]      # T distribution per bin
+    W = wl.sum()
+    if W <= 0:
+        return np.nan, np.nan, [np.nan] * len(QS)
+    inv = np.sum(wl * r) / W
+    h = (wl[:, None] * cond).sum(0)
+    cdf = np.r_[0.0, np.cumsum(h)] / h.sum()
+    return 1.0 / inv, 1.0 - Tg * inv, [10**np.interp(p / 100.0, cdf, LT) for p in QS]
+
+
+def evolution(a):
+    """T evolution of the neutral IGM: Lumina (X-rays), Lumina without X-rays as predicted by the own-rank map
+    (Lumina's H I per 0.05-dex bin of 1+delta x the 50 cMpc no-X-ray T distribution in that bin), and the 50 cMpc pair.
+    The same prediction applied to the 50 cMpc X run's H I shares is printed against its true no-X-ray run (check)."""
+    od = os.path.join(a.out, "TX_compare")
+    snaps = sorted(int(re.search(r"_(\d+)\.npz$", f).group(1)) for f in glob.glob(os.path.join(od, "TX_lumina_*.npz")))
+    snaps = [s for s in snaps if all(os.path.exists(os.path.join(od, f"TX_{k}_{s:03d}.npz"))
+                                     for k in ("pair_withXrays", "pair_withoutXrays"))]
+    if not snaps:
+        sys.exit(f"no complete snapshot (Lumina + both pair runs) in {od}")
+    c = 0.5 * (LD[1:] + LD[:-1])
+    ECL = (("all neutral IGM", 0.0, np.inf), ("voids, 1+delta < 1", 0.0, 1.0), ("1+delta = 1-2", 1.0, 2.0))
+    rows = []
+    for s in snaps:
+        L, X, N = (np.load(os.path.join(od, f"TX_{k}_{s:03d}.npz")) for k in ("lumina", "pair_withXrays",
+                                                                              "pair_withoutXrays"))
+        z = float(L["z"])
+        Tg = 2.7255 * (1.0 + z)
+        print(f"\nsnapshot {s}: z = {z:.3f}, T_gamma = {Tg:.2f} K   (<1/T>^-1 [K] | median T [K] (p10-p90) | <1-Tg/T>)")
+        for lab, lo, hi in ECL:
+            k = (10**c >= lo) & (10**c < hi)
+            sL, sX, sN = (stats(D, None, lo, hi, Tg) for D in (L, X, N))
+            pL = predict_noX(L["sw"].sum(0) * k, N, Tg)
+            pX = predict_noX(X["sw"].sum(0) * k, N, Tg)
+            cub = np.array([predict_noX(L["sw"][u] * k, N, Tg)[0] for u in range(len(L["sw"]))])
+            cub = cub[np.isfinite(cub)]
+            print(f"  {lab}:")
+            for nm, hm, aa, q in (("Lumina, X-rays", sL["hm"], sL["a"], sL["q"]),
+                                  ("Lumina, no X-rays (pred.)", pL[0], pL[1], pL[2]),
+                                  ("50 cMpc, X-rays", sX["hm"], sX["a"], sX["q"]),
+                                  ("50 cMpc, no X-rays", sN["hm"], sN["a"], sN["q"]),
+                                  ("  check: pred. from 50 cMpc X", pX[0], pX[1], pX[2])):
+                print(f"    {nm:30s} {hm:9.2f} | {q[2]:9.2f} ({q[0]:8.2f}-{q[4]:9.2f}) | {aa:8.3f}")
+            print(f"    Lumina no X-rays (pred.), cube-to-cube <1/T>^-1 p16-p84: {np.percentile(cub, 16):.2f}-"
+                  f"{np.percentile(cub, 84):.2f} K (from the cubes' density mix only)")
+            for nm, hm, aa, q in (("lumina_X", sL["hm"], sL["a"], sL["q"]), ("lumina_noX_pred", pL[0], pL[1], pL[2]),
+                                  ("pair_X", sX["hm"], sX["a"], sX["q"]), ("pair_noX", sN["hm"], sN["a"], sN["q"]),
+                                  ("pair_noX_pred", pX[0], pX[1], pX[2])):
+                rows.append((s, z, lab, nm, hm, aa, *q))
+    os.makedirs(a.data, exist_ok=True)
+    fc = os.path.join(a.data, "T_evolution_noX.csv")
+    with open(fc, "w") as f:
+        f.write("snap,z,class,case,hm_K,one_minus_Tg_over_T," + ",".join(f"T_p{p}" for p in QS) + "\n")
+        for r in rows:
+            f.write(f"{r[0]},{r[1]:.4f},{r[2]},{r[3]}," + ",".join(f"{v:.5g}" for v in r[4:]) + "\n")
+    print(f"\nwrote {fc}")
+
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    plt.rcParams.update({"font.size": 9, "axes.spines.top": False, "axes.spines.right": False,
+                         "figure.facecolor": "#fcfcfb", "axes.facecolor": "#fcfcfb", "legend.frameon": False})
+    sty = {"lumina_X": dict(color="#2a6fb0", ls="-", marker="o", label="Lumina, X-rays"),
+           "lumina_noX_pred": dict(color="#2a6fb0", ls="--", marker="o", mfc="none", label="Lumina, no X-rays (predicted)"),
+           "pair_X": dict(color="#c4572a", ls="-", marker="s", ms=4, label="50 cMpc, X-rays"),
+           "pair_noX": dict(color="#777777", ls="-", marker="s", ms=4, label="50 cMpc, no X-rays")}
+    fig, ax = plt.subplots(2, len(ECL), figsize=(4.0 * len(ECL), 7.0), squeeze=False)
+    zz = np.array(sorted({r[1] for r in rows}))
+    for j, (lab, lo, hi) in enumerate(ECL):
+        for nm, st in sty.items():
+            R = sorted((r for r in rows if r[2] == lab and r[3] == nm), key=lambda r: r[1])
+            zr = np.array([r[1] for r in R])
+            ax[0, j].plot(zr, [r[4] for r in R], **st)
+            ax[1, j].plot(zr, [r[8] for r in R], **st)
+            if nm != "pair_X":
+                ax[1, j].fill_between(zr, [r[6] for r in R], [r[10] for r in R], color=st["color"],
+                                      alpha=0.10 if nm != "lumina_noX_pred" else 0.06)
+        zg = np.linspace(zz.min(), zz.max(), 50)
+        for i in range(2):
+            ax[i, j].plot(zg, 2.7255 * (1 + zg), color="k", lw=0.8, ls=":", label=r"$T_\gamma$")
+            ax[i, j].set(yscale="log", xlabel="z")
+            ax[i, j].invert_xaxis()
+        ax[0, j].set(title=lab, ylabel=r"$\langle 1/T\rangle^{-1}$ of the H I [K]")
+        ax[1, j].set(ylabel="median T [K] (band: 10-90%)")
+    ax[0, 0].legend(fontsize=7)
+    fig.suptitle("neutral IGM (non-star-forming, x_HII < 1e-3), gas cells, H I-weighted; "
+                 "no-X-ray Lumina = own-rank map from the 50 cMpc pair", fontsize=9)
+    fig.tight_layout()
+    fp = os.path.join(a.data, "T_evolution_noX.png")
+    fig.savefig(fp, dpi=200)
+    print(f"wrote {fp}")
+
+
 class D_acc:
     """read-only view of a saved npz as an Acc (for void_hm)"""
     def __init__(self, D):
@@ -379,8 +483,11 @@ def main():
     s = sp.add_parser("compare")
     s.add_argument("--out", default=os.environ.get("BASE", OUT))
     s.add_argument("--data", default="data")
+    s = sp.add_parser("evolution")
+    s.add_argument("--out", default=os.environ.get("BASE", OUT))
+    s.add_argument("--data", default="data")
     a = p.parse_args()
-    {"lumina": lumina, "pair": pair, "compare": compare}[a.cmd](a)
+    {"lumina": lumina, "pair": pair, "compare": compare, "evolution": evolution}[a.cmd](a)
 
 
 if __name__ == "__main__":
