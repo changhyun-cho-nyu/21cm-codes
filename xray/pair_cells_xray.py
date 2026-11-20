@@ -607,10 +607,11 @@ def predictors(tr, te, S, rng):
     P["X (none)"] = lt[te]
     P["median | d"] = QN[kd_tr, NLEV // 2]
     p = np.empty(len(te))
+    lte = lt[te]
     o, ku, st, en = groups(kd_tr)
     for k, a0, a1 in zip(ku, st, en):
         j = o[a0:a1]
-        p[j] = np.interp(lt[te][j], QX[k], LEV)
+        p[j] = np.interp(lte[j], QX[k], LEV)
     P["qmap | d, train ranks"] = eval_q(QN, kd_tr, p)
     P["qmap | d, own ranks"] = eval_q(QN, kd_tr, own_rank(kd_tr, lt[te], w[te]))
     med2 = Q2[k2[te], NLEV // 2]
@@ -622,7 +623,7 @@ def predictors(tr, te, S, rng):
     d1 = eval_q(QN, kd_tr, u)
     P["draw | d,T_X"] = np.where(ok2, d2, d1)
     k4 = kd4 * NQ + q_te
-    ok4 = np.all(np.isfinite(Q4[k4]), axis=1)                    # an empty quartile (ties in ph): 1-D own ranks
+    ok4 = np.all(np.isfinite(Q4), axis=1)[k4]                    # an empty quartile (ties in ph): 1-D own ranks
     P["qmap | d,ph, own ranks"] = np.where(ok4, eval_q(np.nan_to_num(Q4), k4, own_rank(k4, lt[te], w[te])),
                                            P["qmap | d, own ranks"])
     return P, dict(n1=n1, f2=float(np.sum(w[te][ok2]) / np.sum(w[te])))
