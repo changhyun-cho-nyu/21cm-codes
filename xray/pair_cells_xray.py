@@ -26,9 +26,18 @@ scan (one snapshot, both runs; a batch job, ~2.2e8 cells per run):
   writes <out>/pair_cells/pair_cells_NNN.npz (tables, maps, 2-D histograms, a random subsample of 2e6 good neutral
   pairs with both runs' state and the X run's PhotonDensity, for fitting a T_noX model later).
 report: tables of every snapshot found, data/pair_cells_xray.png.
+fit: T_noX predictors that use only X-run quantities (what Lumina has), scored on the subsample against the true T_noX
+  (H I weight; classes by 1+delta; 16^3-block <1 - T_gamma/T> for the spatial pattern). Models, by 0.05-dex bins of
+  1+delta_X: median T_noX | 1+delta; quantile map T_X -> T_noX | 1+delta with the training set's T_X ranks or with the
+  target's own ranks (what transfers to a box with different X-ray heating); median and random draw of T_noX |
+  (1+delta, T_X) (0.05-dex T_X bins, absolute, so they do not transfer); own-rank quantile map | (1+delta, quartile of
+  the X-run PhotonDensity 100-500 eV). Splits: in-sample; random halves of the 16^3 blocks; train on the blocks whose
+  void cells (1+delta < 1) have the coolest T_X, test on the hottest (a transfer test). Writes pair_fit_NNN.npz with
+  the quantile tables fitted on the whole subsample. Limitation: the subsample holds pairs neutral WITHOUT X-rays.
 
   python pair_cells_xray.py scan --snap 48            (render taken from SNAP_RENDER)
   python pair_cells_xray.py report
+  python pair_cells_xray.py fit [--snaps 36 48]
 Inputs are read only (Oliver's runs); outputs only under /orcd/data/mvogelsb/004/chcho.
 """
 import argparse
@@ -488,6 +497,255 @@ def report(a):
     print(f"\nwrote {a.data}/pair_cells_xray.png")
 
 
+# ---------------------------------------------------------------------------------------------------------------------
+# fit: T_noX predictors from X-run quantities only, scored against the true T_noX of the paired subsample
+FIT_LD = np.arange(-1.5, 3.0001, 0.05)       # log10(1+delta_X) bins
+FIT_LT = np.arange(0.0, 5.0001, 0.05)        # log10 T_X bins (2-D tables)
+NLEV = 1001                                  # quantile levels
+NQ = 4                                       # photon-density classes (quartiles within a 1+delta bin)
+MIN_TRAIN = 50                               # cells a bin needs to be used; otherwise the nearest such bin / 1-D model
+MIN_BLK = 20                                 # test cells a 16^3 block needs in the block statistics
+LEV = np.linspace(0.0, 1.0, NLEV)
+
+
+def wquant(y, w, lev):
+    """weighted quantiles (mid-point CDF) of y at levels lev"""
+    o = np.argsort(y, kind="stable")
+    c = np.cumsum(w[o].astype(np.float64))
+    c = (c - 0.5 * w[o]) / c[-1]
+    return np.interp(lev, c, y[o])
+
+
+def groups(key):
+    o = np.argsort(key, kind="stable")
+    ks = key[o]
+    st = np.flatnonzero(np.r_[True, ks[1:] != ks[:-1]])
+    en = np.r_[st[1:], len(ks)]
+    return o, ks[st], st, en
+
+
+def qtable(key, nkey, y, w):
+    Q = np.full((nkey, NLEV), np.nan)
+    n = np.zeros(nkey, np.int64)
+    o, ku, st, en = groups(key)
+    for k, a0, a1 in zip(ku, st, en):
+        j = o[a0:a1]
+        n[k] = a1 - a0
+        Q[k] = wquant(y[j], w[j], LEV)
+    return Q, n
+
+
+def nearest_ok(ok):
+    """index of the nearest True entry (ties: lower)"""
+    good = np.flatnonzero(ok)
+    if len(good) == 0:
+        sys.exit("STOP: no populated bin in the training set")
+    i = np.arange(len(ok))
+    p = np.clip(np.searchsorted(good, i), 1, max(len(good) - 1, 1))
+    lo, hi = good[np.maximum(p - 1, 0)], good[np.minimum(p, len(good) - 1)]
+    return np.where(np.abs(i - lo) <= np.abs(hi - i), lo, hi)
+
+
+def own_rank(key, y, w):
+    """weighted mid-point rank (0..1) of y within its own key group"""
+    p = np.empty(len(y))
+    o, ku, st, en = groups(key)
+    for a0, a1 in zip(st, en):
+        j = o[a0:a1]
+        jj = j[np.argsort(y[j], kind="stable")]
+        c = np.cumsum(w[jj].astype(np.float64))
+        p[jj] = (c - 0.5 * w[jj]) / c[-1]
+    return p
+
+
+def eval_q(Q, key, p):
+    """Q[key] evaluated at levels p (per group)"""
+    out = np.empty(len(p))
+    o, ku, st, en = groups(key)
+    for k, a0, a1 in zip(ku, st, en):
+        j = o[a0:a1]
+        out[j] = np.interp(p[j], LEV, Q[k])
+    return out
+
+
+def ph_class(kd, lph, w, nkd, edges=None):
+    """photon-density quartile within each 1+delta bin; edges from (kd, lph, w) unless given"""
+    if edges is None:
+        edges = np.full((nkd, NQ - 1), np.nan)
+        o, ku, st, en = groups(kd)
+        for k, a0, a1 in zip(ku, st, en):
+            j = o[a0:a1]
+            edges[k] = wquant(lph[j], w[j], np.arange(1, NQ) / NQ)
+    q = np.zeros(len(kd), np.int64)
+    for i in range(NQ - 1):
+        q += lph > edges[kd, i]
+    return q, edges
+
+
+def predictors(tr, te, S, rng):
+    """log10 T_noX predictions for the test cells from X-run quantities; models trained on tr"""
+    ld, lt, lph, w, ltn = S["ld"], S["lt"], S["lph"], S["w"], S["ltn"]
+    nd, nt = len(FIT_LD) - 1, len(FIT_LT) - 1
+    kd = np.clip(np.searchsorted(FIT_LD, ld, side="right") - 1, 0, nd - 1)
+    kt = np.clip(np.searchsorted(FIT_LT, lt, side="right") - 1, 0, nt - 1)
+    # 1-D (1+delta) tables
+    QN, n1 = qtable(kd[tr], nd, ltn[tr], w[tr])
+    QX, _ = qtable(kd[tr], nd, lt[tr], w[tr])
+    near = nearest_ok(n1 >= MIN_TRAIN)
+    kd_tr = near[kd[te]]
+    # 2-D (1+delta, T_X) tables of T_noX
+    k2 = kd * nt + kt
+    Q2, n2 = qtable(k2[tr], nd * nt, ltn[tr], w[tr])
+    ok2 = n2[k2[te]] >= MIN_TRAIN
+    # photon-density classes: training edges for the training table, the test set's own edges for its own ranks
+    near4 = nearest_ok(n1 >= MIN_TRAIN * NQ)
+    q_tr, _ = ph_class(kd[tr], lph[tr], w[tr], nd)
+    Q4, _ = qtable(kd[tr] * NQ + q_tr, nd * NQ, ltn[tr], w[tr])
+    kd4 = near4[kd[te]]
+    q_te, _ = ph_class(kd4, lph[te], w[te], nd)
+    P = {}
+    P["X (none)"] = lt[te]
+    P["median | d"] = QN[kd_tr, NLEV // 2]
+    p = np.empty(len(te))
+    o, ku, st, en = groups(kd_tr)
+    for k, a0, a1 in zip(ku, st, en):
+        j = o[a0:a1]
+        p[j] = np.interp(lt[te][j], QX[k], LEV)
+    P["qmap | d, train ranks"] = eval_q(QN, kd_tr, p)
+    P["qmap | d, own ranks"] = eval_q(QN, kd_tr, own_rank(kd_tr, lt[te], w[te]))
+    med2 = Q2[k2[te], NLEV // 2]
+    P["median | d,T_X"] = np.where(ok2, med2, P["median | d"])
+    u = rng.random(len(te))
+    d2 = np.full(len(te), np.nan)
+    if ok2.any():
+        d2[ok2] = eval_q(Q2, k2[te][ok2], u[ok2])
+    d1 = eval_q(QN, kd_tr, u)
+    P["draw | d,T_X"] = np.where(ok2, d2, d1)
+    k4 = kd4 * NQ + q_te
+    ok4 = np.all(np.isfinite(Q4[k4]), axis=1)                    # an empty quartile (ties in ph): 1-D own ranks
+    P["qmap | d,ph, own ranks"] = np.where(ok4, eval_q(np.nan_to_num(Q4), k4, own_rank(k4, lt[te], w[te])),
+                                           P["qmap | d, own ranks"])
+    return P, dict(n1=n1, f2=float(np.sum(w[te][ok2]) / np.sum(w[te])))
+
+
+def scores(lp, te, S, blk, nblk):
+    """class <1/T>^-1, <1-Tg/T>; rms log10 error; 16^3-block <1-Tg/T>: corr, rms / std of the truth"""
+    w, one, Tg = S["w"][te], S["one"][te], S["Tg"]
+    T, Tt = 10.0**lp, 10.0**S["ltn"][te]
+    row = []
+    for lab, lo, hi in CLASSES:
+        s = (one >= lo) & (one < hi)
+        ws = w[s]
+        row += [ws.sum() / np.sum(ws / T[s]), np.sum(ws * (1.0 - Tg / T[s])) / ws.sum()]
+    row.append(np.sqrt(np.sum(w * (lp - S["ltn"][te])**2) / w.sum()))
+    b = blk[te]
+    sw = np.bincount(b, w, nblk)
+    nb = np.bincount(b, minlength=nblk)
+    ap = np.bincount(b, w * (1.0 - Tg / T), nblk)
+    at = np.bincount(b, w * (1.0 - Tg / Tt), nblk)
+    k = nb >= MIN_BLK
+    ap, at = ap[k] / sw[k], at[k] / sw[k]
+    row += [corr(ap, at) if k.sum() > 2 else np.nan,
+            np.sqrt(np.mean((ap - at)**2)) / np.std(at) if k.sum() > 2 else np.nan, int(k.sum())]
+    return row
+
+
+def fit(a):
+    fs = sorted(glob.glob(os.path.join(a.out, "pair_cells", "pair_cells_*.npz")))
+    if a.snaps:
+        fs = [f for f in fs if int(re.search(r"_(\d+)\.npz$", f).group(1)) in a.snaps]
+    if not fs:
+        sys.exit("no scan outputs found")
+    od = os.path.join(a.out, "pair_cells")
+    check_out(od, a.allow_any_out)
+    for f in fs:
+        d = np.load(f)
+        snap, z, Tg = int(d["snap"]), float(d["z"]), float(d["Tgamma"])
+        N = d["dpix"].shape[0]
+        nbk = N // BLOCK
+        T_noX, T_X = d["sub_T_noX"].astype(np.float64), d["sub_T_X"].astype(np.float64)
+        w = d["sub_w"].astype(np.float64)
+        ph = d["sub_ph_X"].astype(np.float64)
+        if ph.shape[1] < 2:
+            sys.exit(f"STOP: snapshot {snap}: the X run's subsample has no X-ray PhotonDensity bins")
+        if np.any(T_noX <= 0) or np.any(T_X <= 0):
+            sys.exit(f"STOP: snapshot {snap}: non-positive temperatures in the subsample")
+        phs = ph[:, 0] + ph[:, 1]
+        lph = np.log10(np.where(phs > 0, phs, np.nan))
+        lph = np.where(np.isfinite(lph), lph, np.nanmin(lph) - 1.0)
+        S = dict(ld=np.log10(d["sub_one_X"].astype(np.float64)), lt=np.log10(T_X), ltn=np.log10(T_noX), lph=lph, w=w,
+                 one=d["sub_one_noX"].astype(np.float64), Tg=Tg)
+        i0, i1, i2 = np.unravel_index(d["sub_pix"].astype(np.int64), (N, N, N))
+        blk = np.ravel_multi_index((i0 // BLOCK, i1 // BLOCK, i2 // BLOCK), (nbk,) * 3)
+        nblk = nbk**3
+        n = len(w)
+        xX = d["sub_x_X"].astype(np.float64)
+        print(f"\nsnapshot {snap} (z = {z:.3f}, T_gamma = {Tg:.2f} K): {n:,} paired neutral-IGM cells (subsample); "
+              f"H I share with x_HII,X > 1e-3: {w[xX > 1e-3].sum() / w.sum():.4f}")
+        # diagnostic: within-bin rank correlation of T_X and T_noX
+        kd = np.clip(np.searchsorted(FIT_LD, S["ld"], side="right") - 1, 0, len(FIT_LD) - 2)
+        rx, rn = own_rank(kd, S["lt"], w), own_rank(kd, S["ltn"], w)
+        rph = own_rank(kd, lph, w)
+        msg = []
+        for lab, lo, hi in CLASSES:
+            s = (S["one"] >= lo) & (S["one"] < hi)
+            ws = w[s]
+            cw = lambda x_, y_: np.sum(ws * (x_ - 0.5) * (y_ - 0.5)) / np.sqrt(np.sum(ws * (x_ - 0.5)**2) * np.sum(ws * (y_ - 0.5)**2))
+            msg.append(f"{lab}: r(T_X, T_noX) {cw(rx[s], rn[s]):.3f}, r(ph, T_noX) {cw(rph[s], rn[s]):.3f}")
+        print("   within-bin rank correlation (H I-weighted, 0.05 dex in 1+delta_X): " + "; ".join(msg))
+        # splits: in-sample; random half of the 16^3 blocks; train on the blocks with the coolest void T_X, test on the hottest
+        rng = np.random.default_rng(a.seed)
+        perm = rng.permutation(nblk)
+        tr_b = np.zeros(nblk, bool); tr_b[perm[:nblk // 2]] = True
+        vs = S["one"] < 1.0
+        bw = np.bincount(blk[vs], w[vs], nblk)
+        bn = np.bincount(blk[vs], minlength=nblk)
+        bt = np.bincount(blk[vs], w[vs] * S["lt"][vs], nblk) / np.where(bw > 0, bw, 1.0)
+        has = bn >= MIN_BLK
+        cut = np.median(bt[has])
+        hot = has & (bt > cut)
+        splits = {"in-sample": (np.arange(n), np.arange(n)),
+                  "random blocks": (np.flatnonzero(tr_b[blk]), np.flatnonzero(~tr_b[blk])),
+                  "cool -> hot blocks": (np.flatnonzero(~hot[blk]), np.flatnonzero(hot[blk]))}
+        res, names = {}, None
+        for sn, (tr, te) in splits.items():
+            P, info = predictors(tr, te, S, np.random.default_rng(a.seed + 1))
+            truth = scores(S["ltn"][te], te, S, blk, nblk)
+            rows = [truth] + [scores(lp, te, S, blk, nblk) for lp in P.values()]
+            names = ["truth"] + list(P.keys())
+            res[sn] = np.array(rows)
+            extra = ""
+            if sn == "cool -> hot blocks":
+                def hm(idx):
+                    s = idx[vs[idx]]
+                    return w[s].sum() / np.sum(w[s] / T_X[s]), w[s].sum() / np.sum(w[s] / T_noX[s])
+                (hx0, hn0), (hx1, hn1) = hm(tr), hm(te)
+                extra = (f"; 1+d<1 <1/T>^-1 train {hx0:.1f} K with X / {hn0:.2f} K without, "
+                         f"test {hx1:.1f} / {hn1:.2f} K")
+            print(f"\n   split '{sn}': train {len(tr):,}, test {len(te):,} cells; 2-D table bins used for "
+                  f"{info['f2']:.3f} of the test H I{extra}")
+            print("   model                    |   all: <1/T>^-1  <1-Tg/T>  (err) |  1+d<1: <1-Tg/T> (err) |"
+                  "    1-2: <1-Tg/T> (err) |     >2: <1-Tg/T> (err) | rms log | 16^3 blocks: r  rms/sd")
+            for nm, r in zip(names, rows):
+                err = lambda i: (r[i] - truth[i]) / abs(truth[i])
+                print(f"   {nm:24s} | {r[6]:15.2f} {r[7]:9.3f} ({err(7):+6.1%}) | {r[1]:15.3f} ({err(1):+6.1%}) | "
+                      f"{r[3]:15.3f} ({err(3):+6.1%}) | {r[5]:15.3f} ({err(5):+6.1%}) | {r[8]:7.3f} | "
+                      f"{r[9]:6.3f} {r[10]:6.3f} (n {int(r[11])})")
+        # tables fitted on the whole subsample, for applying to Lumina later
+        nd = len(FIT_LD) - 1
+        QN, n1 = qtable(kd, nd, S["ltn"], w)
+        QX, _ = qtable(kd, nd, S["lt"], w)
+        q4, e4 = ph_class(kd, lph, w, nd)
+        Q4, n4 = qtable(kd * NQ + q4, nd * NQ, S["ltn"], w)
+        fn = os.path.join(od, f"pair_fit_{snap:03d}.npz")
+        np.savez(fn, z=z, snap=snap, Tgamma=Tg, ld_edges=FIT_LD, lev=LEV, QN_logT_noX=QN, QX_logT_X=QX, n1=n1,
+                 Q4_logT_noX=Q4.reshape(nd, NQ, NLEV), n4=n4.reshape(nd, NQ), ph_edges=e4,
+                 models=np.array(names), splits=np.array(list(res.keys())), scores=np.array(list(res.values())),
+                 score_cols=np.array([f"{c[0]} {q}" for c in CLASSES for q in ("hm", "a")] +
+                                     ["rms_log", "blk_r", "blk_rms_sd", "blk_n"]))
+        print(f"\n   wrote {fn}")
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sp = p.add_subparsers(dest="cmd", required=True)
@@ -500,10 +758,15 @@ def main():
     r = sp.add_parser("report")
     r.add_argument("--out", default=os.environ.get("BASE", OUT))
     r.add_argument("--data", default="data")
+    f = sp.add_parser("fit")
+    f.add_argument("--snaps", type=int, nargs="*", default=None)
+    f.add_argument("--out", default=os.environ.get("BASE", OUT))
+    f.add_argument("--seed", type=int, default=2026)
+    f.add_argument("--allow-any-out", action="store_true", help=argparse.SUPPRESS)   # mock tests only
     a = p.parse_args()
     if a.cmd == "scan" and a.render is None and a.snap not in SNAP_RENDER:
         sys.exit(f"no render known for snapshot {a.snap}: pass --render")
-    scan(a) if a.cmd == "scan" else report(a)
+    {"scan": scan, "report": report, "fit": fit}[a.cmd](a)
 
 
 if __name__ == "__main__":
