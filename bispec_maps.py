@@ -9,10 +9,14 @@ Fields (--field):
   He      3.46 cm delta T_b, the gas-cell maps <cell-root>/cell_test*/RIN_cell_He_NNN.hdf5 (rin), else
           cellmap_He_NNN.hdf5 (dTb_cell), found as make_vid.py does; <snap> = FULL snapshot (102 ... 158)
   xHII    HII_VolumeFraction of the 640^3 renders                 ; <snap> = render snapshot
+  xHI     1 - HII_VolumeFraction                                   ; render snapshot
   xHeIII  HeIII_VolumeFraction / y  (y = n_He/n_H = 0.0789)        ; render snapshot
   xHeII   HeII_VolumeFraction / y                                  ; render snapshot
 Ionization fields are volume-weighted (CLAUDE.md, 2026-11-19). The normalised B is unchanged by a constant
-factor (so / y does not matter) but changes SIGN between x and 1 - x (e.g. xHeII vs xHeIII at fixed x_HeI).
+factor (so / y does not matter) but changes SIGN between x and 1 - x: B(xHI) = -B(xHII) exactly, and
+B(xHeII) ~ -B(xHeIII) where He I is negligible (z < 4.75). He II is to the 3.46 cm line what H I is to 21 cm,
+so the matching pairs are (xHI, xHeII) (the emitting species; 3.46 cm work uses xHeII, user 2026-11-19) or
+(xHII, xHeIII) (the ionized species); a mixed pair gives opposite-sign evolution by construction.
 
 Box and k units: LEN = --box = 338.3 cMpc/h (500 cMpc x h, h = 0.6766), so every k (input and output) is in
 h/cMpc, k_F = 2 pi / 338.3 = 0.0186 and k_Nyq = 5.94 h/cMpc on 640^3. For render fields the header BoxSize is
@@ -66,8 +70,9 @@ SNAP_SWITCH = 428
 BOX_MPCH = 338.3                                  # 500 cMpc x 0.6766
 X_H = 0.76
 Y_HE = (1.0 - X_H) / (4.0 * X_H)
-RENDER_FIELDS = {"xHII": ("HII_VolumeFraction", 1.0), "xHeIII": ("HeIII_VolumeFraction", Y_HE),
-                 "xHeII": ("HeII_VolumeFraction", Y_HE)}
+RENDER_FIELDS = {"xHII": ("HII_VolumeFraction", 1.0, False), "xHI": ("HII_VolumeFraction", 1.0, True),
+                 "xHeIII": ("HeIII_VolumeFraction", Y_HE, False), "xHeII": ("HeII_VolumeFraction", Y_HE, False)}
+# (render field, divisor, use 1 - field / divisor)
 ISO_THETA = np.array([0.01, 0.05, 0.1, 0.2, 0.33333333333333333, 0.4, 0.5, 0.6, 0.7, 0.85, 0.95], np.float32)
 COLS = "k3 B_norm B_imag k1 k2 P1 P2 P3 N_tri theta_over_pi B"
 
@@ -149,7 +154,7 @@ def load_field(a, s):
             d = f[ds]
             return (d[()].astype(np.float32), float(f.attrs["z"]), fn,
                     text_attr(d.attrs, "content") or "3.46 cm delta T_b (gas-cell level)", None)
-    name, div = RENDER_FIELDS[a.field]
+    name, div, comp = RENDER_FIELDS[a.field]
     d0 = a.dir_a if s <= SNAP_SWITCH else a.dir_b
     for fn in (os.path.join(d0, name, f"{name}_{s:03d}.hdf5"), os.path.join(d0, "All", f"All_{s:03d}.hdf5")):
         if os.path.exists(fn):
@@ -159,8 +164,10 @@ def load_field(a, s):
                 hd = f["Header"].attrs if "Header" in f else {}
                 z = float(hd["Redshift"]) if "Redshift" in hd else np.nan
                 box = float(hd["BoxSize"]) / 1000.0 if "BoxSize" in hd else None
-                m = (f[name][()] / div).astype(np.float32)
-                return m, z, fn, f"{name}{' / y' if div != 1 else ''} (volume-weighted fraction)", box
+                m = f[name][()] / div
+                m = (1.0 - m if comp else m).astype(np.float32)
+                desc = f"{'1 - ' if comp else ''}{name}{' / y' if div != 1 else ''} (volume-weighted fraction)"
+                return m, z, fn, desc, box
     raise FileNotFoundError(f"no {name} for render snapshot {s} in {d0}")
 
 

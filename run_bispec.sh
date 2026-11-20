@@ -18,10 +18,11 @@
 # Then, settings from the command line (no defaults for SNAPS / K1: they are your choice), e.g.
 #   FIELD=H  CONFIG=iso SNAPS="177 203 220 242" K1="0.1 0.3 0.6" sbatch -p ou_mki run_bispec.sh
 #   FIELD=He CONFIG=iso SNAPS="126 131 136 141" K1="0.1 0.3"     sbatch -p ou_mki run_bispec.sh   # FULL snapshots
-#   FIELD=xHeIII CONFIG=gen SNAPS="450 500" K1="0.15" K2="0.3"   sbatch -p ou_mki run_bispec.sh
+#   FIELD=xHeII CONFIG=iso SNAPS="450 500" K1="0.1 0.3"         sbatch -p ou_mki run_bispec.sh   # render snapshots
 #   FIELD=H  CONFIG=equi SNAPS="242" KFAC="1.1"                  sbatch -p ou_mki run_bispec.sh
 # FIELD: H (Tb_maps_prod/H_real_wf, render snapshots), He (gas-cell maps cell_test*/, full snapshots),
-#        xHII / xHeIII / xHeII (render *_VolumeFraction, He ones / y). Task i does every NTASK-th (snapshot, k) job
+#        xHII / xHI (= 1 - xHII) / xHeIII / xHeII (render *_VolumeFraction, He ones / y; B flips sign between x and
+#        1 - x: pair xHI with xHeII, or xHII with xHeIII). Task i does every NTASK-th (snapshot, k) job
 #        (NTASK = the --array size); existing outputs are skipped, so a resubmission finishes what is missing.
 # Memory: ~45 GB per 640^3 BiFFT call; the selftest also builds a float64 reference (~25 GB more).
 # NUM_TH: BiFFT threads (the old jobs used 1 to avoid FFTW/OpenMP crashes); raise --cpus-per-task with it.
@@ -40,7 +41,7 @@ if [ "${SELFTEST:-0}" = 1 ]; then
     python -u bispec_maps.py selftest --n 640 --k1 ${K1:-0.2} --theta 0.1 --num-th $NUM_TH
     echo "done $(date)"; exit 0
 fi
-: "${FIELD:?set FIELD (H, He, xHII, xHeIII, xHeII)}" "${CONFIG:?set CONFIG (iso, gen, equi)}" "${SNAPS:?set SNAPS}"
+: "${FIELD:?set FIELD (H, He, xHII, xHI, xHeIII, xHeII)}" "${CONFIG:?set CONFIG (iso, gen, equi)}" "${SNAPS:?set SNAPS}"
 KARGS=""
 if [ "$CONFIG" = equi ]; then KARGS="--kfac ${KFAC:-1.1}"
 else : "${K1:?set K1 [h/cMpc]}"; KARGS="--k1 $K1"; [ "$CONFIG" = gen ] && KARGS="$KARGS --k2 ${K2:?set K2 for gen}"; fi

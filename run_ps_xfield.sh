@@ -16,8 +16,13 @@
 # line 4, is 0.025 at every z, not x-bar, so their amplitude is not reliable):
 #   $OUT/PS_xHII_NNN.out   : x_HII   = HII_VolumeFraction            (volume-weighted, as the maps' x labels)
 #   $OUT/PS_xHeIII_NNN.out : x_HeIII = HeIII_VolumeFraction / y      (the field is per H nucleus; y = 0.0789)
-# NNN = render snapshot. z and BoxSize from the render's All_NNN.hdf5 header.
+#   $OUT/PS_xHeII_NNN.out  : x_HeII  = HeII_VolumeFraction / y       (2026-11-19: the field the 3.46 cm work uses; P equals
+#                            P(x_HeIII) where He I is negligible, z < 4.75, and differs above, where He I follows H I)
+# No x_HI file: P is computed from m - <m>, so P(1 - x_HII) = P(x_HII) exactly.
+# NNN = render snapshot. z and BoxSize from the render's All_NNN.hdf5 header. FIELDS picks which to do (default all
+# three); existing outputs are skipped, so adding x_HeII to a finished OUT computes only the new files.
 #   mkdir -p logs && sbatch run_ps_xfield.sh
+#   FIELDS=xHeII sbatch run_ps_xfield.sh
 
 U=/orcd/data/mvogelsb/004/chcho
 R=/orcd/data/mvogelsb/005/mkilab001/mvogelsblab003/Lab/Thesan-XL
@@ -27,6 +32,7 @@ OUT=${OUT:-$U/xfield_ps}
 H_SNAPS=${H_SNAPS:-"177 203 220 242 264 283 300 318 338"}
 HE_SNAPS=${HE_SNAPS:-"406 428 450 452 471 476 487 500 501 514 516 528 529 552 558 582 596 614"}
 Y_INV=12.666666666666666          # 1/y, y = (1 - 0.76) / (4 x 0.76)
+FIELDS=${FIELDS:-"xHII xHeIII xHeII"}
 
 source ~/.bashrc
 conda activate jupyter_env
@@ -39,14 +45,19 @@ rdir() { if [ "$1" -le 428 ]; then echo $R/Flagship_new/postprocessing/ren_640; 
 field() {   # $1 render dir, $2 field, $3 snapshot (3 digits): the per-field file, else All
     local p="$1/$2/$2_$3.hdf5"; [ -f "$p" ] && echo "$p" || echo "$1/All/All_$3.hdf5"
 }
-for s in $H_SNAPS; do
-    S=$(printf %03d $s); D=$(rdir $s)
-    python -u ps_from_map.py --map "$(field $D HII_VolumeFraction $S)" --dset HII_VolumeFraction \
-        --header "$D/All/All_$S.hdf5" --out "$OUT/PS_xHII_$s.out"
-done
-for s in $HE_SNAPS; do
-    S=$(printf %03d $s); D=$(rdir $s)
-    python -u ps_from_map.py --map "$(field $D HeIII_VolumeFraction $S)" --dset HeIII_VolumeFraction --scale $Y_INV \
-        --header "$D/All/All_$S.hdf5" --out "$OUT/PS_xHeIII_$s.out"
+ps() {   # $1 tag, $2 render field, $3 scale, $4 snapshots
+    for s in $4; do
+        local o="$OUT/PS_$1_$s.out" S=$(printf %03d $s) D=$(rdir $s)
+        [ -f "$o" ] && { echo "$o exists, skipped"; continue; }
+        python -u ps_from_map.py --map "$(field $D $2 $S)" --dset $2 --scale $3 --header "$D/All/All_$S.hdf5" --out "$o"
+    done
+}
+for F in $FIELDS; do
+    case $F in
+        xHII)   ps xHII   HII_VolumeFraction   1      "$H_SNAPS" ;;
+        xHeIII) ps xHeIII HeIII_VolumeFraction $Y_INV "$HE_SNAPS" ;;
+        xHeII)  ps xHeII  HeII_VolumeFraction  $Y_INV "$HE_SNAPS" ;;
+        *) echo "unknown field $F (xHII, xHeIII, xHeII)"; exit 1 ;;
+    esac
 done
 echo "done $(date)"
