@@ -145,7 +145,7 @@ def read_snap(src, run, snap, N):
     if len(fs) != nfiles:
         sys.exit(f"STOP: {run}: {len(fs)} files found, the header says {nfiles}")
     print(f"{run} snapshot {snap}: z = {z:.5f}, BoxSize {box}, {len(fs)} files, {ntot:,} gas cells", flush=True)
-    keys = ("id", "ip", "m", "rho", "u", "x", "ne", "sf", "ph")
+    keys = ("id", "ip", "m", "rho", "u", "x", "ne", "sf", "ph", "f2", "f3")
     C = {k: [] for k in keys}
     dep_m = np.zeros(N**3)
     dep_ph = None
@@ -174,11 +174,11 @@ def read_snap(src, run, snap, N):
             m = g["Masses"][()].astype(np.float32)
             rho = g["Density"][()].astype(np.float32)
             x = g["HII_Fraction"][()].astype(np.float32)
+            fII = g["HeII_Fraction"][()].astype(np.float32) if "HeII_Fraction" in g else np.zeros(n, np.float32)
+            fIII = g["HeIII_Fraction"][()].astype(np.float32) if "HeIII_Fraction" in g else np.zeros(n, np.float32)
             if "ElectronAbundance" in g:
                 ne = g["ElectronAbundance"][()].astype(np.float32)
             else:
-                fII = g["HeII_Fraction"][()] if "HeII_Fraction" in g else 0.0
-                fIII = g["HeIII_Fraction"][()] if "HeIII_Fraction" in g else 0.0
                 ne = (x + fII + 2.0 * fIII).astype(np.float32)
             ph = g["PhotonDensity"][()].astype(np.float64)
             if nb is None:
@@ -193,6 +193,7 @@ def read_snap(src, run, snap, N):
             C["id"].append(g["ParticleIDs"][()].astype(np.uint64))
             C["ip"].append(ip)
             C["m"].append(m); C["rho"].append(rho); C["x"].append(x); C["ne"].append(ne)
+            C["f2"].append(fII); C["f3"].append(fIII)
             C["u"].append(g["InternalEnergy"][()].astype(np.float32))
             C["sf"].append((g["StarFormationRate"][()] > 0) if "StarFormationRate" in g else np.zeros(n, bool))
             C["ph"].append(ph[:, list(XBINS)].astype(np.float32) if nb == 6 else np.zeros((n, 0), np.float32))
