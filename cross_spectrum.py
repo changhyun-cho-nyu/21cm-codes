@@ -93,18 +93,20 @@ def main():
     A, nameA = load(a.a)
     N, L = A.shape[0], a.box / 1e3
     bins = Bins(N, L, a.per_decade)
-    FA = np.fft.rfftn(A - A.mean()).ravel()
+    meanA = A.mean()
+    FA = np.fft.rfftn(A - meanA).ravel()
     del A
     norm = L**3 / float(N)**6
     PAA = bins.sum(np.abs(FA)**2) / np.maximum(bins.n, 1) * norm
     use = bins.n > 0
-    rec = {"k": bins.k[use], "N_modes": bins.n[use], "P_AA": PAA[use], "A": nameA}
-    print(f"A = {nameA}: N = {N}, box {L:.1f} cMpc/h, {int(use.sum())} k bins")
+    rec = {"k": bins.k[use], "N_modes": bins.n[use], "P_AA": PAA[use], "A": nameA, "mean_A": meanA}
+    print(f"A = {nameA}: N = {N}, box {L:.1f} cMpc/h, {int(use.sum())} k bins, mean {meanA:.6e}")
     for j, spec in enumerate(a.b):
         B, nameB = load(spec)
         if B.shape != (N, N, N):
             raise SystemExit(f"{spec}: shape {B.shape} differs from A")
-        FB = np.fft.rfftn(B - B.mean()).ravel()
+        meanB = B.mean()
+        FB = np.fft.rfftn(B - meanB).ravel()
         del B
         PBB = bins.sum(np.abs(FB)**2) / np.maximum(bins.n, 1) * norm
         PAB = bins.sum((FA * np.conj(FB)).real) / np.maximum(bins.n, 1) * norm
@@ -112,11 +114,11 @@ def main():
         with np.errstate(invalid="ignore", divide="ignore"):        # bins without modes (not printed or saved)
             r = PAB / np.sqrt(PAA * PBB)
         err = (1 - r**2) / np.sqrt(2.0 * np.maximum(bins.n, 1))      # 2 real d.o.f. per complex mode (audit 2026-11-19)
-        print(f"\n  B{j} = {nameB}")
+        print(f"\n  B{j} = {nameB} (mean {meanB:.6e})")
         print(f"  {'k [h/cMpc]':>10} {'modes':>9} {'r_AB':>8} {'+-':>6} {'b = P_AB/P_BB':>14}")
         for i in np.flatnonzero(use):
             print(f"  {bins.k[i]:10.4f} {int(bins.n[i]):9d} {r[i]:+8.3f} {err[i]:6.3f} {PAB[i] / PBB[i]:14.4e}")
-        rec.update({f"B{j}": nameB, f"P_BB_{j}": PBB[use], f"P_AB_{j}": PAB[use], f"r_{j}": r[use]})
+        rec.update({f"B{j}": nameB, f"P_BB_{j}": PBB[use], f"P_AB_{j}": PAB[use], f"r_{j}": r[use], f"mean_B{j}": meanB})
     if a.out:
         np.savez(a.out, **rec)
         print(f"\nwrote {a.out}")
