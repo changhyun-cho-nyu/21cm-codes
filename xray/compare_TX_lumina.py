@@ -430,28 +430,41 @@ def evolution(a):
     import matplotlib.pyplot as plt
     plt.rcParams.update({"font.size": 9, "axes.spines.top": False, "axes.spines.right": False,
                          "figure.facecolor": "#fcfcfb", "axes.facecolor": "#fcfcfb", "legend.frameon": False})
-    sty = {"lumina_X": dict(color="#2a6fb0", ls="-", marker="o", label="Lumina, X-rays"),
-           "lumina_noX_pred": dict(color="#2a6fb0", ls="--", marker="o", mfc="none", label="Lumina, no X-rays (predicted)"),
+    # drawn in this order: the predicted no-X-ray Lumina last and on top (it lies within ~1% of the 50 cMpc no-X run)
+    sty = {"pair_noX": dict(color="#777777", ls="-", lw=2.5, marker="s", ms=5, label="50 cMpc, no X-rays"),
            "pair_X": dict(color="#c4572a", ls="-", marker="s", ms=4, label="50 cMpc, X-rays"),
-           "pair_noX": dict(color="#777777", ls="-", marker="s", ms=4, label="50 cMpc, no X-rays")}
-    fig, ax = plt.subplots(2, len(ECL), figsize=(4.0 * len(ECL), 7.0), squeeze=False)
+           "lumina_X": dict(color="#2a6fb0", ls="-", marker="o", label="Lumina, X-rays"),
+           "lumina_noX_pred": dict(color="#1b9e77", ls="--", lw=1.6, marker="D", ms=6, mfc="none", mew=1.4, zorder=5,
+                                   label="Lumina, no X-rays (predicted)")}
+    fig, ax = plt.subplots(3, len(ECL), figsize=(4.0 * len(ECL), 9.6), squeeze=False,
+                           gridspec_kw={"height_ratios": [1, 1, 0.55]})
     zz = np.array(sorted({r[1] for r in rows}))
+    get = lambda lab, nm: sorted((r for r in rows if r[2] == lab and r[3] == nm), key=lambda r: r[1])
     for j, (lab, lo, hi) in enumerate(ECL):
         for nm, st in sty.items():
-            R = sorted((r for r in rows if r[2] == lab and r[3] == nm), key=lambda r: r[1])
+            R = get(lab, nm)
             zr = np.array([r[1] for r in R])
             ax[0, j].plot(zr, [r[4] for r in R], **st)
             ax[1, j].plot(zr, [r[8] for r in R], **st)
-            if nm != "pair_X":
-                ax[1, j].fill_between(zr, [r[6] for r in R], [r[10] for r in R], color=st["color"],
-                                      alpha=0.10 if nm != "lumina_noX_pred" else 0.06)
+            if nm in ("lumina_X", "pair_noX"):
+                ax[1, j].fill_between(zr, [r[6] for r in R], [r[10] for r in R], color=st["color"], alpha=0.10)
         zg = np.linspace(zz.min(), zz.max(), 50)
         for i in range(2):
             ax[i, j].plot(zg, 2.7255 * (1 + zg), color="k", lw=0.8, ls=":", label=r"$T_\gamma$")
             ax[i, j].set(yscale="log", xlabel="z")
+        # ratio panel: predicted no-X Lumina / 50 cMpc no-X run (and the check on the pair)
+        base = {r[1]: r[4] for r in get(lab, "pair_noX")}
+        for nm, col, mk, lb in (("lumina_noX_pred", "#1b9e77", "D", "Lumina no X (pred.) / 50 cMpc no X"),
+                                ("pair_noX_pred", "#777777", "s", "check: pred. from 50 cMpc X / 50 cMpc no X")):
+            R = get(lab, nm)
+            ax[2, j].plot([r[1] for r in R], [r[4] / base[r[1]] for r in R], color=col, marker=mk, mfc="none", label=lb)
+        ax[2, j].axhline(1.0, color="k", lw=0.6)
+        ax[2, j].set(xlabel="z", ylabel=r"ratio of $\langle 1/T\rangle^{-1}$")
+        for i in range(3):
             ax[i, j].invert_xaxis()
         ax[0, j].set(title=lab, ylabel=r"$\langle 1/T\rangle^{-1}$ of the H I [K]")
         ax[1, j].set(ylabel="median T [K] (band: 10-90%)")
+    ax[2, 0].legend(fontsize=7)
     ax[0, 0].legend(fontsize=7)
     fig.suptitle("neutral IGM (non-star-forming, x_HII < 1e-3), gas cells, H I-weighted; "
                  "no-X-ray Lumina = own-rank map from the 50 cMpc pair", fontsize=9)
