@@ -371,6 +371,7 @@ Test, on a mock render (N = 32) against an independent Python calculation:
 - **l. ~433–435:** says T_S^He ≈ T_K ≫ T_γ for helium, which contradicts the weak He coupling stated elsewhere. Check whether that paragraph is still rendered.
 - **Ionized fraction labels (2026-10-15, `check_ionization_history.py`):** every x̄_HII / x̄_HeIII in the figures is the volume-weighted ⟨x⟩_V (as Fig. 2); say "volume-weighted" in the captions or once in the text. The midpoint z ≈ 6.9 in the text is right (⟨x_HII⟩_V = 0.5 at z = 6.87; mass-weighted 7.12). Zier+26 Fig. 16 labels the midpoint z = 7.13, inconsistent with its own ⟨x⟩_V: cite Lumina's history from the data (or our Fig. 2), not from that label, and mention it to the Lumina team.
 - **Self-shielding onset at z ≈ 3.35 (decided 2026-11-12: option A, keep the maps, state it):** the 21 cm global signal steps from 0.23 to 0.44 mK between z = 3.38 and 3.34 (neutral H mass 1.3% → 2.5%), visible in principle in the global-history figure (l. ~485, panel c, z = 30 → 3) and the light cone (l. 461, z = 20 → 3). Suggested caption addition (wording to be fixed after the Lumina team confirms the cause). Also l. ~618: "rare, self-shielded neutral pockets" at z ≲ 6: in Lumina the non-star-forming gas is optically thin to the UVB until z ≈ 3.35 (x_HI = 0.06 at n_H = 0.03–0.1 cm⁻³), so the neutral gas at z ≲ 6 is the star-forming gas, neutral by the render convention.
+- **Run restart at z = 4.75 (decided 2026-11-19: option A, state it; `check_switch_cells.py`, job 29695064, §7.1):** in the simulation paragraph (l. 219), after "…without resolving residual hydrogen ionization structure.": {+Because this background is applied without self-shielding, the restart ionizes and heats the densest gas ($n_\mathrm{H} \gtrsim 0.04\,\mathrm{cm^{-3}}$), which the stellar radiation had left partly neutral: its neutral hydrogen fraction drops from 0.21 to 0.07, its \ion{He}{1} fraction from 0.30 to 0.06, and its temperature rises from $2\times10^4$ to $3\times10^4$\,K between $z = 4.75$ and $4.5$. Through the electron density and the \ion{He}{2} abundance this raises the gas-cell 3.46\,cm mean by $\approx 8$ per cent at $z \approx 4.5$; the $640^3$ maps, which average over this gas, do not show the step.+} Optionally one clause where the He power spectrum / b_eff or the He global history is discussed ("the small rise at $z \approx 4.5$ is the restart of the simulation at $z = 4.75$, Section~X"). Numbers: 1+δ > 1000, non-star-forming, 121 → 126: x_HII 0.790 → 0.928, n_e/n_H 0.848 → 1.005, x_HeII 0.657 → 0.907, T 1.98 → 3.00 ×10⁴ K; step +0.007–0.009 µK of 0.09 µK.
 
 ### 6.4 Outside J_α (from `21cm_manuscript/audit_report_2026-10-06.md`, not addressed here)
 That audit lists issues downstream of J_α that this work did not touch. The main ones:
@@ -540,9 +541,30 @@ The code is Neyer's mfp-bubbles-thesan (arXiv:2310.03783) adapted to the Lumina 
 - **New code:** `mfp/lumina-mfp-hist-grid.cc` (volume fractions; `-DLINE_HE` for He; 64-bit histograms; read errors stop the run; falls back to `All_NNN.hdf5`).
 - **To run:** `mfp/run_mfp.sh` for the snapshots without volume-weighted output (H 8, He 47). `BSD.ipynb` cell 2 reads `LUMINA_*_Vol`.
 - **Provenance of the existing `_Vol` files (job 29695919, `mfp/check_mfp_outputs.py`):** the ray count equals 192 × N(x > 0.5) exactly, which identifies the field.
-  - All 17 H and 52 He files (the May files plus the first new ones) are the volume field; the mass field would give 2–12% fewer start cells.
+  - All 17 H and 52 He files (the May files plus the first new ones) are the volume field. The mass field would give fewer start cells: H 0.5–9% fewer (z = 5.8–12), He 1.4–55% fewer (z = 3.4–11; at z = 12 He has one start cell, the mass field none). *(Corrected 2026-11-19 from "2–12%", which did not cover the range.)*
   - Reruns with the new 64-bit build: H 177 is bit-identical. He 450 has the same start cells, with 139 of 8.2 × 10⁹ rays one bin over (2 × 10⁻⁸). The May He build applied 1/y as the double 12.666667, the new one as a float, so x differs in the last bit. Medians and percentiles are unchanged.
   - So the old and new outputs can be mixed.
+- **Interim check with the first new 64-bit outputs (job 29698613, 2026-11-19, commit af48eeb, status 0):** 18 H files (render 112–338, z = 12.0–5.83) and 55 He files (112–596, z = 12.0–3.44), 0 problems.
+  - Every file is the volume field: rays/192 = N(x_V > 0.5) exactly. This includes the new 64-bit files (H 244, 266, 285; He 445, 452, 469, 473, 489, 513, 516).
+  - The comparison with the reruns is unchanged: H 177 is identical, He 450 has 139 rays one bin over (2 × 10⁻⁸).
+  - No wrapped bins in any file. He 695, the one that overflowed, is not in `_Vol` yet (running with the 64-bit build).
+  - Volume-weighted medians (p84) [cMpc] rise smoothly with no jumps:
+
+    | z | H | He |
+    |---|---|---|
+    | 12.03 | 0.63 (1.32) | 0.54 (0.63) |
+    | 10.10 | 0.73 (2.10) | 0.54 (1.32) |
+    | 8.10 | 1.90 (6.01) | 1.03 (2.49) |
+    | 7.18 | 3.96 (13.9) | 1.32 (3.56) |
+    | 6.56 | 9.72 (32.1) | 1.81 (4.74) |
+    | 5.83 | 60.9 (172) | 2.59 (6.98) |
+    | 5.00 | | 4.15 (11.5) |
+    | 4.51 | | 5.91 (16.8) |
+    | 4.01 | | 13.6 (40.4) |
+    | 3.60 | | 49.7 (141) |
+    | 3.44 | | 106 (292) |
+
+  - Still running at that time: H 302–360 (job 29691825), H 374 (29699083), He 502–695 (29691829). After they finish: `RERUN=/orcd/data/mvogelsb/004/chcho/mfp_rerun sbatch mfp/run_check_mfp.sh`, then `BSD.ipynb` cell 2.
 - **Caveats:**
   - Rays capped at 1000 cMpc: 3.2% at H z = 5.55, 1–4.4% at He z = 3.17–3.04, so the means there are biased low; medians and p84 are not.
   - Medians reach about 200 cMpc, nearly half the 500 cMpc box, at the latest points.
