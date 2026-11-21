@@ -102,8 +102,10 @@ def units(hd):
     return rho_unit, ob * 3.0 * H0**2 / (8.0 * np.pi * G) / rho_unit
 
 
-def cone_tb(cone, line, J, chunk=256, spin_model=1):
-    """delta T_b [mK for line="H", uK for "He"] of every light-cone cell; J broadcastable to cone["Density"]"""
+def cone_tb(cone, line, J, chunk=256, spin_model=1, extras=False):
+    """delta T_b [mK for line="H", uK for "He"] of every light-cone cell; J broadcastable to cone["Density"].
+    extras=True (21 cm, spin_model 1 only; lightcone_global.py): also returns {"TS", "xc", "xa"} (float32, same shape;
+    xa = x_alpha with S~_alpha), from the same Line.tb call, so delta T_b is unchanged."""
     hd = cone["header"]
     h, om, ob = float(hd["HubbleParam"]), float(hd["Omega0"]), float(hd["OmegaBaryon"])
     ol = float(hd.get("OmegaLambda", OMEGA_L_DEFAULT))
@@ -120,6 +122,7 @@ def cone_tb(cone, line, J, chunk=256, spin_model=1):
     J = np.broadcast_to(J, rho.shape)
 
     out = np.empty(rho.shape, dtype=np.float32)
+    ex = {k: np.empty(rho.shape, dtype=np.float32) for k in ("TS", "xc", "xa")} if extras else None
     z = cone["z"]
     for j0 in range(0, len(z), chunk):                            # chunks of slices (memory)
         s = np.s_[..., j0:j0 + chunk]
@@ -128,5 +131,8 @@ def cone_tb(cone, line, J, chunk=256, spin_model=1):
         f2, f3 = fII[s].astype(np.float64), fIII[s].astype(np.float64)
         nH = X_H * r * rho_unit * (1.0 + L.z)**3 / M_H           # proper cm^-3
         sig = r * (1.0 - xh) / rho_mean if line == "H" else (f2 / Y_HE) * r / rho_mean
-        out[s] = L.tb(sig, nH, T[s].astype(np.float64), xh, f2, f3, J[s].astype(np.float64))[0]
-    return out
+        res = L.tb(sig, nH, T[s].astype(np.float64), xh, f2, f3, J[s].astype(np.float64), full=extras)
+        out[s] = res[0]
+        if extras:
+            ex["xc"][s], ex["xa"][s], ex["TS"][s] = res[1], res[2], res[3]["TS"]
+    return (out, ex) if extras else out

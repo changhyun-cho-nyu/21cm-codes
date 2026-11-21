@@ -18,6 +18,11 @@ the ratio cone / maps is bin by bin. Expected differences:
   - sample variance (one cone band vs the whole box).
 Bands whose slices are not all done in the cone file are skipped (so it runs on a partial file).
 
+--tile (2026-11-20, the evolution of Delta^2 along the whole cone): instead of --z, for each --depth the cone is cut
+into contiguous bands of that depth from its near end (z = 2.987) outwards, as many as fit (the far remainder, less
+than one depth, is left out); every slice is in at most one band of a depth. --no-maps skips the maps (cone only;
+above z ~ 20 no maps bracket the band anyway).
+
 Output: --out/lightcone_ps_<line>.hdf5, group d<depth>/z<z>: k, D2, nmodes (cone), D2_maps, nmodes_maps, attributes
 (the band's z and chi range, slices, pixel, k_use = 6 x 2 pi / depth, the map snapshots and weights). Prints
 cone / maps in k ranges (median of the bins, the number of bins).
@@ -25,6 +30,7 @@ cone / maps in k ranges (median of the bins, the number of bins).
 Usage
 -----
   python make_lightcone_ps.py --cone-dir DIR --out DIR [--lines H He] [--z 3.5 ... 15] [--depth 338.3 150]
+  python make_lightcone_ps.py --cone-dir DIR --out DIR --lines H --tile --no-maps [--depth 338.3 150]
 """
 import argparse
 import os
@@ -80,6 +86,8 @@ def main():
     ap.add_argument("--taper-perp", type=float, default=0.2)
     ap.add_argument("--band-mean", action="store_true", help="remove the band's mean instead of each slice's (a test)")
     ap.add_argument("--bins-per-decade", type=int, default=10)
+    ap.add_argument("--tile", action="store_true", help="contiguous bands of each depth over the whole cone (not --z)")
+    ap.add_argument("--no-maps", action="store_true", help="cone only, no production-map comparison")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
     ion = pd.read_csv(a.ion, comment="#").set_index("snap")
@@ -87,7 +95,7 @@ def main():
     for line in a.lines:
         src = os.path.join(a.cone_dir, f"lightcone_dTb_{line}.hdf5")
         mdir = a.maps_H if line == "H" else a.maps_He
-        maps = map_list(mdir, ion)
+        maps = {} if a.no_maps else map_list(mdir, ion)
         with h5py.File(src, "r") as f, h5py.File(os.path.join(a.out, f"lightcone_ps_{line}.hdf5"), "a") as g:
             ze, ce, done = f["z_edges"][()], f["chi_edges"][()], f["done"][()]
             theta = float(f.attrs["header_OpeningAngle"])
@@ -96,10 +104,22 @@ def main():
             oz = np.argsort(ze)
             print(f"\n===== {line}: {src}, {done.sum()} / {len(done)} slices done; maps {len(maps)} in {mdir}; "
                   f"box {L:.2f} cMpc/h; depths {a.depth}", flush=True)
-            for zt in a.z:
+            if a.tile:      # chi increases with slice index reversed (z decreasing along the file): use sorted chi
+                cs = np.sort(ce)
+                plan = []
+                for depth in a.depth:
+                    nb = int((cs[-1] - cs[0]) // depth)
+                    if nb < 1:
+                        raise ValueError(f"depth {depth} is longer than the cone ({cs[-1] - cs[0]:.1f} cMpc/h)")
+                    chis = cs[0] + depth * (np.arange(nb) + 0.5) + 1e-6
+                    plan += [(float(np.interp(c, cs, ze[np.argsort(ce)])), depth) for c in chis]
+                    print(f"  tiling depth {depth}: {nb} bands, z {plan[-nb][0]:.3f} ... {plan[-1][0]:.3f}", flush=True)
+            else:
+                plan = [(zt, depth) for zt in a.z for depth in a.depth]
+            for zt in sorted(set(p[0] for p in plan)):
                 chi0 = float(np.interp(zt, ze[oz], ce[oz]))
                 bands = {}
-                for depth in a.depth:
+                for depth in [d for zz, d in plan if zz == zt]:
                     sel = np.flatnonzero((centre >= chi0 - 0.5 * depth) & (centre < chi0 + 0.5 * depth))
                     if len(sel) < 8 or chi0 - 0.5 * depth < ce.min() or chi0 + 0.5 * depth > ce.max():
                         print(f"  z = {zt}, depth {depth}: band outside the cone or < 8 slices; skipped")
@@ -112,7 +132,8 @@ def main():
                 br = bracket(maps, zt)
                 mp = []
                 if br is None:
-                    print(f"  z = {zt}: no maps bracket it; cone only")
+                    if not a.no_maps:
+                        print(f"  z = {zt}: no maps bracket it; cone only")
                 else:
                     (za, sa), (zb, sb) = br
                     wb = 0.0 if zb == za else (zt - za) / (zb - za)
