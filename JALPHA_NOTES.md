@@ -290,6 +290,30 @@ Test, on a mock render (N = 32) against an independent Python calculation:
     - Steps at z = 4.75 (H I harmonic T_K ×3, x_c up: the restart step, §6.1) and z = 3.35 (⟨δT_b⟩ 0.21 → 0.45 mK).
   - **Δ² (depth 150; mK²):** at k = 0.3 h/cMpc: 0.20 (z = 3.1), 0.16 (3.35), 0.056 (3.6), **0.031 minimum (4.6)**, 0.066 (5.0), 0.48 (5.4), 4.9 (5.9), 14.3 (6.4), **16.9 (7.0, x_HII,V ≈ 0.45)**, 9.0 (7.7), 3.4 (8.4), 3.3 (9.3), 8.9 (10.3), 18.2 (11.4), **22.0 (12.7)**, 9.0 (14.3), 1.6 (16.1), 0.45 (18.2), 0.24 (20.8), 0.17 (23.9). At k = 1: 1.5, 0.24 (4.6), 18.2 (7.0), 17.8 (9.3), 50.3 (12.7), 0.69 (23.9). Slope d ln Δ²/d ln k (k = 0.3–3): 1.8–1.9 at z ≤ 4.6 (P ∝ k^−1.1, small-scale dominated; not shot noise, which is k³), 0.1–0.2 at z = 5.9–6.4 (flat, the bubbles), 1.1–1.2 at z = 8.4–9.3, 0.5–1.0 at z ≥ 10. Depth 338.3 within ~10–30% of 150 except at z = 7.5–9.3 (its band spans the dip; the light-cone effect).
   - **At z > 10 these are pixel-level values, not the signal.** Gas-cell means at the four full snapshots (64 cubes, §6.1 item 11) against the cone band and the maps: z = 10.01: gas cells +17.72, cone +20.09, maps +19.99 mK; z = 11.93: −5.94, +11.81, +10.68; z = 15.02: −6.65, +1.41, +1.04; z = 22.97: +0.58, −0.28, −0.25. So the cone has no absorption trough at z ≈ 12–17 because of its pixels; the gas cells put one there. The cone's second Δ² peak (z ≈ 12.7) and the sign at z ≈ 21–23 come from the same pixel-level temperatures.
+  - **Wiggles in the per-slice curves = sample variance of thin sheets (2026-11-22; from `lightcone_global_H.csv`, scripts not in the repo).**
+    - **Geometry:** a slice is one pixel deep (0.43 cMpc/h at z = 3, 0.58 at 7, 0.78 at 30) and 0.0628 χ across (277 / 338 / 410 / 493 cMpc/h at z = 3 / 5 / 10 / 30). The line of sight is within |t| ≤ 0.031 rad of the box z axis, so a slice is roughly one z-plane of the periodic box, wrapped at z ≳ 5. Its mean is a plane average, carrying the box's line-of-sight modes, mostly the longest (wavelengths L/n, L = 338.3 cMpc/h). Only 2–16% of the residual variance is at wavelengths < 20 cMpc/h: broad bumps, not slice noise.
+    - **Method:**
+      - **z ≤ 9:** residual = slice value − boxcar of exactly L in χ. For a frozen periodic box this cancels every plane mode.
+      - **z > 9:** a sixth-order polynomial in z, fitted over z = 9–12, 12–15 and 15–20. Over Δz ≈ 1 the boxcar does not follow the steep evolution and its residual is the trend's curvature.
+    - **Repetition:** the ⟨1 + δ⟩ residual at χ and at χ + L (the same box plane one box later) correlate with r = 0.94–0.99 at every z (x_HII,V: 0.48–0.96 at z = 4–20).
+    - **Density residual rms:**
+
+      | z | 20–25 | 6–15 | 3–4 |
+      |---|---|---|---|
+      | rms of ⟨1 + δ⟩ | 0.004 | 0.006–0.013 | 0.023 |
+
+      It grows with structure.
+    - **Reionization, z = 5.5–8.5:** the ⟨δT_b⟩ residual follows the slice x_HII,V (corr −0.98 to −0.99 at z = 5–8).
+      - rms 0.3–0.4 mK.
+      - x_HII,V scatter 0.012–0.027 (4–7% relative).
+      - Slices cutting more bubbles are dimmer.
+    - **z = 9–15:** the residual follows the slice density (corr +0.91 / +0.96 at z = 9–12 / 12–15, rms 0.25 mK).
+      - It follows the H I harmonic T_K even more closely (+0.97 / +0.98).
+      - A linear fit on (δ, x_HII, ln T_harm, ln x_α) explains 98–99% of its variance (88% at z = 15–20, rms 0.05 mK).
+      - The response is ≈ 40 mK per unit δ, 2–8× the mean δT_b: denser slices hold more sources and so are hotter and more Lyα-coupled. The (1 + δ) factor alone would give ≈ 1×.
+    - **z = 5–6:** largest relative scatter (38% of the boxcar mean, 0.49 mK). The H I there is star-forming gas, i.e. few objects.
+    - **Not sample variance:** the steps at z = 4.75 and 3.35 (§6.1). The J sampling adds ≤ 1.3–2.5% relative scatter at z < 10.
+    - **Use:** a single slice is not the global signal. For a global history from the cone, average over a χ window of exactly L, which leaves only the time evolution. At z ≳ 10, where the signal changes fast, use the box means. The same effect is the sample-variance error of a narrow-field observation.
 - **Cone → box mapping (`check_cone_mapping.py`, 2026-10-26).** Pixel (ix, iy) of slice j, with r the slice's centre distance:
   t = ((i + 0.5)/N − 0.5) OpeningAngle, p = r/√(1 + t_x² + t_y²), P = (O_x + t_x p, O_y + t_y p, O_z + p) mod BoxSize.
   - **O = (91.447, 39.645, 7.864) cMpc/h, the same for the whole cone** (both runs, z = 10 to 3, across the join). The header `Center` differs between the runs and is not O.
