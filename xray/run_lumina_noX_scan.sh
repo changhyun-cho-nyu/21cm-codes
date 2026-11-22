@@ -7,7 +7,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=32G
-#SBATCH --time=24:00:00
+#SBATCH --time=48:00:00
 #SBATCH --partition=orcd_ug_pi_mki_mvogelsb_all
 #SBATCH --mail-user=chcho@mit.edu
 #SBATCH --mail-type=END,FAIL
