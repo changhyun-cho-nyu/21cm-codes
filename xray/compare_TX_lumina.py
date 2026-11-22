@@ -30,6 +30,9 @@ per-bin sums of w and w/T go to <out>/TX_compare/TX_{lumina,pair_withXrays,pair_
   python compare_TX_lumina.py compare
   python compare_TX_lumina.py evolution   (T vs z: Lumina, Lumina without X-rays as predicted, the 50 cMpc pair;
                                            data/T_evolution_noX.{png,csv})
+  python compare_TX_lumina.py optionb     (option B: Lumina's T minus the pair's X-ray heating at the same rank,
+                                           scaled by the exposure ratio from void_heating_test.py when present;
+                                           data/T_evolution_optionB.{png,csv})
 Inputs read only; outputs only under /orcd/data/mvogelsb/004/chcho.
 """
 import argparse
@@ -474,6 +477,137 @@ def evolution(a):
     print(f"wrote {fp}")
 
 
+def option_b(L, X, N, Tg, s, lo, hi, tfloor=5.0, nl=1000):
+    """Option B (rank-matched subtraction of the pair's X-ray heating): in every 0.05-dex bin of 1+delta,
+    T_noX,L(p) = max(tfloor, T_X,L(p) - s [T_X,pair(p) - T_noX,pair(p)]) at quantile p of the H I-weighted T
+    distribution; s = Lumina / pair X-ray exposure. Lumina's H I per bin as weight; empty pair bins borrow the nearest
+    filled bin. Returns <1/T>^-1, <1 - Tg/T>, T quantiles QS, H I share clipped at the floor."""
+    c = 0.5 * (LD[1:] + LD[:-1])
+    k = (10**c >= lo) & (10**c < hi)
+    p = (np.arange(nl) + 0.5) / nl
+    hL, hX, hN = (D["h"].sum(0).astype(np.float64) for D in (L, X, N))
+    okP = (hX.sum(1) > 0) & (hN.sum(1) > 0)
+    near = np.flatnonzero(okP)
+    fill = near[np.abs(np.arange(ND)[:, None] - near[None, :]).argmin(1)]
+    wl = L["sw"].sum(0) * k
+    Q = lambda h: 10**np.interp(p, np.r_[0.0, np.cumsum(h)] / h.sum(), LT)
+    Ts, ws = [], []
+    clip = 0.0
+    for i in np.flatnonzero((wl > 0) & (hL.sum(1) > 0)):
+        j = fill[i]
+        TB = Q(hL[i]) - s * (Q(hX[j]) - Q(hN[j]))
+        clip += wl[i] * np.mean(TB < tfloor)
+        Ts.append(np.maximum(TB, tfloor))
+        ws.append(np.full(nl, wl[i] / nl))
+    if not Ts:
+        return np.nan, np.nan, [np.nan] * len(QS), np.nan
+    T, w = np.concatenate(Ts), np.concatenate(ws)
+    inv = np.sum(w / T) / w.sum()
+    o = np.argsort(T)
+    cw = np.cumsum(w[o]) / w.sum()
+    q = [float(np.interp(pp / 100.0, cw, T[o])) for pp in QS]
+    return 1.0 / inv, 1.0 - Tg * inv, q, clip / w.sum()
+
+
+def exposure_ratio(out, snap, b=5):
+    """Lumina / pair mean X-ray exposure in RT bin b (500-2000 eV) from void_heating_test.py, or nan"""
+    fl = os.path.join(out, "void_heat", f"void_heat_lumina_{snap:03d}.npz")
+    fp = os.path.join(out, "void_heat", f"void_heat_pair_{snap:03d}.npz")
+    if not (os.path.exists(fl) and os.path.exists(fp)):
+        return np.nan
+    return float(np.load(fl)["E"][:, b].mean() / np.load(fp)["E"][:, b].mean())
+
+
+def optionb(a):
+    """Option B next to the current own-rank model (option 3) for Lumina's neutral IGM, per snapshot and class"""
+    od = os.path.join(a.out, "TX_compare")
+    snaps = sorted(int(re.search(r"_(\d+)\.npz$", f).group(1)) for f in glob.glob(os.path.join(od, "TX_lumina_*.npz")))
+    snaps = [s for s in snaps if all(os.path.exists(os.path.join(od, f"TX_{k}_{s:03d}.npz"))
+                                     for k in ("pair_withXrays", "pair_withoutXrays"))]
+    if not snaps:
+        sys.exit(f"no complete snapshot (Lumina + both pair runs) in {od}")
+    c = 0.5 * (LD[1:] + LD[:-1])
+    ECL = (("all neutral IGM", 0.0, np.inf), ("voids, 1+delta < 1", 0.0, 1.0), ("1+delta = 1-2", 1.0, 2.0))
+    rows = []
+    for s in snaps:
+        L, X, N = (np.load(os.path.join(od, f"TX_{k}_{s:03d}.npz")) for k in ("lumina", "pair_withXrays",
+                                                                              "pair_withoutXrays"))
+        z = float(L["z"])
+        Tg = 2.7255 * (1.0 + z)
+        sE = exposure_ratio(a.out, s)
+        print(f"\nsnapshot {s}: z = {z:.3f}, T_gamma = {Tg:.2f} K; Lumina / pair X-ray exposure (500-2000 eV) "
+              f"{sE:.3f}" + ("" if np.isfinite(sE) else " (no void_heat files: only s = 1)")
+              + "   (<1/T>^-1 [K] | median T (p10-p90) [K] | <1-Tg/T> | H I share clipped at 5 K)")
+        for lab, lo, hi in ECL:
+            k = (10**c >= lo) & (10**c < hi)
+            sL, sN = stats(L, None, lo, hi, Tg), stats(N, None, lo, hi, Tg)
+            p3 = predict_noX(L["sw"].sum(0) * k, N, Tg)
+            cases = [("Lumina, X-rays", sL["hm"], sL["a"], sL["q"], np.nan, "lumina_X"),
+                     ("option 3 (current)", p3[0], p3[1], p3[2], np.nan, "option3"),
+                     ("option B, s = 1", *option_b(L, X, N, Tg, 1.0, lo, hi), "optionB_s1")]
+            if np.isfinite(sE):
+                cases.append((f"option B, s = {sE:.3f}", *option_b(L, X, N, Tg, sE, lo, hi), "optionB_sE"))
+            cases += [("50 cMpc, no X-rays", sN["hm"], sN["a"], sN["q"], np.nan, "pair_noX"),
+                      ("  check: B on 50 cMpc X, s = 1", *option_b(X, X, N, Tg, 1.0, lo, hi), "check")]
+            print(f"  {lab}:")
+            for nm, hm, aa, q, cl, tag in cases:
+                print(f"    {nm:30s} {hm:9.2f} | {q[2]:8.2f} ({q[0]:7.2f}-{q[4]:8.2f}) | {aa:8.3f} | "
+                      + (f"{cl:.4f}" if np.isfinite(cl) else "   -"))
+                rows.append((s, z, lab, tag, hm, aa, *q, cl))
+    os.makedirs(a.data, exist_ok=True)
+    fc = os.path.join(a.data, "T_evolution_optionB.csv")
+    with open(fc, "w") as f:
+        f.write("snap,z,class,case,hm_K,one_minus_Tg_over_T," + ",".join(f"T_p{p}" for p in QS) + ",clipped\n")
+        for r in rows:
+            f.write(f"{r[0]},{r[1]:.4f},{r[2]},{r[3]}," + ",".join(f"{v:.5g}" for v in r[4:]) + "\n")
+    print(f"\nwrote {fc}")
+
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    plt.rcParams.update({"font.size": 9, "axes.spines.top": False, "axes.spines.right": False,
+                         "figure.facecolor": "#fcfcfb", "axes.facecolor": "#fcfcfb", "legend.frameon": False})
+    sty = {"pair_noX": dict(color="#777777", ls="-", lw=2.5, marker="s", ms=5, label="50 cMpc, no X-rays"),
+           "lumina_X": dict(color="#2a6fb0", ls="-", marker="o", label="Lumina, X-rays"),
+           "option3": dict(color="#1b9e77", ls="--", marker="D", ms=6, mfc="none", mew=1.4, zorder=5,
+                           label="Lumina no X: option 3 (current)"),
+           "optionB_s1": dict(color="#d95f02", ls="-", marker="^", ms=6, zorder=6, label="Lumina no X: option B, s = 1"),
+           "optionB_sE": dict(color="#7570b3", ls=":", marker="v", ms=6, zorder=6,
+                              label="Lumina no X: option B, s = exposure ratio")}
+    fig, ax = plt.subplots(3, len(ECL), figsize=(4.0 * len(ECL), 9.6), squeeze=False,
+                           gridspec_kw={"height_ratios": [1, 1, 0.6]})
+    get = lambda lab, tag: sorted((r for r in rows if r[2] == lab and r[3] == tag), key=lambda r: r[1])
+    for j, (lab, lo, hi) in enumerate(ECL):
+        for tag, st in sty.items():
+            R = get(lab, tag)
+            if not R:
+                continue
+            zr = [r[1] for r in R]
+            ax[0, j].plot(zr, [r[4] for r in R], **st)
+            ax[1, j].plot(zr, [r[5] for r in R], **st)
+        base = {r[1]: r[4] for r in get(lab, "option3")}
+        for tag in ("optionB_s1", "optionB_sE"):
+            R = get(lab, tag)
+            if R:
+                ax[2, j].plot([r[1] for r in R], [r[4] / base[r[1]] for r in R], **{k_: v for k_, v in sty[tag].items()
+                                                                                    if k_ != "label"})
+        ax[2, j].axhline(1.0, color="k", lw=0.6)
+        zz = np.array(sorted({r[1] for r in rows}))
+        ax[0, j].plot(zz, 2.7255 * (1 + zz), color="k", lw=0.8, ls=":", label=r"$T_\gamma$")
+        ax[0, j].set(yscale="log", title=lab, ylabel=r"$\langle 1/T\rangle^{-1}$ of the H I [K]")
+        ax[1, j].set(ylabel=r"$\langle 1 - T_\gamma/T\rangle$")
+        ax[2, j].set(xlabel="z", ylabel=r"option B / option 3, $\langle 1/T\rangle^{-1}$")
+        for i in range(3):
+            ax[i, j].invert_xaxis()
+    ax[0, 0].legend(fontsize=7)
+    fig.suptitle("Lumina without X-rays, neutral IGM (gas cells, H I-weighted): option 3 (pair's no-X T per 1+delta bin) "
+                 "vs option B (Lumina's T minus the pair's X-ray heating at the same rank)", fontsize=8)
+    fig.tight_layout()
+    fp = os.path.join(a.data, "T_evolution_optionB.png")
+    fig.savefig(fp, dpi=200)
+    print(f"wrote {fp}")
+
+
 class D_acc:
     """read-only view of a saved npz as an Acc (for void_hm)"""
     def __init__(self, D):
@@ -499,8 +633,11 @@ def main():
     s = sp.add_parser("evolution")
     s.add_argument("--out", default=os.environ.get("BASE", OUT))
     s.add_argument("--data", default="data")
+    s = sp.add_parser("optionb")
+    s.add_argument("--out", default=os.environ.get("BASE", OUT))
+    s.add_argument("--data", default="data")
     a = p.parse_args()
-    {"lumina": lumina, "pair": pair, "compare": compare, "evolution": evolution}[a.cmd](a)
+    {"lumina": lumina, "pair": pair, "compare": compare, "evolution": evolution, "optionb": optionb}[a.cmd](a)
 
 
 if __name__ == "__main__":
