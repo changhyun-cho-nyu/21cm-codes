@@ -340,22 +340,29 @@ def summary(a):
         bn = float(D["mean_noX_box"]) if "mean_noX_box" in D else np.nan
         r = (s, z, bx, float(D["mean_X_cubes"]), float(D["err_X_cubes"]), bn, float(D["mean_noX_cubes"]),
              float(D["err_noX_cubes"]), float(D["effect_cubes"]), float(D["err_effect"]), pr[0], pr[1])
-        rows.append(r)
+        ok = z >= a.zmin
+        rows.append(r + (int(ok),))
         print(f"  {s:03d} {z:7.3f} | {bx:+10.4f}            | {r[3]:+8.4f}+-{r[4]:.4f} | {bn:+10.4f}             | "
-              f"{r[6]:+8.4f}+-{r[7]:.4f} | {r[8]:+8.4f}+-{r[9]:.4f} | {pr[0]:+8.4f} | {pr[1]:+8.4f}")
+              f"{r[6]:+8.4f}+-{r[7]:.4f} | {r[8]:+8.4f}+-{r[9]:.4f} | {pr[0]:+8.4f} | {pr[1]:+8.4f}"
+              + ("" if ok else f"  <- no X not valid (z < --zmin {a.zmin}): not in the csv no-X columns or the figure"))
     os.makedirs(a.data, exist_ok=True)
     fc = os.path.join(a.data, "lumina_noX_global.csv")
     with open(fc, "w") as f:
-        f.write("snap,z,X_box,X_cubes,err_X_cubes,noX_box_est,noX_cubes,err_noX_cubes,effect,err_effect,pair_X,pair_noX\n")
+        f.write("snap,z,X_box,X_cubes,err_X_cubes,noX_box_est,noX_cubes,err_noX_cubes,effect,err_effect,pair_X,pair_noX,"
+                "noX_valid\n")
         for r in rows:
-            f.write(",".join([str(r[0])] + [f"{v:.6g}" for v in r[1:]]) + "\n")
+            v = list(r[1:12])
+            if not r[12]:                                       # no-X columns blank below --zmin
+                v[4:9] = [np.nan] * 5
+            f.write(",".join([str(r[0])] + [f"{x:.6g}" for x in v] + [str(r[12])]) + "\n")
     print(f"wrote {fc}")
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     plt.rcParams.update({"font.size": 9, "axes.spines.top": False, "axes.spines.right": False,
                          "figure.facecolor": "#fcfcfb", "axes.facecolor": "#fcfcfb", "legend.frameon": False})
-    R = np.array([r[1:] for r in rows], float)
+    R = np.array([r[1:12] for r in rows], float)
+    ok = np.array([r[12] for r in rows], bool)
     zz = R[:, 0]
     X = np.where(np.isfinite(R[:, 1]), R[:, 1], R[:, 2])            # box where exact, else cubes
     Nn = np.where(np.isfinite(R[:, 4]), R[:, 4], R[:, 5])
@@ -363,7 +370,7 @@ def summary(a):
     fig, ax = plt.subplots(figsize=(6.5, 4.2))
     ax.axhline(0, color="k", lw=0.6)
     ax.plot(zz, X, "o-", color="#2a6fb0", label="Lumina, X-rays (gas cells)")
-    ax.errorbar(zz, Nn, yerr=eN, fmt="D--", color="#1b9e77", mfc="none", capsize=2,
+    ax.errorbar(zz[ok], Nn[ok], yerr=eN[ok], fmt="D--", color="#1b9e77", mfc="none", capsize=2,
                 label="Lumina, no X-rays (option 3)")
     ax.plot(zz, R[:, 9], "s:", color="#c4572a", ms=4, label="50 cMpc, X-rays (cells)")
     ax.plot(zz, R[:, 10], "s:", color="#777777", ms=4, label="50 cMpc, no X-rays (cells)")
@@ -413,6 +420,9 @@ def main():
     q = sp.add_parser("summary")
     q.add_argument("--out", default=os.environ.get("BASE", OUT))
     q.add_argument("--data", default="data")
+    q.add_argument("--zmin", type=float, default=5.7,
+                   help="no-X points only at z >= zmin: below it the 50 cMpc training run has no neutral gas left "
+                        "(z = 5.50: no populated x_HII < 1e-3 key; user decision 2026-11-22: end at z = 5.73)")
     a = p.parse_args()
     {"cubes": cubes, "scan": scan, "merge": merge, "summary": summary}[a.cmd](a)
 
