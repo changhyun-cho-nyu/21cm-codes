@@ -22,7 +22,9 @@
 #   FIELD=H  CONFIG=equi SNAPS="242" KFAC="1.1"                  sbatch -p ou_mki run_bispec.sh
 # FIELD: H (Tb_maps_prod/H_real_wf, render snapshots), He (gas-cell maps cell_test*/, full snapshots),
 #        xHII / xHI (= 1 - xHII) / xHeIII / xHeII (render *_VolumeFraction, He ones / y; B flips sign between x and
-#        1 - x: pair xHI with xHeII, or xHII with xHeIII). Task i does every NTASK-th (snapshot, k) job
+#        1 - x: pair xHI with xHeII, or xHII with xHeIII). Tests of the early He sign flip (render snapshots):
+#        xnotHeIII (1 - x_HeIII, x_HeII without He I), xnotHeIII_bin (1 - [x_HeIII > 0.5], the MFP's split),
+#        xHI_bin (1 - [x_HII > 0.5]). Task i does every NTASK-th (snapshot, k) job
 #        (NTASK = the --array size); existing outputs are skipped, so a resubmission finishes what is missing.
 # Memory: ~45 GB per 640^3 BiFFT call; the selftest also builds a float64 reference (~25 GB more).
 # NUM_TH: BiFFT threads (the old jobs used 1 to avoid FFTW/OpenMP crashes); raise --cpus-per-task with it.
@@ -41,7 +43,7 @@ if [ "${SELFTEST:-0}" = 1 ]; then
     python -u bispec_maps.py selftest --n 640 --k1 ${K1:-0.2} --theta 0.1 --num-th $NUM_TH
     echo "done $(date)"; exit 0
 fi
-: "${FIELD:?set FIELD (H, He, xHII, xHI, xHeIII, xHeII)}" "${CONFIG:?set CONFIG (iso, gen, equi)}" "${SNAPS:?set SNAPS}"
+: "${FIELD:?set FIELD (H, He, xHII, xHI, xHeIII, xHeII, xnotHeIII, xnotHeIII_bin, xHI_bin)}" "${CONFIG:?set CONFIG (iso, gen, equi)}" "${SNAPS:?set SNAPS}"
 KARGS=""
 if [ "$CONFIG" = equi ]; then KARGS="--kfac ${KFAC:-1.1}"
 else : "${K1:?set K1 [h/cMpc]}"; KARGS="--k1 $K1"; [ "$CONFIG" = gen ] && KARGS="$KARGS --k2 ${K2:?set K2 for gen}"; fi

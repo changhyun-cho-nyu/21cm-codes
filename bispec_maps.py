@@ -12,6 +12,10 @@ Fields (--field):
   xHI     1 - HII_VolumeFraction                                   ; render snapshot
   xHeIII  HeIII_VolumeFraction / y  (y = n_He/n_H = 0.0789)        ; render snapshot
   xHeII   HeII_VolumeFraction / y                                  ; render snapshot
+  Tests of the early He sign flip (2026-11-23), all render snapshots:
+  xnotHeIII      1 - HeIII_VolumeFraction / y  (= x_HeII + x_HeI: x_HeII without the He I dips); B = -B(xHeIII)
+  xnotHeIII_bin  1 - [x_HeIII > 0.5]  (the neutral/ionized split the He MFP uses: mfp/lumina-mfp-hist-grid.cc)
+  xHI_bin        1 - [x_HII > 0.5]    (the same for H)
 Ionization fields are volume-weighted (CLAUDE.md, 2026-11-19). The normalised B is unchanged by a constant
 factor (so / y does not matter) but changes SIGN between x and 1 - x: B(xHI) = -B(xHII) exactly, and
 B(xHeII) ~ -B(xHeIII) where He I is negligible (z < 4.75). He II is to the 3.46 cm line what H I is to 21 cm,
@@ -70,9 +74,14 @@ SNAP_SWITCH = 428
 BOX_MPCH = 338.3                                  # 500 cMpc x 0.6766
 X_H = 0.76
 Y_HE = (1.0 - X_H) / (4.0 * X_H)
-RENDER_FIELDS = {"xHII": ("HII_VolumeFraction", 1.0, False), "xHI": ("HII_VolumeFraction", 1.0, True),
-                 "xHeIII": ("HeIII_VolumeFraction", Y_HE, False), "xHeII": ("HeII_VolumeFraction", Y_HE, False)}
-# (render field, divisor, use 1 - field / divisor)
+RENDER_FIELDS = {"xHII": ("HII_VolumeFraction", 1.0, False, None), "xHI": ("HII_VolumeFraction", 1.0, True, None),
+                 "xHeIII": ("HeIII_VolumeFraction", Y_HE, False, None), "xHeII": ("HeII_VolumeFraction", Y_HE, False, None),
+                 # tests of the early He sign flip (2026-11-23): x_HeII without the He I dips, and the field the MFP sees
+                 "xnotHeIII": ("HeIII_VolumeFraction", Y_HE, True, None),
+                 "xnotHeIII_bin": ("HeIII_VolumeFraction", Y_HE, True, 0.5),
+                 "xHI_bin": ("HII_VolumeFraction", 1.0, True, 0.5)}
+# (render field, divisor, use 1 - x, threshold): x = field / divisor; with a threshold x -> 1 where x > threshold,
+# else 0 (the ionized cells of mfp/lumina-mfp-hist-grid.cc, which starts rays where x > 0.5 and stops them at 0.5)
 ISO_THETA = np.array([0.01, 0.05, 0.1, 0.2, 0.33333333333333333, 0.4, 0.5, 0.6, 0.7, 0.85, 0.95], np.float32)
 COLS = "k3 B_norm B_imag k1 k2 P1 P2 P3 N_tri theta_over_pi B"
 
@@ -154,7 +163,7 @@ def load_field(a, s):
             d = f[ds]
             return (d[()].astype(np.float32), float(f.attrs["z"]), fn,
                     text_attr(d.attrs, "content") or "3.46 cm delta T_b (gas-cell level)", None)
-    name, div, comp = RENDER_FIELDS[a.field]
+    name, div, comp, thr = RENDER_FIELDS[a.field]
     d0 = a.dir_a if s <= SNAP_SWITCH else a.dir_b
     for fn in (os.path.join(d0, name, f"{name}_{s:03d}.hdf5"), os.path.join(d0, "All", f"All_{s:03d}.hdf5")):
         if os.path.exists(fn):
@@ -165,8 +174,12 @@ def load_field(a, s):
                 z = float(hd["Redshift"]) if "Redshift" in hd else np.nan
                 box = float(hd["BoxSize"]) / 1000.0 if "BoxSize" in hd else None
                 m = f[name][()] / div
+                x = f"{name}{' / y' if div != 1 else ''}"
+                if thr is not None:
+                    m = (m > thr).astype(np.float64)
+                    x = f"[{x} > {thr:g}]"
                 m = (1.0 - m if comp else m).astype(np.float32)
-                desc = f"{'1 - ' if comp else ''}{name}{' / y' if div != 1 else ''} (volume-weighted fraction)"
+                desc = f"{'1 - ' if comp else ''}{x} (volume-weighted fraction{', binary' if thr is not None else ''})"
                 return m, z, fn, desc, box
     raise FileNotFoundError(f"no {name} for render snapshot {s} in {d0}")
 
