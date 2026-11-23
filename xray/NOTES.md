@@ -251,3 +251,22 @@ Reading:
   | 102 | 5.73 | +1.10 ± 0.18 | +0.25 ± 0.06 | **+0.85 ± 0.12** | +0.62 | +0.51 |
 
   Lumina no X crosses zero at z ≈ 7.5 and peaks at ≈ +2.4 mK at z ≈ 6.6; with X-rays the cube mean falls monotonically from +19.2 (z = 8.9). The effect is again carried by neutral gas below the mean density: the 1+δ < 1 classes give 95% of it at 074/080/086/097. Neutral IGM ⟨1/T⟩⁻¹ with / without X-rays: 688 / 19.8 K (z = 7.46), 955 / 21.5, 1237 / 23.1, 2017 / 28.5 K (z = 5.99); voids without X-rays 11.3 / 12.6 / 13.9 / 17.9 K, below T_γ (23.1 / 21.8 / 20.8 / 19.1 K), so the no-X voids are still in absorption (⟨1 − T_γ/T⟩ −1.04 / −0.73 / −0.50 / −0.07) and the no-X mean is the balance of those voids and the emitting 1+δ > 1 gas. With X-rays ⟨1 − T_γ/T⟩ = 0.97–0.99: saturated emission. The void-excess caveat above applies here too.
+- **Step 8, whole-box values (user, 2026-11-23: "for z < 7.5, use the whole box", option C; "the other part we still use the cell level").** Why the cube means were not enough at 074–102: they sit 1.5–20% below the 640³ whole-box means with X-rays (cubes / box 0.985 / 0.975 / 0.96 / 0.93 / 0.86 / 0.80 at z = 7.46 → 5.73), all on the same side, 1–2 jackknife errors each. The same 64 cubes (0.8% of the volume) are used at every z, so their sampling error is correlated across snapshots, and late in reionization the remaining H I sits in fewer, rarer regions. **Construction now (`summary`):** whole-box X from the gas cells wherever they exist (011, 017 from `cell_test_H_N` sum_V_tb / sum_V; 024–066 as before), from the 640³ production maps (`VID/H_wf/stats_H.csv`, spin model 1, linear in z between the bracketing renders; the render itself where one is at the snapshot's z) only at z ≤ 7.5 (`--max-z-640 7.5`: a snapshot above it without a gas-cell box stops the run); box no X = box X − cube effect at every z. 640³ / gas-cell whole box with X-rays where both exist: −6.78 → +1.04 (z = 15.02), −6.81 → +10.67 (11.93), 17.44 → 19.99 (×1.146, 10.01), 19.15 → 19.79 (×1.033, 8.90), 16.63 → 16.82 (×1.011, 8.00). The excess shrinks as the neutral gas heats (with X-rays ⟨1/T⟩⁻¹ ≈ 700–2000 K ≫ T_γ ≈ 20 K at z ≤ 7.5: δT_b ∝ n_HI per cell, and the deposit conserves the H I mass), so ≲ 1% (≲ 0.14 mK) is expected at z ≤ 7.5: an extrapolation, not measured; it is below the effect's jackknife errors (0.06–0.37 mK). At z ≤ 7.5 the no-X value therefore combines a pixel-level box X with the gas-cell cube effect (state it). Run by the user 2026-11-23 (commit 0826698; the 066 entry of the check came out nan there, since map 203 lies 0.209 above in z, beyond `--max-dz-640` 0.2, fixed afterwards by taking the exact render first; no effect on 074–102).
+
+  | snap | z | Lumina X, box | box X from | X-ray effect | **Lumina no X, box** | no X, cubes (before) |
+  |---|---|---|---|---|---|---|
+  | 011 | 22.97 | +0.55 | gas cells | — | — (X only) | — |
+  | 017 | 18.31 | +0.53 | gas cells | — | — (X only) | — |
+  | 024 | 15.02 | −6.78 | gas cells | +1.30 ± 0.13 | **−8.08** | −7.95 |
+  | 036 | 11.93 | −6.81 | gas cells | +24.51 ± 0.48 | **−31.31** | −30.45 |
+  | 048 | 10.01 | +17.44 | gas cells | +38.84 ± 0.17 | **−21.40** | −21.13 |
+  | 057 | 8.90 | +19.15 | gas cells | +29.80 ± 0.28 | **−10.65** | −10.56 |
+  | 066 | 8.00 | +16.63 | gas cells | +19.56 ± 0.34 | **−2.94** | −2.97 |
+  | 074 | 7.46 | +13.99 | 640³ | +13.63 ± 0.37 | **+0.36** | +0.16 |
+  | 080 | 6.99 | +10.83 | 640³ | +8.68 ± 0.37 | **+2.15** | +1.89 |
+  | 086 | 6.63 | +8.05 | 640³ | +5.37 ± 0.33 | **+2.68** | +2.36 |
+  | 092 | 6.29 | +5.24 | 640³ | +2.80 ± 0.26 | **+2.44** | +2.07 |
+  | 097 | 5.99 | +2.92 | 640³ | +1.11 ± 0.16 | **+1.81** | +1.40 |
+  | 102 | 5.73 | +1.37 | 640³ | +0.25 ± 0.06 | **+1.13** | +0.85 |
+
+  z = 23.0 and 18.3 (user, 2026-11-23): X-ray values only, no no-X ("x-ray / no x-ray will surely merge"; assumed, not computed). Both are weak emission from collisionally coupled dense gas before Lyα coupling (640³: −0.26 / +0.63 mK). No X now: trough −31.3 mK at z = 11.93, zero crossing between z = 8.0 and 7.46 (+0.36 at 7.46), peak +2.7 mK at z ≈ 6.6. Lumina no X − 50 cMpc no X at z ≤ 7.5: +0.63 / +0.52 / +0.46 / +0.34 / +0.43 / +0.62 mK, within the closure bias (+0.2 to +0.8 mK). Figure: `data/lumina_X_vs_noX.png` (repo; filled markers = gas-cell box X, open = 640³ box X); `summary` writes `data/lumina_noX_global.{csv,png}` on ORCD, with the columns `X_box_src` (cells / 640) and `X_640`.

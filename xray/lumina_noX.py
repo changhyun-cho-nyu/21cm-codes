@@ -349,6 +349,9 @@ def box_X_640(stats, z, max_dz):
     """whole-box <dT_b> with X-rays of the 640^3 production maps (stats_H.csv of make_vid.py: snap, z, mean), linear
     in z between the two renders around z (each within max_dz); returns (value, text) or (nan, reason)"""
     zs, ms, rs = stats
+    im = int(np.argmin(np.abs(zs - z)))
+    if abs(zs[im] - z) <= 1e-4:                                 # the render at the snapshot's z (z <= 12: exact)
+        return ms[im], f"map {rs[im]}"
     lo, hi = np.flatnonzero(zs <= z), np.flatnonzero(zs >= z)
     if not len(lo) or not len(hi):
         return np.nan, "outside the map list"
