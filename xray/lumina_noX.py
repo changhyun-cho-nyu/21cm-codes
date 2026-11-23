@@ -20,7 +20,9 @@ pixels, seed 12345) of the H gas-cell scans, 1.7e9 cells per snapshot (0.8% of t
                    the cubes, and, where the H scan files exist, the exact whole-box cell-level mean with X-rays
                    (sum of the scans' sum_V_tb / sum_V) and the whole-box no-X estimate = box X - cube effect
   summary        : all merged snapshots -> data/lumina_noX_global.{csv,png}, with the 50 cMpc cell means (cells_Tb)
-Task files: <out>/lumina_noX/noX_<kind>_NNN_TTT.npz; merged: <out>/lumina_noX/noX_NNN.npz.
+Task files: <out>/<sub>/noX_<kind>_NNN_TTT.npz; merged: <out>/<sub>/noX_NNN.npz (--sub, default lumina_noX; e.g.
+lumina_noX_Jexact for the rerun of 074/080/086/097 with J computed at their own renders, user 2026-11-22). summary --sub A B:
+for each snapshot the merged file of the first listed directory that has it; snapshots in several are compared.
 Outputs only under /orcd/data/mvogelsb/004/chcho; inputs read only.
 """
 import argparse
@@ -110,7 +112,7 @@ def tb_chunked(P, c, T, chunk, sel=None):
 
 
 def task_file(a, kind):
-    od = os.path.join(a.out, "lumina_noX")
+    od = os.path.join(a.out, a.sub)
     check_out(od, a.allow_any_out)
     os.makedirs(od, exist_ok=True)
     return os.path.join(od, f"noX_{kind}_{a.snap:03d}_{a.task:03d}.npz")
@@ -242,13 +244,14 @@ def scan(a):
     save(fn, Su, kind="scan", snap=a.snap, z=S.z, task=a.task, ntask=a.ntask, rows=np.array([r0, r1]), n_cube=a.n_cube,
          cube_side=a.cube_side, seed_cubes=a.seed_cubes, spin_model=a.spin_model, table=tfile, order=np.array(order),
          render_snap=a.render_snap, J_files=";".join(os.path.basename(x) for x in a.J),
+         J_dir=";".join(sorted({os.path.dirname(os.path.abspath(x)) for x in a.J + a.J_b})),
          J_b_files=";".join(os.path.basename(x) for x in a.J_b), **{k: v for k, v in Jinfo.items()})
     print(f"done: {nsel:,} cube cells of {nread:,} rows, {(time.time() - t0) / 3600:.2f} h")
 
 
 # ---------------------------------------------------------------------------------------------------------------------
 def merge(a):
-    od = os.path.join(a.out, "lumina_noX")
+    od = os.path.join(a.out, a.sub)
     fs = sorted(glob.glob(os.path.join(od, f"noX_*_{a.snap:03d}_*.npz")))
     fs = [f for f in fs if not f.endswith(".part.npz")]
     if not fs:
@@ -263,6 +266,14 @@ def merge(a):
     if len({str(d["table"]) for d in D}) != 1 or len({int(d["spin_model"]) for d in D}) != 1:
         sys.exit("STOP: the task files used different training tables or spin models")
     z = float(D[0]["z"])
+    if "J_files" in D[0].files:                               # scan task files: which J_alpha, all tasks the same
+        jsig = {(str(d["J_files"]), str(d["J_b_files"]), str(d["J_dir"]) if "J_dir" in d.files else "?",
+                 int(d["J_interp"]), int(d["render_snap"])) for d in D}
+        if len(jsig) != 1:
+            sys.exit(f"STOP: the task files used different J_alpha: {sorted(jsig)}")
+        jf, jb, jd, ji, rs = jsig.pop()
+        print(f"  J_alpha: render {rs}, {jf} in {jd}" + (f", linear in z with {jb} (weight of b "
+              f"{float(D[0]['J_weight_b']):.4f})" if ji else " (no interpolation)"))
     cube = sum(d["cube"] for d in D)
     key = sum(d["key"] for d in D)
     sf = sum(d["sf"] for d in D)
@@ -322,10 +333,27 @@ def merge(a):
 
 
 def summary(a):
-    od = os.path.join(a.out, "lumina_noX")
-    fs = sorted(glob.glob(os.path.join(od, "noX_[0-9][0-9][0-9].npz")))
-    if not fs:
-        sys.exit(f"no merged noX_NNN.npz in {od}")
+    found = {}                                                  # snapshot -> merged files, in --sub order
+    for sub in a.sub:
+        for f_ in sorted(glob.glob(os.path.join(a.out, sub, "noX_[0-9][0-9][0-9].npz"))):
+            found.setdefault(int(re.search(r"noX_(\d{3})\.npz$", f_).group(1)), []).append(f_)
+    if not found:
+        sys.exit(f"no merged noX_NNN.npz in {[os.path.join(a.out, s_) for s_ in a.sub]}")
+    fs = [found[s_][0] for s_ in sorted(found)]
+    print(f"merged files from {a.sub} (first listed wins):")
+    for s_ in sorted(found):
+        fl = found[s_]
+        src = os.path.basename(os.path.dirname(fl[0]))
+        if len(fl) == 1:
+            print(f"  {s_:03d}: {src}")
+            continue
+        D0 = np.load(fl[0])
+        for f2 in fl[1:]:
+            D2 = np.load(f2)
+            print(f"  {s_:03d}: {src}; vs {os.path.basename(os.path.dirname(f2))}: cubes X {float(D0['mean_X_cubes']):+.4f} "
+                  f"vs {float(D2['mean_X_cubes']):+.4f}, no X {float(D0['mean_noX_cubes']):+.4f} vs "
+                  f"{float(D2['mean_noX_cubes']):+.4f}, effect {float(D0['effect_cubes']):+.4f} vs "
+                  f"{float(D2['effect_cubes']):+.4f} (+-{float(D0['err_effect']):.4f}) mK")
     rows = []
     print(" snap      z | Lumina X: box (cells) | cubes          | Lumina no X: box est.  | cubes          | X-ray effect"
           "     | 50 cMpc cells: X | no X")
@@ -417,8 +445,12 @@ def main():
     q.add_argument("--snap", type=int, required=True)
     q.add_argument("--hdir", default=None, help="H scan directory for the exact whole-box X value")
     q.add_argument("--out", default=os.environ.get("BASE", OUT))
+    for name in ("cubes", "scan", "merge"):
+        sp.choices[name].add_argument("--sub", default="lumina_noX", help="subdirectory of --out for task and merged files")
     q = sp.add_parser("summary")
     q.add_argument("--out", default=os.environ.get("BASE", OUT))
+    q.add_argument("--sub", nargs="+", default=["lumina_noX"],
+                   help="subdirectories of --out with merged files; per snapshot the first listed that has it is used")
     q.add_argument("--data", default="data")
     q.add_argument("--zmin", type=float, default=5.7,
                    help="no-X points only at z >= zmin: below it the 50 cMpc training run has no neutral gas left "
