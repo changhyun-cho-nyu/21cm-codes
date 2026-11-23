@@ -19,15 +19,17 @@
 # at most 32 running. Writes .../xray/lumina_noX/noX_scan_NNN_TTT.npz (small). A task whose output exists is skipped.
 #   cd xray && mkdir -p logs && sbatch -p ou_mki run_lumina_noX_scan.sh     # 074 080 086 092 097 102 106, 32 tasks each
 #   one snapshot: SNAPS="74" sbatch -p ou_mki --array=0-31 run_lumina_noX_scan.sh
-#   EXTRA="..." is passed on to lumina_noX.py scan, e.g. J linear in z between two renders that have J (production J
-#   exists only for some renders: 074/080/086/097 fall on renders 226/256/280/326, which have none):
-#   SNAPS="74" EXTRA="--render-snap 224 --render-snap-b 227 --J-b <JDIR>/Jalpha_H_227.hdf5 --J-b <JDIR>/Jalpha_AGN_H_227.hdf5 --max-dz 0.05"
-#   or J computed at the matching renders themselves (user, 2026-11-22), into a directory of its own (not the production
-#   J directory: lightcone_J.py reads every file there) and with task/merged files in a subdirectory of their own:
+#   A snapshot whose render has no production J: compute J at that render itself (user, 2026-11-23: use the render
+#   value, not an interpolation in z), into a directory of its own (not the production J directory: lightcone_J.py
+#   reads every file there), with task/merged files in a subdirectory of their own:
 #   (repo root) BAND=H ONLY="226 256 280 326" J_OUT=/orcd/data/mvogelsb/004/chcho/Jalpha_fullsnap sbatch -p ou_mki --array=0-7 run_Jalpha_prod.sh
 #   (xray/)     SNAPS="74 80 86 97" JDIR=/orcd/data/mvogelsb/004/chcho/Jalpha_fullsnap EXTRA="--sub lumina_noX_Jexact" \
 #                   sbatch -p ou_mki --array=0-127%32 run_lumina_noX_scan.sh
-#   merge with --sub lumina_noX_Jexact; summary --sub lumina_noX_Jexact lumina_noX (exact J first, compared with the other)
+#   merge with --sub lumina_noX_Jexact; summary uses lumina_noX_Jexact first by default.
+#   For comparison only (EXTRA is passed on to lumina_noX.py scan): J linear in z between the neighbouring renders that
+#   have production J, into the default subdirectory, e.g.
+#   SNAPS="74" EXTRA="--render-snap 224 --render-snap-b 227 --J-b <JDIR>/Jalpha_H_227.hdf5 --J-b <JDIR>/Jalpha_AGN_H_227.hdf5 --max-dz 0.05"
+#   (074/080/086/097: the two agree to <= 3e-5 in the cube sums, NOTES.md step 8).
 # then:  python lumina_noX.py merge --snap 74   ...   and  python lumina_noX.py summary
 SNAPS=(${SNAPS:-74 80 86 92 97 102 106})
 NTASK=${NTASK:-32}

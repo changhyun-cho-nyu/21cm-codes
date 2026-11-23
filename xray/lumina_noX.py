@@ -449,8 +449,10 @@ def main():
         sp.choices[name].add_argument("--sub", default="lumina_noX", help="subdirectory of --out for task and merged files")
     q = sp.add_parser("summary")
     q.add_argument("--out", default=os.environ.get("BASE", OUT))
-    q.add_argument("--sub", nargs="+", default=["lumina_noX"],
-                   help="subdirectories of --out with merged files; per snapshot the first listed that has it is used")
+    q.add_argument("--sub", nargs="+", default=["lumina_noX_Jexact", "lumina_noX"],
+                   help="subdirectories of --out with merged files; per snapshot the first listed that has it is used "
+                        "(default: J at the render itself first, user 2026-11-23; the interpolated-J values are "
+                        "printed next to it where both exist)")
     q.add_argument("--data", default="data")
     q.add_argument("--zmin", type=float, default=5.7,
                    help="no-X points only at z >= zmin: below it the 50 cMpc training run has no neutral gas left "
