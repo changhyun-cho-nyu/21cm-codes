@@ -332,6 +332,35 @@ def merge(a):
     print(f"wrote {fn}")
 
 
+def box_X_cells(snap, hdir=None):
+    """exact whole-box gas-cell <dT_b> with X-rays from the H scan files (sum of sum_V_tb / sum of sum_V), or None"""
+    hd = hdir or os.path.join(LUMINA_DATA, f"cell_test_H_{snap}")
+    hs = sorted(f for f in glob.glob(os.path.join(hd, f"scan_H_{snap:03d}_*.hdf5")) if not f.endswith(".part"))
+    if not hs:
+        return None, 0
+    sv = svt = 0.0
+    for f_ in hs:
+        with h5py.File(f_, "r") as f:
+            sv += float(f.attrs["sum_V"]); svt += float(f.attrs["sum_V_tb"])
+    return svt / sv, len(hs)
+
+
+def box_X_640(stats, z, max_dz):
+    """whole-box <dT_b> with X-rays of the 640^3 production maps (stats_H.csv of make_vid.py: snap, z, mean), linear
+    in z between the two renders around z (each within max_dz); returns (value, text) or (nan, reason)"""
+    zs, ms, rs = stats
+    lo, hi = np.flatnonzero(zs <= z), np.flatnonzero(zs >= z)
+    if not len(lo) or not len(hi):
+        return np.nan, "outside the map list"
+    ia, ib = lo[np.argmax(zs[lo])], hi[np.argmin(zs[hi])]
+    if z - zs[ia] > max_dz or zs[ib] - z > max_dz:
+        return np.nan, f"no map within dz {max_dz}"
+    if ia == ib or zs[ib] == zs[ia]:
+        return ms[ia], f"map {rs[ia]}"
+    w = (z - zs[ia]) / (zs[ib] - zs[ia])
+    return ms[ia] + w * (ms[ib] - ms[ia]), f"maps {rs[ib]}/{rs[ia]} (z {zs[ib]:.4f}/{zs[ia]:.4f}, weight of {rs[ib]} {w:.3f})"
+
+
 def summary(a):
     found = {}                                                  # snapshot -> merged files, in --sub order
     for sub in a.sub:
@@ -354,57 +383,108 @@ def summary(a):
                   f"vs {float(D2['mean_X_cubes']):+.4f}, no X {float(D0['mean_noX_cubes']):+.4f} vs "
                   f"{float(D2['mean_noX_cubes']):+.4f}, effect {float(D0['effect_cubes']):+.4f} vs "
                   f"{float(D2['effect_cubes']):+.4f} (+-{float(D0['err_effect']):.4f}) mK")
+    # 640^3 production maps (with X-rays): whole-box X where the gas cells have no whole-box value (user, 2026-11-23,
+    # option C: box no X = 640^3 box X - cube effect at 074-102; pixel vs gas cell <~ 2% at z <~ 8)
+    stats = None
+    if a.stats640 and a.stats640 != "none":
+        T = np.genfromtxt(a.stats640, delimiter=",", names=True)
+        o = np.argsort(T["z"])
+        stats = (T["z"][o], T["mean"][o], T["snap"][o].astype(int))
+        print(f"640^3 whole-box means: {a.stats640} ({len(o)} maps)")
+    nan = np.nan
     rows = []
-    print(" snap      z | Lumina X: box (cells) | cubes          | Lumina no X: box est.  | cubes          | X-ray effect"
-          "     | 50 cMpc cells: X | no X")
+    for s_ in a.x_only:                                         # X-ray values only (no no-X): gas-cell whole box
+        hd = os.path.join(a.hroot, f"cell_test_H_{s_}")
+        bx, nf = box_X_cells(s_, hd)
+        if bx is None:
+            sys.exit(f"--x-only {s_}: no H scan files in {hd}")
+        with h5py.File(sorted(glob.glob(os.path.join(hd, f"scan_H_{s_:03d}_*.hdf5")))[0], "r") as f:
+            zz_ = float(f.attrs["z"])
+        rows.append(dict(snap=s_, z=zz_, X_box=bx, X_box_src="cells", X_640=nan, X_cubes=nan, err_X_cubes=nan,
+                         noX_box_est=nan, noX_cubes=nan, err_noX_cubes=nan, effect=nan, err_effect=nan,
+                         pair_X=nan, pair_noX=nan, noX_valid=0, note=f"X only ({nf} H scan files)"))
     for f_ in fs:
         D = np.load(f_)
         s, z = int(D["snap"]), float(D["z"])
         pr = []
         for run in RUNS[::-1]:
             p_ = os.path.join(a.out, run, "cells_Tb", f"cells_Tb_{s:03d}.npz")
-            pr.append(float(np.load(p_)["mean_cells_cell"]) if os.path.exists(p_) else np.nan)
-        bx = float(D["mean_X_box"]) if "mean_X_box" in D else np.nan
-        bn = float(D["mean_noX_box"]) if "mean_noX_box" in D else np.nan
-        r = (s, z, bx, float(D["mean_X_cubes"]), float(D["err_X_cubes"]), bn, float(D["mean_noX_cubes"]),
-             float(D["err_noX_cubes"]), float(D["effect_cubes"]), float(D["err_effect"]), pr[0], pr[1])
+            pr.append(float(np.load(p_)["mean_cells_cell"]) if os.path.exists(p_) else nan)
+        x640, t640 = box_X_640(stats, z, a.max_dz_640) if stats is not None else (nan, "no 640^3 table")
+        eff = float(D["effect_cubes"])
+        if "mean_X_box" in D:                                  # gas cells wherever they exist (z >= 8: 024-066)
+            bx, src = float(D["mean_X_box"]), "cells"
+        elif z > a.max_z_640:                                   # 640^3 only at z <= 7.5 (user, 2026-11-23)
+            sys.exit(f"STOP: snapshot {s} (z = {z:.3f} > --max-z-640 {a.max_z_640}) has no gas-cell whole-box value")
+        elif np.isfinite(x640):
+            bx, src = x640, "640"
+        else:
+            bx, src = nan, "none"
         ok = z >= a.zmin
-        rows.append(r + (int(ok),))
-        print(f"  {s:03d} {z:7.3f} | {bx:+10.4f}            | {r[3]:+8.4f}+-{r[4]:.4f} | {bn:+10.4f}             | "
-              f"{r[6]:+8.4f}+-{r[7]:.4f} | {r[8]:+8.4f}+-{r[9]:.4f} | {pr[0]:+8.4f} | {pr[1]:+8.4f}"
-              + ("" if ok else f"  <- no X not valid (z < --zmin {a.zmin}): not in the csv no-X columns or the figure"))
+        rows.append(dict(snap=s, z=z, X_box=bx, X_box_src=src, X_640=x640, X_cubes=float(D["mean_X_cubes"]),
+                         err_X_cubes=float(D["err_X_cubes"]), noX_box_est=bx - eff if ok else nan,
+                         noX_cubes=float(D["mean_noX_cubes"]) if ok else nan,
+                         err_noX_cubes=float(D["err_noX_cubes"]) if ok else nan, effect=eff if ok else nan,
+                         err_effect=float(D["err_effect"]) if ok else nan, pair_X=pr[0], pair_noX=pr[1],
+                         noX_valid=int(ok), note=t640, eff_all=eff))
+    rows.sort(key=lambda r: -r["z"])
+    print(" snap      z | Lumina X: box (src)   | 640^3 box | cubes            | Lumina no X: box est. | cubes"
+          "            | X-ray effect     | 50 cMpc cells: X | no X")
+    for r in rows:
+        fmt = lambda v: f"{v:+9.4f}" if np.isfinite(v) else "      nan"
+        print(f"  {r['snap']:03d} {r['z']:7.3f} | {fmt(r['X_box'])} ({r['X_box_src']:5s})   | {fmt(r['X_640'])} | "
+              f"{fmt(r['X_cubes'])}+-{r['err_X_cubes']:.4f} | {fmt(r['noX_box_est'])}             | "
+              f"{fmt(r['noX_cubes'])}+-{r['err_noX_cubes']:.4f} | {fmt(r['effect'])}+-{r['err_effect']:.4f} | "
+              f"{fmt(r['pair_X'])} | {fmt(r['pair_noX'])}"
+              + ("" if r["noX_valid"] or r["X_box_src"] == "cells" and not np.isfinite(r["X_cubes"]) else
+                 f"  <- no X not valid (z < --zmin {a.zmin})"))
+    print("  640^3 box X: " + "; ".join(f"{r['snap']:03d} {r['note']}" for r in rows if r["note"].startswith("map")))
+    both = [r for r in rows if r["X_box_src"] == "cells" and np.isfinite(r["X_640"])]
+    if both:
+        print("  check, 640^3 / gas-cell whole box with X-rays where both exist: " +
+              ", ".join(f"{r['snap']:03d} (z = {r['z']:.2f}) {r['X_640']:+.3f} / {r['X_box']:+.3f}" for r in both))
     os.makedirs(a.data, exist_ok=True)
+    cols = ["snap", "z", "X_box", "X_box_src", "X_640", "X_cubes", "err_X_cubes", "noX_box_est", "noX_cubes",
+            "err_noX_cubes", "effect", "err_effect", "pair_X", "pair_noX", "noX_valid"]
     fc = os.path.join(a.data, "lumina_noX_global.csv")
     with open(fc, "w") as f:
-        f.write("snap,z,X_box,X_cubes,err_X_cubes,noX_box_est,noX_cubes,err_noX_cubes,effect,err_effect,pair_X,pair_noX,"
-                "noX_valid\n")
+        f.write(f"# lumina_noX.py summary --sub {' '.join(a.sub)} --stats640 {a.stats640} --x-only "
+                f"{' '.join(map(str, a.x_only))} --zmin {a.zmin}; X_box: gas-cell whole box (src cells) or 640^3 maps (src "
+                f"640); noX_box_est = X_box - effect (cube effect, jackknife err_effect)\n")
+        f.write(",".join(cols) + "\n")
         for r in rows:
-            v = list(r[1:12])
-            if not r[12]:                                       # no-X columns blank below --zmin
-                v[4:9] = [np.nan] * 5
-            f.write(",".join([str(r[0])] + [f"{x:.6g}" for x in v] + [str(r[12])]) + "\n")
+            f.write(",".join(str(r[c]) if c in ("snap", "X_box_src", "noX_valid") else f"{r[c]:.6g}" for c in cols) + "\n")
     print(f"wrote {fc}")
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    plt.rcParams.update({"font.size": 9, "axes.spines.top": False, "axes.spines.right": False,
-                         "figure.facecolor": "#fcfcfb", "axes.facecolor": "#fcfcfb", "legend.frameon": False})
-    R = np.array([r[1:12] for r in rows], float)
-    ok = np.array([r[12] for r in rows], bool)
-    zz = R[:, 0]
-    X = np.where(np.isfinite(R[:, 1]), R[:, 1], R[:, 2])            # box where exact, else cubes
-    Nn = np.where(np.isfinite(R[:, 4]), R[:, 4], R[:, 5])
-    eN = np.where(np.isfinite(R[:, 4]), R[:, 8], R[:, 6])
-    fig, ax = plt.subplots(figsize=(6.5, 4.2))
-    ax.axhline(0, color="k", lw=0.6)
-    ax.plot(zz, X, "o-", color="#2a6fb0", label="Lumina, X-rays (gas cells)")
-    ax.errorbar(zz[ok], Nn[ok], yerr=eN[ok], fmt="D--", color="#1b9e77", mfc="none", capsize=2,
-                label="Lumina, no X-rays (option 3)")
-    ax.plot(zz, R[:, 9], "s:", color="#c4572a", ms=4, label="50 cMpc, X-rays (cells)")
-    ax.plot(zz, R[:, 10], "s:", color="#777777", ms=4, label="50 cMpc, no X-rays (cells)")
-    ax.set(xlabel="z", ylabel=r"$\langle\delta T_b\rangle$ [mK]", title="global 21 cm signal, gas-cell level")
-    ax.invert_xaxis()
-    ax.legend(fontsize=7)
+    from matplotlib.lines import Line2D
+    cX, cN, ink, mut = "#2a78d6", "#eb6834", "#1f1f1e", "#6b6a63"
+    plt.rcParams.update({"font.size": 10, "axes.spines.top": False, "axes.spines.right": False, "axes.edgecolor": mut,
+                         "xtick.color": mut, "ytick.color": mut, "axes.labelcolor": ink, "figure.facecolor": "white",
+                         "axes.facecolor": "white"})
+    g = lambda k: np.array([r[k] for r in rows], float)
+    zz, Xb, Xc, Nb, eE = g("z"), g("X_box"), g("X_cubes"), g("noX_box_est"), g("err_effect")
+    cell = np.array([r["X_box_src"] == "cells" for r in rows])
+    X = np.where(np.isfinite(Xb), Xb, Xc)
+    okN = np.isfinite(Nb)
+    fig, ax = plt.subplots(figsize=(8.0, 4.6))
+    ax.axhline(0, color=mut, lw=0.8, zorder=0)
+    ax.grid(axis="y", color="#e6e5e0", lw=0.6, zorder=0)
+    ax.fill_between(zz[okN], Nb[okN], X[okN], color=cX, alpha=0.07, lw=0, zorder=1)
+    for zv, yv, ev, cv, cl in ((zz, X, np.zeros_like(X), cX, cell), (zz[okN], Nb[okN], eE[okN], cN, cell[okN])):
+        ax.plot(zv, yv, "-", color=cv, lw=2, zorder=2)
+        ax.errorbar(zv[cl], yv[cl], yerr=ev[cl], fmt="o", ms=7, color=cv, mec="white", mew=1.5, elinewidth=1.2, zorder=3)
+        ax.errorbar(zv[~cl], yv[~cl], yerr=ev[~cl], fmt="o", ms=7, mfc="white", mec=cv, mew=1.6, color=cv,
+                    elinewidth=1.2, zorder=3)
+    h = [Line2D([], [], color=cX, lw=2, label="X-rays (Lumina)"),
+         Line2D([], [], color=cN, lw=2, label="no X-rays (option 3): box X - cube effect"),
+         Line2D([], [], ls="", marker="o", ms=7, color=mut, mec="white", label="box X from gas cells"),
+         Line2D([], [], ls="", marker="o", ms=7, mfc="white", mec=mut, mew=1.6, label="box X from 640$^3$ maps")]
+    ax.legend(handles=h, loc="lower right", frameon=False, fontsize=8.5)
+    ax.set(xlabel="z", ylabel=r"$\langle\delta T_b\rangle$ [mK]")
+    ax.set_xlim(zz.max() + 0.8, zz.min() - 0.5)
+    ax.set_title("Lumina global 21 cm signal, gas-cell level (whole box)", loc="left", fontsize=11, color=ink)
     fig.tight_layout()
     fp = os.path.join(a.data, "lumina_noX_global.png")
     fig.savefig(fp, dpi=200)
@@ -454,6 +534,15 @@ def main():
                         "(default: J at the render itself first, user 2026-11-23; the interpolated-J values are "
                         "printed next to it where both exist)")
     q.add_argument("--data", default="data")
+    q.add_argument("--stats640", default=os.path.join(LUMINA_DATA, "VID", "H_wf", "stats_H.csv"),
+                   help="640^3 production map means (make_vid.py stats, spin model 1): whole-box X where the gas cells "
+                        "have none ('none': off)")
+    q.add_argument("--hroot", default=LUMINA_DATA, help="directory of the cell_test_H_N scans (--x-only)")
+    q.add_argument("--max-z-640", type=float, default=7.5,
+                   help="the 640^3 box X is used only at z <= this; above it the gas-cell whole box is required (user)")
+    q.add_argument("--max-dz-640", type=float, default=0.2, help="largest z distance of the bracketing maps")
+    q.add_argument("--x-only", type=int, nargs="*", default=[11, 17],
+                   help="snapshots shown with X-rays only (gas-cell whole box from cell_test_H_N; user 2026-11-23)")
     q.add_argument("--zmin", type=float, default=5.7,
                    help="no-X points only at z >= zmin: below it the 50 cMpc training run has no neutral gas left "
                         "(z = 5.50: no populated x_HII < 1e-3 key; user decision 2026-11-22: end at z = 5.73)")
