@@ -7,7 +7,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=24G
-#SBATCH --time=10:00:00
+#SBATCH --time=1-00:00:00
 #SBATCH --partition=orcd_ug_pi_mki_mvogelsb_all
 #SBATCH --mail-user=chcho@mit.edu
 #SBATCH --mail-type=END,FAIL
@@ -15,7 +15,7 @@
 # Appendix sec:metallicity, step 2 (metallicity_global.py map640): 21 cm global <dT_b> on the 640^3 render pixels
 # for the 13 BPASS metallicities, J = R_j(z) J_star + J_AGN (production J files), spin model 1, real space,
 # mass-weighted fields, as run_21cm.sh; the fiducial mean is checked against the production map (H_real_wf).
-# One render per array task (~2-3 h: 2.6e8 pixels x 14 variants). Low z only (z <= 7.45; z >= 8 from the gas cells,
+# One render per array task (~12-13 h on ORCD, job 30279062: 2.6e8 pixels x 14 variants). Low z only (z <= 7.45; z >= 8 from the gas cells,
 # run_metal_cells.sh). The default list: about every 0.15 in z from 7.45 to 3.1, plus 620 (just after the
 # self-shielding step at z = 3.35).
 #     mkdir -p logs && sbatch -p ou_mki run_metal_H640.sh        (after run_metal_R.sh)

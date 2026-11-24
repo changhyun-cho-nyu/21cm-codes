@@ -2,12 +2,12 @@
 #SBATCH --job-name=metalCell
 #SBATCH --output=logs/metalCell_%A_%a.out
 #SBATCH --error=logs/metalCell_%A_%a.err
-#SBATCH --array=0-55
+#SBATCH --array=0-111
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=32G
-#SBATCH --time=12:00:00
+#SBATCH --time=1-00:00:00
 #SBATCH --partition=orcd_ug_pi_mki_mvogelsb_all
 #SBATCH --mail-user=chcho@mit.edu
 #SBATCH --mail-type=END,FAIL
@@ -18,9 +18,9 @@
 # from the J files (which files, J render and axis order are checked or found that way); the fiducial dT_b is
 # recomputed and compared with the stored one. NTASK tasks per snapshot (cubes q with q % NTASK = task),
 # array = (number of SNAPS) x NTASK.
-#   H  (z >= 8; 7 snapshots x 8 = 56 tasks, ~2-4 h each):
+#   H  (z >= 8; 7 snapshots x 16 = 112 tasks, 4 cubes each; > 37 min per cube on ORCD, job 30279114):
 #       mkdir -p logs && LINE=H sbatch -p ou_mki run_metal_cells.sh
-#   He (z = 10.0-3.0; 23 snapshots x 8 = 184 tasks, faster: no T_S solve):
+#   He (z = 10.0-3.0; 23 snapshots x 8 = 184 tasks, 8 cubes each; 11-30 min per cube, job 30279149):
 #       LINE=He sbatch -p ou_mki --array=0-183 run_metal_cells.sh
 #   (full snapshot 136, z = 4.0, has no scan files left: not in the He list)
 # Then run_metal_table.sh (merges every snapshot and writes the table).
@@ -33,7 +33,7 @@ if [ "$LINE" = H ]; then
 else
     SNAPS=(${SNAPS:-48 57 66 74 80 86 92 97 102 106 111 116 121 126 131 139 141 144 146 150 152 155 158})
 fi
-NTASK=${NTASK:-8}
+if [ "$LINE" = H ]; then NTASK=${NTASK:-16}; else NTASK=${NTASK:-8}; fi
 JDIRS=${JDIRS:-"$D/Jalpha $D/Jalpha_fullsnap $D/Jalpha_test"}
 
 source ~/.bashrc
