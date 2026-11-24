@@ -39,6 +39,9 @@
 #   SNAPS="24" EXTRA="--whole-box --sub lumina_noX_box --render-snap 73 --render-snap-b 74 --J-b <JDIR>/Jalpha_H_74.hdf5
 #       --J-b <JDIR>/Jalpha_AGN_H_74.hdf5 --max-dz 0.05" sbatch -p ou_mki --mem=48G --array=0-31 run_lumina_noX_scan.sh
 #   merge with --sub lumina_noX_box; summary reads lumina_noX_box first by default
+#   Cost (2026-11-24): with the bisection T_S solver the first whole-box tasks projected ~54 h (over the 48 h limit;
+#   cancelled). The scan now uses tb_physics.solve_ts_wf_fast (--solver fast, default; same T_S to ~1e-15, 6-8x faster
+#   in dT_b); expected ~14 h per task at NTASK=32, so use NTASK=64 (~7 h): arrays 0-383 / 0-255 / 0-63.
 # then:  python lumina_noX.py merge --snap 74   ...   and  python lumina_noX.py summary
 SNAPS=(${SNAPS:-74 80 86 92 97 102 106})
 NTASK=${NTASK:-32}

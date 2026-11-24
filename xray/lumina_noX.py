@@ -183,7 +183,7 @@ def scan(a):
     """cells of a full snapshot, rows task::ntask: only the cells inside the 64 cubes, or (--whole-box) every cell, with
     the cube cells also summed per cube"""
     S = Snapshot(a.snapdir, a.snap, a.gas_file)
-    P = Phys(S, "H", a.spin_model)
+    P = Phys(S, "H", a.spin_model, solver=a.solver)
     H, fb, tfile = load_table(a.out, a.snap, S.z)
     if a.render_snap is None:                     # the render at the snapshot's z (z <= 12: exact matches)
         rz = render_redshifts([a.render])
@@ -264,7 +264,7 @@ def scan(a):
                   f"total", flush=True)
     save(fn, Su, Sb, kind="box" if a.whole_box else "scan", snap=a.snap, z=S.z, task=a.task, ntask=a.ntask, rows=np.array([r0, r1]), n_cube=a.n_cube,
          cube_side=a.cube_side, seed_cubes=a.seed_cubes, spin_model=a.spin_model, table=tfile, order=np.array(order),
-         render_snap=a.render_snap, J_files=";".join(os.path.basename(x) for x in a.J),
+         render_snap=a.render_snap, solver=a.solver, J_files=";".join(os.path.basename(x) for x in a.J),
          J_dir=";".join(sorted({os.path.dirname(os.path.abspath(x)) for x in a.J + a.J_b})),
          J_b_files=";".join(os.path.basename(x) for x in a.J_b), **{k: v for k, v in Jinfo.items()})
     if a.whole_box:
@@ -569,6 +569,8 @@ def main():
     q = sp.choices["scan"]
     q.add_argument("--gas-file", default=None)
     q.add_argument("--spin-model", type=int, choices=[0, 1], default=1)
+    q.add_argument("--solver", choices=["fast", "bisect"], default="fast",
+                   help="T_S solver (tb_physics.solve_ts_wf_fast: the bisection's T_S to ~1e-15, 6-8x faster; 2026-11-24)")
     q.add_argument("--J", action="append", default=[], help="J_alpha files (stars, AGN); default from --jdir")
     q.add_argument("--jdir", default=None, help="directory of Jalpha_H_RRR.hdf5 and Jalpha_AGN_H_RRR.hdf5")
     q.add_argument("--J-b", action="append", default=[])

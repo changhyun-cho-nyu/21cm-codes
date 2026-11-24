@@ -115,10 +115,75 @@ def solve_ts_wf(Tg, T, A, xc, tauGP, tauTs, nbis=200):
     return Ts
 
 
+def solve_ts_wf_fast(Tg, T, A, xc, tauGP, tauTs, tol=1e-15, maxit=60, rtol_check=1e-12):
+    """the same T_S as solve_ts_wf, faster (2026-11-24, for whole-box gas-cell scans). With u = 1/T_S, Hirata's fits are
+    linear in u: S = a0 + a1 u, 1/T_c = b0 + b1 u (a0, a1, b0, b1 from T_K, tau_GP only), so at fixed x_CMB the equation
+    u (x_CMB + A S + x_c) = x_CMB/T_g + A S/T_c + x_c/T_K is the quadratic qa u^2 + qb u + qc = 0, solved with the root
+    continuous with the A = 0 (linear) case; x_CMB(tau_21 u) is then updated until u changes by < tol (x_CMB varies
+    weakly: tau_21 <~ 0.03). Every cell is checked against the defining equation (|F| <= rtol_check u); cells that fail,
+    or do not converge, are solved by solve_ts_wf (bisection). Same bracket and 1/T_c checks as solve_ts_wf."""
+    Tg, T, A, xc, tauGP, tauTs = np.broadcast_arrays(*(np.asarray(v, dtype=float) for v in (Tg, T, A, xc, tauGP, tauTs)))
+    shp = T.shape
+    Tg, T, A, xc, tauGP, tauTs = (np.ravel(v) for v in (Tg, T, A, xc, tauGP, tauTs))
+    bad = ~(np.isfinite(T) & np.isfinite(A) & np.isfinite(xc) & np.isfinite(tauGP) & np.isfinite(tauTs) & (T > 0))
+    if np.any(bad):
+        raise ValueError(f"T_S: {int(bad.sum())} cells with non-finite or non-positive inputs (T_K, J, x_c, tau)")
+    Ti = 1.0 / T
+    xi = (1e-7 * tauGP)**(1.0 / 3.0) * Ti**(2.0 / 3.0)
+    D = 1.0 + 2.98394 * xi + 1.53583 * xi**2 + 3.85289 * xi**3
+    a0 = (1.0 - 0.0631789 * Ti + 0.115995 * Ti**2) / D
+    a1 = (-0.401403 * Ti + 0.336463 * Ti**2) / D
+    b0 = Ti - 0.405535 * Ti * Ti
+    b1 = 0.405535 * Ti
+    Aa0, Aa1 = A * a0, A * a1
+    qa = Aa1 * (1.0 - b1)
+    xcT = xc * Ti
+
+    def step(xcmb, s=slice(None)):
+        qb = xcmb + xc[s] + Aa0[s] * (1.0 - b1[s]) - Aa1[s] * b0[s]
+        qc = -(xcmb / Tg[s] + Aa0[s] * b0[s] + xcT[s])
+        disc = qb * qb - 4.0 * qa[s] * qc
+        return -2.0 * qc / (qb + np.sign(qb) * np.sqrt(np.maximum(disc, 0.0))), disc
+
+    u, disc = step(np.ones_like(T))
+    conv = np.zeros(T.shape, bool)
+    act = np.arange(T.size)                                    # iterate only the cells not yet converged
+    for _ in range(maxit):
+        un, dn = step(wf_xcmb(tauTs[act] * u[act]), act)
+        c_ = np.abs(un - u[act]) <= tol * np.abs(un)
+        u[act], disc[act] = un, dn
+        conv[act[c_]] = True
+        act = act[~c_]
+        if act.size == 0:
+            break
+    S = a0 + a1 * u
+    Tci = b0 + b1 * u
+    xcmb = wf_xcmb(tauTs * u)
+    xa = A * S
+    F = u - (xcmb / Tg + xa * Tci + xcT) / (xcmb + xa + xc)
+    ok = conv & np.isfinite(u) & (u > 0) & (disc >= 0) & (np.abs(F) <= rtol_check * u)
+    lo, hi = 0.25 * np.minimum(Tg, T), 4.0 * np.maximum(Tg, T)
+    ok &= (u >= 1.0 / hi) & (u <= 1.0 / lo)                   # inside solve_ts_wf's bracket
+    Ts = np.empty(T.shape)
+    Ts[ok] = 1.0 / u[ok]
+    if not ok.all():
+        nb = ~ok
+        Ts[nb] = solve_ts_wf(Tg[nb], T[nb], A[nb], xc[nb], tauGP[nb], tauTs[nb])
+    _, Tci, _ = wf_terms(np.maximum(Ts, Tg), Tg, T, A, tauGP, tauTs)
+    if np.any(Tci <= 0):
+        raise ValueError(f"T_S: 1/T_c <= 0 in {int(np.sum(Tci <= 0))} cells (T_K min {float(T.min()):.3g} K; Hirata Eq. 42 "
+                         f"needs T_K >~ 0.4 K)")
+    solve_ts_wf_fast.n_fallback = getattr(solve_ts_wf_fast, "n_fallback", 0) + int((~ok).sum())
+    return Ts.reshape(shp)
+
+
 class Line:
-    """constants of one line at redshift z for a given cosmology (spin_model: 21 cm only, see the module notes)"""
-    def __init__(self, line, z, h, om, ob, ol, spin_model=SPIN_MODEL_DEFAULT):
-        self.line, self.z, self.spin_model = line, z, spin_model
+    """constants of one line at redshift z for a given cosmology (spin_model: 21 cm only, see the module notes);
+    solver: "bisect" (default, solve_ts_wf) or "fast" (solve_ts_wf_fast, the same T_S to ~1e-15)"""
+    def __init__(self, line, z, h, om, ob, ol, spin_model=SPIN_MODEL_DEFAULT, solver="bisect"):
+        if solver not in ("bisect", "fast"):
+            raise ValueError(f"solver {solver}")
+        self.line, self.z, self.spin_model, self.solver = line, z, spin_model, solver
         self.Tg = 2.7255 * (1.0 + z)
         H0 = 100.0 * h * 1e5 / MPC
         Hz = H0 * np.sqrt(om * (1.0 + z)**3 + ol)
@@ -171,7 +236,7 @@ class Line:
                 nHI = xHI * nH
                 tauGP = self.gp_c * (nHI if nHI_gp is None else nHI_gp)
                 tauTs, A = self.tauTs_c * nHI, self.xa_c * J
-                TS = solve_ts_wf(self.Tg, T, A, xc, tauGP, tauTs)
+                TS = (solve_ts_wf_fast if self.solver == "fast" else solve_ts_wf)(self.Tg, T, A, xc, tauGP, tauTs)
                 S, _, xcmb = wf_terms(TS, self.Tg, T, A, tauGP, tauTs)
                 if full:
                     return (self.P * sig * (1.0 - self.Tg / TS) * xcmb, xc, A * S,

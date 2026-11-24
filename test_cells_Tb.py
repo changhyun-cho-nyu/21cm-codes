@@ -348,7 +348,7 @@ GRIDS_SLIM = ("V", "V_tb")       # --grids slim: only what the result needs (the
 
 class Phys:
     """constants and delta T_b of one line for a snapshot (tb_physics.py, the C-code physics)"""
-    def __init__(self, S, line, spin_model=1):
+    def __init__(self, S, line, spin_model=1, solver="bisect"):
         self.z, self.box, h = S.z, S.box, S.h
         om = float(S.hd.get("Omega0", 0.30964144)); ob = float(S.hd.get("OmegaBaryon", 0.048975))
         ol = float(S.hd.get("OmegaLambda", OMEGA_L_DEFAULT))
@@ -357,7 +357,7 @@ class Phys:
         H0 = 100.0 * h * 1e5 / MPC
         self.rho_mean = ob * 3.0 * H0**2 / (8.0 * np.pi * G) / self.rho_unit
         self.line = line
-        self.L = Line(line, self.z, h, om, ob, ol, spin_model=spin_model)
+        self.L = Line(line, self.z, h, om, ob, ol, spin_model=spin_model, solver=solver)
 
     def tb(self, rho, T, xHII, fII, fIII, J):
         nH = X_H * rho * self.rho_unit * (1.0 + self.z)**3 / M_H
