@@ -16,6 +16,9 @@ pixels, seed 12345) of the H gas-cell scans, 1.7e9 cells per snapshot (0.8% of t
                    024 036 048 057 066); the stored dT_b (X-rays) is recomputed on every --check-every-th cell (check)
   scan  --snap N : the same cubes read from the full snapshot (snapshots without an H scan: 074 ... 106), dT_b with
                    and without X-rays only for the cube cells (no 640^3 grids); J as test_cells_Tb.py scan
+  scan --whole-box : the same pass, but T_noX is drawn and dT_b with and without X-rays summed for EVERY cell of the
+                   snapshot (user, 2026-11-24: "can't we just do the whole box?"); the cube sums are kept as well, so
+                   the old construction (box X - cube effect) can be compared with the direct whole-box no-X value
   merge --snap N : sums the task files; cube means with and without X-rays, the X-ray effect with a jackknife over
                    the cubes, and, where the H scan files exist, the exact whole-box cell-level mean with X-rays
                    (sum of the scans' sum_V_tb / sum_V) and the whole-box no-X estimate = box X - cube effect
@@ -118,8 +121,9 @@ def task_file(a, kind):
     return os.path.join(od, f"noX_{kind}_{a.snap:03d}_{a.task:03d}.npz")
 
 
-def save(fn, S, **meta):
-    np.savez(fn + ".part.npz", cube=S.cube, key=S.key, sf=S.sf, check=S.check, **meta)
+def save(fn, S, B=None, **meta):
+    extra = {} if B is None else dict(box_cube=B.cube, box_key=B.key, box_sf=B.sf)
+    np.savez(fn + ".part.npz", cube=S.cube, key=S.key, sf=S.sf, check=S.check, **extra, **meta)
     os.replace(fn + ".part.npz", fn)
     print(f"wrote {fn}", flush=True)
 
@@ -176,7 +180,8 @@ def cubes(a):
 
 
 def scan(a):
-    """cube cells of a full snapshot (no H scan there): rows task::ntask, only cells inside the 64 cubes"""
+    """cells of a full snapshot, rows task::ntask: only the cells inside the 64 cubes, or (--whole-box) every cell, with
+    the cube cells also summed per cube"""
     S = Snapshot(a.snapdir, a.snap, a.gas_file)
     P = Phys(S, "H", a.spin_model)
     H, fb, tfile = load_table(a.out, a.snap, S.z)
@@ -193,7 +198,7 @@ def scan(a):
         for f_ in a.J:
             if not os.path.exists(f_):
                 sys.exit(f"STOP: no {f_}")
-    fn = task_file(a, "scan")
+    fn = task_file(a, "box" if a.whole_box else "scan")
     if os.path.exists(fn):
         print(f"{fn} exists: task done")
         return
@@ -216,6 +221,7 @@ def scan(a):
           f"{order}; {a.n_cube} cubes of {a.cube_side}^3 of the {Nc}^3 pixels (seed {a.seed_cubes})", flush=True)
     rng = np.random.default_rng([a.seed, a.snap, a.task])
     Su = Sums(a.n_cube)
+    Sb = Sums(1) if a.whole_box else None           # whole box (all rows of this task) as one region
     t0, nsel, nread = time.time(), 0, 0
     for i0 in range(r0, r1, a.chunk):
         i1 = min(r1, i0 + a.chunk)
@@ -224,7 +230,22 @@ def scan(a):
         cid = lut[(cl[:, 0] * nl + cl[:, 1]) * nl + cl[:, 2]]
         nread += i1 - i0
         sel = np.flatnonzero(cid >= 0)
-        if len(sel):
+        if a.whole_box:
+            c = prep_cells(S, i0, i1)
+            if len(c["T"]) != i1 - i0:
+                sys.exit(f"STOP: prep_cells returned {len(c['T'])} cells for {i1 - i0} rows")
+            i, j, k = render_index(c["pos"], S.box, N, order)
+            c["J"] = J[i, j, k].astype(np.float64)
+            TN, key, sf = assign(c, P, H, fb, rng)
+            tbX = tb_chunked(P, c, c["T"], 4_000_000)
+            tbN = tb_chunked(P, c, TN, 4_000_000)
+            Sb.add(0, c, tbX, tbN, TN, key, sf)
+            for q in np.unique(cid[sel]):
+                m_ = sel[cid[sel] == q]
+                Su.add(q, {k_: v[m_] for k_, v in c.items()}, tbX[m_], tbN[m_], TN[m_], key[m_], sf[m_])
+            nsel += len(sel)
+            del c, TN, key, sf, tbX, tbN
+        elif len(sel):
             c_all = prep_cells(S, i0, i1)
             c = {k: v[sel] for k, v in c_all.items()}
             del c_all
@@ -239,13 +260,16 @@ def scan(a):
             nsel += len(sel)
         if (i0 - r0) // a.chunk % 20 == 0:
             el = time.time() - t0
-            print(f"  rows {i1 - r0:,}/{r1 - r0:,}: {nsel:,} cube cells, {el / 60:.1f} min, ~{el * (r1 - r0) / (i1 - r0) / 3600:.1f} h "
+            print(f"  rows {i1 - r0:,}/{r1 - r0:,}{' (all cells)' if a.whole_box else ''}: {nsel:,} cube cells, {el / 60:.1f} min, ~{el * (r1 - r0) / (i1 - r0) / 3600:.1f} h "
                   f"total", flush=True)
-    save(fn, Su, kind="scan", snap=a.snap, z=S.z, task=a.task, ntask=a.ntask, rows=np.array([r0, r1]), n_cube=a.n_cube,
+    save(fn, Su, Sb, kind="box" if a.whole_box else "scan", snap=a.snap, z=S.z, task=a.task, ntask=a.ntask, rows=np.array([r0, r1]), n_cube=a.n_cube,
          cube_side=a.cube_side, seed_cubes=a.seed_cubes, spin_model=a.spin_model, table=tfile, order=np.array(order),
          render_snap=a.render_snap, J_files=";".join(os.path.basename(x) for x in a.J),
          J_dir=";".join(sorted({os.path.dirname(os.path.abspath(x)) for x in a.J + a.J_b})),
          J_b_files=";".join(os.path.basename(x) for x in a.J_b), **{k: v for k, v in Jinfo.items()})
+    if a.whole_box:
+        print(f"whole box (these rows): {int(Sb.cube[0, 0]):,} cells, <dT_b> X {Sb.cube[0, 2] / Sb.cube[0, 1]:+.5f}, no X "
+              f"{Sb.cube[0, 3] / Sb.cube[0, 1]:+.5f} mK")
     print(f"done: {nsel:,} cube cells of {nread:,} rows, {(time.time() - t0) / 3600:.2f} h")
 
 
@@ -256,7 +280,7 @@ def merge(a):
     fs = [f for f in fs if not f.endswith(".part.npz")]
     if not fs:
         sys.exit(f"no task files for snapshot {a.snap} in {od}")
-    kinds = {re.search(r"noX_(cubes|scan)_", f).group(1) for f in fs}
+    kinds = {re.search(r"noX_(cubes|scan|box)_", f).group(1) for f in fs}
     if len(kinds) != 1:
         sys.exit(f"STOP: both kinds of task files for snapshot {a.snap}: {kinds}")
     D = [np.load(f) for f in fs]
@@ -287,7 +311,8 @@ def merge(a):
     jX, jN = jk(VX), jk(VN)
     jE = jX - jN
     err = lambda j: np.sqrt((n - 1) / n * np.sum((j - j.mean())**2))
-    print(f"snapshot {a.snap}, z = {z:.4f}: {len(D)} task files ({kinds.pop()}), {int(cube[:, 0].sum()):,} cells in {n} cubes")
+    kind = kinds.pop()
+    print(f"snapshot {a.snap}, z = {z:.4f}: {len(D)} task files ({kind}), {int(cube[:, 0].sum()):,} cells in {n} cubes")
     if chk[0] > 0:
         print(f"  check: dT_b with X-rays recomputed on {int(chk[0]):,} cells vs stored: mean |diff| / mean |tb| "
               f"{chk[1] / chk[2]:.2e}, max |diff| {chk[3]:.2e} mK")
@@ -298,7 +323,29 @@ def merge(a):
     # exact whole-box cell level with X-rays from the H scan files
     hd = a.hdir or os.path.join(LUMINA_DATA, f"cell_test_H_{a.snap}")
     hs = sorted(f for f in glob.glob(os.path.join(hd, f"scan_H_{a.snap:03d}_*.hdf5")) if not f.endswith(".part"))
-    if hs:
+    if kind == "box":                                   # direct whole-box sums of every cell
+        bc = sum(d["box_cube"] for d in D)[0]
+        key = sum(d["box_key"] for d in D)               # the class rows below: whole box
+        sf = sum(d["box_sf"] for d in D)
+        V, VX, VN = np.array([bc[1]]), np.array([bc[2]]), np.array([bc[3]])
+        bX, bN = bc[2] / bc[1], bc[3] / bc[1]
+        rows = sum(int(d["rows"][1] - d["rows"][0]) for d in D)
+        print(f"  WHOLE BOX (every cell, {int(bc[0]):,} cells; rows in the task files {rows:,}): <dT_b> X {bX:+.4f}, "
+              f"no X {bN:+.4f} mK, X-ray effect {bX - bN:+.4f} mK")
+        if int(bc[0]) != rows:
+            sys.exit(f"STOP: {int(bc[0]):,} cells summed, {rows:,} rows read")
+        print(f"  old construction for comparison: box X - cube effect = {bX - (mX - mN):+.4f} +- {err(jE):.4f} mK "
+              f"(direct {bN:+.4f}); cube effect {mX - mN:+.4f} vs box effect {bX - bN:+.4f} mK")
+        res.update(mean_X_box=bX, mean_noX_box=bN, effect_box=bX - bN, box_direct=1, n_box=bc[0])
+        if hs:
+            sv = svt = 0.0
+            for f_ in hs:
+                with h5py.File(f_, "r") as f:
+                    sv += float(f.attrs["sum_V"]); svt += float(f.attrs["sum_V_tb"])
+            print(f"  check: whole box X here {bX:+.5f} vs the H scan files {svt / sv:+.5f} mK (ratio {bX / (svt / sv):.6f}; "
+                  f"volume {bc[1]:.6e} vs {sv:.6e})")
+            res.update(mean_X_box_hscan=svt / sv)
+    elif hs:
         sv = svt = 0.0
         for f_ in hs:
             with h5py.File(f_, "r") as f:
@@ -404,7 +451,7 @@ def summary(a):
         with h5py.File(sorted(glob.glob(os.path.join(hd, f"scan_H_{s_:03d}_*.hdf5")))[0], "r") as f:
             zz_ = float(f.attrs["z"])
         rows.append(dict(snap=s_, z=zz_, X_box=bx, X_box_src="cells", X_640=nan, X_cubes=nan, err_X_cubes=nan,
-                         noX_box_est=nan, noX_cubes=nan, err_noX_cubes=nan, effect=nan, err_effect=nan,
+                         noX_box_est=nan, effect_cubes=nan, noX_cubes=nan, err_noX_cubes=nan, effect=nan, err_effect=nan,
                          pair_X=nan, pair_noX=nan, noX_valid=0, note=f"X only ({nf} H scan files)"))
     for f_ in fs:
         D = np.load(f_)
@@ -415,7 +462,10 @@ def summary(a):
             pr.append(float(np.load(p_)["mean_cells_cell"]) if os.path.exists(p_) else nan)
         x640, t640 = box_X_640(stats, z, a.max_dz_640) if stats is not None else (nan, "no 640^3 table")
         eff = float(D["effect_cubes"])
-        if "mean_X_box" in D:                                  # gas cells wherever they exist (z >= 8: 024-066)
+        direct = "box_direct" in D.files and int(D["box_direct"]) == 1
+        if direct:                                              # whole-box scan: X and no X summed over every cell
+            bx, src = float(D["mean_X_box"]), "cells_box"
+        elif "mean_X_box" in D:                                # gas cells wherever they exist (z >= 8: 024-066)
             bx, src = float(D["mean_X_box"]), "cells"
         elif z > a.max_z_640:                                   # 640^3 only at z <= 7.5 (user, 2026-11-23)
             sys.exit(f"STOP: snapshot {s} (z = {z:.3f} > --max-z-640 {a.max_z_640}) has no gas-cell whole-box value")
@@ -424,18 +474,23 @@ def summary(a):
         else:
             bx, src = nan, "none"
         ok = z >= a.zmin
+        nb = float(D["mean_noX_box"]) if direct else bx - eff
+        if direct:
+            eff_c, eff, eE = eff, bx - nb, nan                  # the box effect has no sampling error (draw noise only)
+        else:
+            eff_c, eE = eff, float(D["err_effect"])
         rows.append(dict(snap=s, z=z, X_box=bx, X_box_src=src, X_640=x640, X_cubes=float(D["mean_X_cubes"]),
-                         err_X_cubes=float(D["err_X_cubes"]), noX_box_est=bx - eff if ok else nan,
+                         err_X_cubes=float(D["err_X_cubes"]), noX_box_est=nb if ok else nan, effect_cubes=eff_c if ok else nan,
                          noX_cubes=float(D["mean_noX_cubes"]) if ok else nan,
                          err_noX_cubes=float(D["err_noX_cubes"]) if ok else nan, effect=eff if ok else nan,
-                         err_effect=float(D["err_effect"]) if ok else nan, pair_X=pr[0], pair_noX=pr[1],
+                         err_effect=eE if ok else nan, pair_X=pr[0], pair_noX=pr[1],
                          noX_valid=int(ok), note=t640, eff_all=eff))
     rows.sort(key=lambda r: -r["z"])
-    print(" snap      z | Lumina X: box (src)   | 640^3 box | cubes            | Lumina no X: box est. | cubes"
+    print(" snap      z | Lumina X: box (src)       | 640^3 box | cubes            | Lumina no X: box est. | cubes"
           "            | X-ray effect     | 50 cMpc cells: X | no X")
     for r in rows:
         fmt = lambda v: f"{v:+9.4f}" if np.isfinite(v) else "      nan"
-        print(f"  {r['snap']:03d} {r['z']:7.3f} | {fmt(r['X_box'])} ({r['X_box_src']:5s})   | {fmt(r['X_640'])} | "
+        print(f"  {r['snap']:03d} {r['z']:7.3f} | {fmt(r['X_box'])} ({r['X_box_src']:9s})   | {fmt(r['X_640'])} | "
               f"{fmt(r['X_cubes'])}+-{r['err_X_cubes']:.4f} | {fmt(r['noX_box_est'])}             | "
               f"{fmt(r['noX_cubes'])}+-{r['err_noX_cubes']:.4f} | {fmt(r['effect'])}+-{r['err_effect']:.4f} | "
               f"{fmt(r['pair_X'])} | {fmt(r['pair_noX'])}"
@@ -448,12 +503,13 @@ def summary(a):
               ", ".join(f"{r['snap']:03d} (z = {r['z']:.2f}) {r['X_640']:+.3f} / {r['X_box']:+.3f}" for r in both))
     os.makedirs(a.data, exist_ok=True)
     cols = ["snap", "z", "X_box", "X_box_src", "X_640", "X_cubes", "err_X_cubes", "noX_box_est", "noX_cubes",
-            "err_noX_cubes", "effect", "err_effect", "pair_X", "pair_noX", "noX_valid"]
+            "err_noX_cubes", "effect", "err_effect", "effect_cubes", "pair_X", "pair_noX", "noX_valid"]
     fc = os.path.join(a.data, "lumina_noX_global.csv")
     with open(fc, "w") as f:
         f.write(f"# lumina_noX.py summary --sub {' '.join(a.sub)} --stats640 {a.stats640} --x-only "
                 f"{' '.join(map(str, a.x_only))} --zmin {a.zmin}; X_box: gas-cell whole box (src cells) or 640^3 maps (src "
-                f"640); noX_box_est = X_box - effect (cube effect, jackknife err_effect)\n")
+                f"640) or a whole-box scan (src cells_box: X and no X summed over every cell, effect = box effect, no "
+                f"sampling error); otherwise noX_box_est = X_box - cube effect (jackknife err_effect)\n")
         f.write(",".join(cols) + "\n")
         for r in rows:
             f.write(",".join(str(r[c]) if c in ("snap", "X_box_src", "noX_valid") else f"{r[c]:.6g}" for c in cols) + "\n")
@@ -467,8 +523,8 @@ def summary(a):
                          "xtick.color": mut, "ytick.color": mut, "axes.labelcolor": ink, "figure.facecolor": "white",
                          "axes.facecolor": "white"})
     g = lambda k: np.array([r[k] for r in rows], float)
-    zz, Xb, Xc, Nb, eE = g("z"), g("X_box"), g("X_cubes"), g("noX_box_est"), g("err_effect")
-    cell = np.array([r["X_box_src"] == "cells" for r in rows])
+    zz, Xb, Xc, Nb, eE = g("z"), g("X_box"), g("X_cubes"), g("noX_box_est"), np.nan_to_num(g("err_effect"))
+    cell = np.array([r["X_box_src"].startswith("cells") for r in rows])
     X = np.where(np.isfinite(Xb), Xb, Xc)
     okN = np.isfinite(Nb)
     fig, ax = plt.subplots(figsize=(8.0, 4.6))
@@ -524,6 +580,8 @@ def main():
     q.add_argument("--n-cube", type=int, default=64)
     q.add_argument("--cube-side", type=int, default=16)
     q.add_argument("--seed-cubes", type=int, default=12345, help="cube lattice seed (the H scans' --seed)")
+    q.add_argument("--whole-box", action="store_true",
+                   help="draw T_noX and sum dT_b for every cell (task files noX_box_*), cube sums kept for comparison")
     q = sp.add_parser("merge")
     q.add_argument("--snap", type=int, required=True)
     q.add_argument("--hdir", default=None, help="H scan directory for the exact whole-box X value")
@@ -532,7 +590,7 @@ def main():
         sp.choices[name].add_argument("--sub", default="lumina_noX", help="subdirectory of --out for task and merged files")
     q = sp.add_parser("summary")
     q.add_argument("--out", default=os.environ.get("BASE", OUT))
-    q.add_argument("--sub", nargs="+", default=["lumina_noX_Jexact", "lumina_noX"],
+    q.add_argument("--sub", nargs="+", default=["lumina_noX_box", "lumina_noX_Jexact", "lumina_noX"],
                    help="subdirectories of --out with merged files; per snapshot the first listed that has it is used "
                         "(default: J at the render itself first, user 2026-11-23; the interpolated-J values are "
                         "printed next to it where both exist)")

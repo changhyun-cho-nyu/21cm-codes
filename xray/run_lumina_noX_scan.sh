@@ -30,6 +30,15 @@
 #   have production J, into the default subdirectory, e.g.
 #   SNAPS="74" EXTRA="--render-snap 224 --render-snap-b 227 --J-b <JDIR>/Jalpha_H_227.hdf5 --J-b <JDIR>/Jalpha_AGN_H_227.hdf5 --max-dz 0.05"
 #   (074/080/086/097: the two agree to <= 3e-5 in the cube sums, NOTES.md step 8).
+#   WHOLE BOX (user, 2026-11-24): EXTRA="--whole-box --sub lumina_noX_box" draws T_noX and sums dT_b for every cell of
+#   the snapshot (task files noX_box_*, cube sums kept for comparison); J as for the H scans (production J at the render,
+#   Jalpha_fullsnap at 226/256/280/326, 024 linear in z between renders 73 and 74). Three submissions (one JDIR each):
+#   SNAPS="36 48 57 66 92 102" EXTRA="--whole-box --sub lumina_noX_box" sbatch -p ou_mki --mem=48G --array=0-191%32 run_lumina_noX_scan.sh
+#   SNAPS="74 80 86 97" JDIR=/orcd/data/mvogelsb/004/chcho/Jalpha_fullsnap EXTRA="--whole-box --sub lumina_noX_box" \
+#       sbatch -p ou_mki --mem=48G --array=0-127%32 run_lumina_noX_scan.sh
+#   SNAPS="24" EXTRA="--whole-box --sub lumina_noX_box --render-snap 73 --render-snap-b 74 --J-b <JDIR>/Jalpha_H_74.hdf5
+#       --J-b <JDIR>/Jalpha_AGN_H_74.hdf5 --max-dz 0.05" sbatch -p ou_mki --mem=48G --array=0-31 run_lumina_noX_scan.sh
+#   merge with --sub lumina_noX_box; summary reads lumina_noX_box first by default
 # then:  python lumina_noX.py merge --snap 74   ...   and  python lumina_noX.py summary
 SNAPS=(${SNAPS:-74 80 86 92 97 102 106})
 NTASK=${NTASK:-32}
