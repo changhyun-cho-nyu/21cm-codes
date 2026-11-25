@@ -33,6 +33,13 @@ scan (one run, two full snapshots s1 < s2 in time; a batch job, ~2.2e8 cells per
      Mixing check: the cooled-below-adiabatic share of expanding cells for |m2/m1 - 1| < 0.02 and 0.02-0.1.
   3. at s2, cells at T > 5.5 K, in 0.05-dex bins of 1+delta: H I-weighted slope of log T on log m. Floor-heated gas
      follows T_J ~ m^(2/3) at fixed density (slope of log T_J printed for comparison); shocks and adiabatic: no m.
+  4. (added 2026-11-25 after the first run) the same matched cells split by their start state: at the clamp
+     (T1 < 5.5 K), floor on (T1 < T_J1) or floor off (T1 >= T_J1), in bins of ln(rho2/rho1) and of 1+delta at s2.
+     The floor's extra work is F' = (2/3) max(TJbar - Tpath, 0) ln(rho2/rho1), Tpath = (T1 g2 + T2ad)/2 (zero above
+     T_J; section 2's F uses (2/3) TJbar and overestimates it). At the same compression and density: if the floor
+     adds its work, E - F' (floor on) = E (floor off); if it does not, E (floor on) = E (floor off). Clamp-start
+     cells show whether gas leaves the clamp by the floor's work (E ~ F') or otherwise; a floor + clamp ratchet
+     within the interval would give E > F' there.
   writes <out>/<run>/jeans_floor/jeans_<s1>_<s2>.npz and the tables on stdout.
 report: the tables of every pair found for a run, and data/jeans_floor_<run>.png.
 
@@ -65,6 +72,9 @@ LR_EDGES = np.round(np.arange(-1.5, 2.51, 0.1), 2)                  # ln(rho2/rh
 LD_SLOPE = np.round(np.arange(-0.5, 0.51, 0.05), 2)                 # log10(1+delta), mass-slope test
 FLAGS = ("ENFORCE_JEANS_STABILITY_OF_CELLS", "ENFORCE_JEANS_STABILITY_OF_CELLS_EEOS", "ADAPTIVE_HYDRO_SOFTENING",
          "USE_ENTROPY_FOR_COLD_FLOWS", "JEANS_TOTPRESSURE_LIMIT", "UVB_OFF", "MRT_XRAY")
+SPLIT_LR = (-0.5, -0.2, -0.1, 0.1, 0.2, 0.3, 0.5, 0.8, 1.2)       # ln(rho2/rho1), section 4
+SPLIT_D = (0.0, 1.0, 2.0, 3.0, 10.0, np.inf)                        # 1+delta at s2, section 4
+SPLIT_COLS = ("n", "w", "d50", "T1", "TJ", "F50", "E16", "E50", "E84", "EmF50", "EoverF50", "lnT2T2ad50", "fell")
 NSOFTTYPES_HYDRO = 64
 INK, INK2, GRID = "#1f1f1e", "#6b6b68", "#e6e6e3"
 PAIR_COLORS = ("#2a78d6", "#eb6834", "#2e9e5b", "#8a55c7", "#c23b54", "#6b6b68")
@@ -219,6 +229,68 @@ def slope_table(C, meta):
     return np.array(rows)
 
 
+def split_table(cls, lr, one2, E, Ftrue, T1, TJbar, T2, T2ad, w, z2):
+    """Section 4: the non-adiabatic change E by start state (clamp / floor on / floor off), ln(rho2/rho1) and 1+delta2.
+
+    The floor's extra work is Ftrue = (2/3) max(TJbar - Tpath, 0) lnrho (zero where the gas is above T_J). If the floor
+    adds its work, E - Ftrue of floor-on cells matches E of floor-off cells (and clamp cells) at the same compression
+    and density; if it does not, E itself matches. Rows: (class, lr bin, density bin); plus an aggregate over
+    0.1 <= lnrho < 0.5 per density bin (last lr index)."""
+    nL, nD = len(SPLIT_LR) - 1, len(SPLIT_D) - 1
+    lb = np.digitize(lr, SPLIT_LR) - 1
+    db = np.digitize(one2, SPLIT_D) - 1
+    out = np.full((3, nL + 1, nD, len(SPLIT_COLS)), np.nan)
+    wtot = w.sum()
+    unc = (np.minimum(T2ad, T2ad + Ftrue) > T_FLOOR_TOL) & (np.abs(lr) >= 0.1) & (Ftrue != 0)
+    cold = T2ad > T_COLD_MIN
+    agg = (lr >= 0.1) & (lr < 0.5)
+    for c in range(3):
+        for L in range(nL + 1):
+            sel_l = agg if L == nL else (lb == L)
+            for D in range(nD):
+                j = np.flatnonzero((cls == c) & sel_l & (db == D))
+                if len(j) < 200:
+                    continue
+                wj = w[j]
+                row = dict(n=len(j), w=wj.sum() / wtot)
+                row["d50"], row["T1"], row["TJ"], row["F50"] = (wpct(v[j], wj, [50])[0] for v in (one2, T1, TJbar, Ftrue))
+                row["E16"], row["E50"], row["E84"] = wpct(E[j], wj, [16, 50, 84])
+                row["EmF50"] = wpct(E[j] - Ftrue[j], wj, [50])[0]
+                u = unc[j]
+                row["EoverF50"] = wpct(E[j][u] / Ftrue[j][u], wj[u], [50])[0] if u.sum() >= 100 else np.nan
+                row["lnT2T2ad50"] = wpct(np.log(T2[j] / T2ad[j]), wj, [50])[0]
+                cc = cold[j]
+                row["fell"] = (wj[cc][T2[j][cc] < 0.8 * T2ad[j][cc]].sum() / wj[cc].sum()) if cc.sum() >= 100 else np.nan
+                out[c, L, D] = [row[k] for k in SPLIT_COLS]
+
+    def g(c, L, D, k):
+        return out[c, L, D, SPLIT_COLS.index(k)]
+
+    print(f"\n4. split by the start state: clamp (T1 < {T_FLOOR_TOL} K), floor on (T1 < T_J1), floor off (T1 >= T_J1)"
+          f"\n   F' = (2/3) max(T_J - T, 0) ln(rho2/rho1): the floor's extra work (0 above T_J). If the floor adds its work,"
+          f"\n   E - F' (floor on) = E (floor off) at the same compression and density; if not, E (floor on) = E (floor off)."
+          f"\n   Medians, H I weight, T in K at z = {z2:.2f}; n = cells.")
+    print(f"   {'lnrho':>11} {'1+d2':>8} | {'clamp: n':>10} {'E':>7} {'F_':>6} | {'on: n':>10} {'T1':>6} {'T_J':>5} {'E':>7} "
+          f"{'F_':>6} {'E-F_':>7} {'E/F_':>6} | {'off: n':>10} {'T1':>6} {'E':>7}")
+    for L in list(range(nL)) + [nL]:
+        lab = "0.10..0.50" if L == nL else f"{SPLIT_LR[L]:+.2f}..{SPLIT_LR[L + 1]:+.2f}"
+        if L == nL:
+            print("   aggregate over 0.1 <= lnrho < 0.5:")
+        for D in range(nD):
+            if all(np.isnan(g(c, L, D, "n")) for c in range(3)):
+                continue
+            dl = f"{SPLIT_D[D]:g}-{SPLIT_D[D + 1]:g}"
+
+            def f(c, k, fmt):
+                v = g(c, L, D, k)
+                return format(v, fmt) if np.isfinite(v) else " " * len(format(0.0, fmt))
+            print(f"   {lab:>11} {dl:>8} | {f(0, 'n', '10,.0f')} {f(0, 'E50', '+7.1f')} {f(0, 'F50', '+6.1f')} | "
+                  f"{f(1, 'n', '10,.0f')} {f(1, 'T1', '6.0f')} {f(1, 'TJ', '5.0f')} {f(1, 'E50', '+7.1f')} {f(1, 'F50', '+6.1f')} "
+                  f"{f(1, 'EmF50', '+7.1f')} {f(1, 'EoverF50', '+6.2f')} | {f(2, 'n', '10,.0f')} {f(2, 'T1', '6.0f')} "
+                  f"{f(2, 'E50', '+7.1f')}")
+    return out
+
+
 def scan(a):
     od = os.path.join(a.out, a.run, "jeans_floor")
     check_out(od, a.allow_any_out)
@@ -272,7 +344,13 @@ def scan(a):
     Efl = np.maximum(T2ad + F, T_FLOOR) - T2ad
     cold = T2ad > T_COLD_MIN
     unclamped = (np.minimum(T2ad, T2ad + F) > T_FLOOR_TOL) & (np.abs(lr) >= 0.1)   # E/F only where the clamp is not hit
-    del q, r, ratio
+    # split by the start state (section 4): 0 = at the clamp, 1 = floor on (T1 < T_J1), 2 = floor off (T1 >= T_J1)
+    TJ1 = q["TJ"].astype(np.float64)
+    cls = np.where(T1 < T_FLOOR_TOL, 0, np.where(T1 < TJ1, 1, 2)).astype(np.int8)
+    Tpath = 0.5 * (T1 * g2 + T2ad)                                  # gas T along the path, at z2
+    Ftrue = GAMMA_M1 * np.maximum(TJbar - Tpath, 0.0) * lr          # the floor's extra work only where T < T_J
+    one2 = r["rho"].astype(np.float64) / mb["rho_mean"]
+    del q, r, ratio, TJ1
 
     nb = len(LR_EDGES) - 1
     cols = ("n", "w", "T1", "T2ad", "T2", "E16", "E50", "E84", "Ead50", "Efl50", "F50", "TJ50",
@@ -331,11 +409,14 @@ def scan(a):
         print(f"   mixing check, expanding cells with {lo:.2f} <= |dm/m| < {hi:.2f}: H I share {w[sc].sum() / wtot:.3f}, "
               f"cooled below 0.8 T2ad {fo:.3f}")
 
+    split = split_table(cls, lr, one2, E, Ftrue, T1, TJbar, T2, T2ad, w, mb["z"])
+
     os.makedirs(od, exist_ok=True)
     fn = os.path.join(od, f"jeans_{s1:03d}_{s2:03d}.npz")
     np.savez(fn, run=a.run, s1=s1, s2=s2, z1=ma["z"], z2=mb["z"], lr_edges=LR_EDGES, cbins=np.array(CBINS),
              tabA=tabA, tabB=tabB, slope=slope, summary=np.array(summ), mix=np.array(mix),
              cols=np.array(cols), **{f"bin_{c}": tab[c] for c in cols},
+             split=split, split_lr=np.array(SPLIT_LR), split_d=np.array(SPLIT_D), split_cols=np.array(SPLIT_COLS),
              flags=np.array([f"{k}={v}" for k, v in mb["flags"].items()]))
     print(f"\n   wrote {fn}")
 
@@ -357,6 +438,15 @@ def report(a):
               f"floor-predicted, median E/F")
         for nm, row in zip(("expanding", "static", "compressed"), d["summary"]):
             print(f"   {nm:10s} {row[0]:.3f}  {row[1]:.3f} / {row[2]:.3f}  {row[3]:+.2f}")
+        if "split" in d.files:
+            S, sc, sd = d["split"], list(d["split_cols"]), d["split_d"]
+            print("   split, compressed 0.1 <= lnrho < 0.5, medians [K]: 1+d2 | clamp E, F' | on E, F', E-F' | off E")
+            for D in range(len(sd) - 1):
+                v = lambda c, k: S[c, -1, D, sc.index(k)]   # noqa: E731
+                if np.isnan(v(1, "n")) and np.isnan(v(2, "n")):
+                    continue
+                print(f"   {sd[D]:g}-{sd[D + 1]:g} | {v(0, 'E50'):+7.1f} {v(0, 'F50'):+6.1f} | {v(1, 'E50'):+7.1f} "
+                      f"{v(1, 'F50'):+6.1f} {v(1, 'EmF50'):+7.1f} | {v(2, 'E50'):+7.1f}")
         ok = np.isfinite(d["bin_E50"])
         ax[0].fill_between(x[ok], d["bin_E16"][ok], d["bin_E84"][ok], color=c, alpha=0.15, lw=0)
         ax[0].plot(x[ok], d["bin_E50"][ok], color=c, lw=1.8, label=f"{lab}: observed")
