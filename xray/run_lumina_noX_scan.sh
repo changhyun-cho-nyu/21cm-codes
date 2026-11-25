@@ -42,6 +42,9 @@
 #   Cost (2026-11-24): with the bisection T_S solver the first whole-box tasks projected ~54 h (over the 48 h limit;
 #   cancelled). The scan now uses tb_physics.solve_ts_wf_fast (--solver fast, default; same T_S to ~1e-15, 6-8x faster
 #   in dT_b); expected ~14 h per task at NTASK=32, so use NTASK=64 (~7 h): arrays 0-383 / 0-255 / 0-63.
+#   T and T_S (2026-11-24, figure in global_noX.ipynb): the task files also hold H I-weighted sums of 1/T and
+#   1 - T_g/T_S for the X and no-X states (box_ts / ts); merge STOPs on a mix of task files with and without them
+#   (delete the old ones). The pair's matching values: run_pair_T_TS.sh.
 # then:  python lumina_noX.py merge --snap 74   ...   and  python lumina_noX.py summary
 SNAPS=(${SNAPS:-74 80 86 92 97 102 106})
 NTASK=${NTASK:-32}

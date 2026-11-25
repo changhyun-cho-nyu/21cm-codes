@@ -46,23 +46,28 @@ from test_cells_Tb import (Snapshot, Phys, prep_cells, render_index, choose_orde
 from closure_noX_xray import keys_of, fallback, inv_cdf, NK, NX, LD, LT, XCL, XLAB  # noqa: E402
 from pair_cells_xray import OUT, RUNS, X_H, check_out  # noqa: E402
 from cells_Tb_xray import CBINS  # noqa: E402
+from tb_physics import X_H as X_H_TB, M_H  # noqa: E402
 
 LUMINA_DATA = "/orcd/data/mvogelsb/004/chcho"
 SNAP_ABOVE = "/orcd/data/mvogelsb/005/Lumina/Lumina_above_z_4p75/snapshots"
 GAS_OVER_OMB = 1.0042          # Lumina's mean gas density / (Omega_b rho_crit) before star formation (JALPHA_NOTES 6.2):
 #                                the keys use 1+delta relative to the gas mean, as closure_noX_xray.py (X-run gas mean)
 XNEU = 1e-3
+TS_SEL = ("neutral non-SF", "all H I")    # Sums.ts rows: x_HII < XNEU and not star-forming | every cell (H I weight)
+#   (user, 2026-11-24, figure of T and T_S: the H I-weighted <1/T>^-1 and <1 - T_g/T_S> of the X and no-X states;
+#    "all H I" is the selection of cells_Tb_xray.py's HI_spin, H I weight X_H m (1 - x_HII), SF cells neutral)
 
 
 class Sums:
     """per cube: n, V, V tb_X, V tb_noX; per key (neutral non-SF): H I weight, w/T_X, w/T_noX; per key: V tb_X, V tb_noX"""
     def __init__(self, ncube):
+        self.ts = np.zeros((2, 2, 3))            # [TS_SEL][X | no X][W, W/T, W (1 - T_g/T_S)]
         self.cube = np.zeros((ncube, 4))
         self.key = np.zeros((NK, 5))
         self.sf = np.zeros(3)                    # V, V tb_X, V tb_noX of star-forming cells
         self.check = np.zeros(4)                 # n checked, sum |d|, sum |tb|, max |d|
 
-    def add(self, q, c, tbX, tbN, TN, key, sf):
+    def add(self, q, c, tbX, tbN, TN, key, sf, spX=None, spN=None):
         V = c["V"]
         self.cube[q] += [len(V), V.sum(), np.sum(V * tbX), np.sum(V * tbN)]
         ns = ~sf
@@ -74,6 +79,12 @@ class Sums:
         self.key[:, 1] += np.bincount(key[neu], w / c["T"][neu], NK)
         self.key[:, 2] += np.bincount(key[neu], w / TN[neu], NK)
         self.sf += [V[sf].sum(), np.sum(V[sf] * tbX[sf]), np.sum(V[sf] * tbN[sf])]
+        if spX is not None:                      # spin factors 1 - T_g/T_S of the X and no-X states
+            wa = X_H * c["m"] * (1.0 - c["xHII"])
+            for i, s_ in enumerate((neu, slice(None))):
+                ww = wa[s_]
+                for j, (T_, sp_) in enumerate(((c["T"], spX), (TN, spN))):
+                    self.ts[i, j] += [ww.sum(), np.sum(ww / T_[s_]), np.sum(ww * sp_[s_])]
 
 
 def load_table(out, snap, z):
@@ -103,15 +114,24 @@ def assign(c, P, H, fb, rng):
     return TN, key, sf
 
 
-def tb_chunked(P, c, T, chunk, sel=None):
+def tb_chunked(P, c, T, chunk, sel=None, spin=False):
+    """dT_b [mK] (test_cells_Tb.Phys.tb); spin=True: also 1 - T_g/T_S per cell (spin model 1 only), same arithmetic"""
     idx = np.arange(len(T)) if sel is None else sel
     out = np.empty(len(idx))
+    sp = np.empty(len(idx)) if spin else None
     for i0 in range(0, len(idx), chunk):
         s = idx[i0:i0 + chunk]
-        out[i0:i0 + len(s)] = P.tb(c["rho"][s], T[s], c["xHII"][s], c["fII"][s], c["fIII"][s], c["J"][s])
-    if not np.all(np.isfinite(out)):
-        sys.exit("STOP: non-finite dT_b")
-    return out
+        if spin:                                 # Phys.tb written out, with full=True for T_S
+            rho, x = c["rho"][s], c["xHII"][s]
+            nH = X_H_TB * rho * P.rho_unit * (1.0 + P.z)**3 / M_H
+            t, _, _, ex = P.L.tb(rho * (1.0 - x) / P.rho_mean, nH, T[s], x, c["fII"][s], c["fIII"][s], c["J"][s], full=True)
+            out[i0:i0 + len(s)] = t
+            sp[i0:i0 + len(s)] = 1.0 - P.L.Tg / ex["TS"]
+        else:
+            out[i0:i0 + len(s)] = P.tb(c["rho"][s], T[s], c["xHII"][s], c["fII"][s], c["fIII"][s], c["J"][s])
+    if not np.all(np.isfinite(out)) or (spin and not np.all(np.isfinite(sp))):
+        sys.exit("STOP: non-finite dT_b or T_S")
+    return (out, sp) if spin else out
 
 
 def task_file(a, kind):
@@ -122,8 +142,8 @@ def task_file(a, kind):
 
 
 def save(fn, S, B=None, **meta):
-    extra = {} if B is None else dict(box_cube=B.cube, box_key=B.key, box_sf=B.sf)
-    np.savez(fn + ".part.npz", cube=S.cube, key=S.key, sf=S.sf, check=S.check, **extra, **meta)
+    extra = {} if B is None else dict(box_cube=B.cube, box_key=B.key, box_sf=B.sf, box_ts=B.ts)
+    np.savez(fn + ".part.npz", cube=S.cube, key=S.key, sf=S.sf, check=S.check, ts=S.ts, **extra, **meta)
     os.replace(fn + ".part.npz", fn)
     print(f"wrote {fn}", flush=True)
 
@@ -220,6 +240,7 @@ def scan(a):
     print(f"Lumina snapshot {a.snap}: z = {S.z:.5f}, task {a.task}/{a.ntask}: rows {r0:,}-{r1:,} of {S.n:,}; axis order "
           f"{order}; {a.n_cube} cubes of {a.cube_side}^3 of the {Nc}^3 pixels (seed {a.seed_cubes})", flush=True)
     rng = np.random.default_rng([a.seed, a.snap, a.task])
+    ts_on = a.spin_model == 1                     # T_S sums (spin model 1 only: full=True)
     Su = Sums(a.n_cube)
     Sb = Sums(1) if a.whole_box else None           # whole box (all rows of this task) as one region
     t0, nsel, nread = time.time(), 0, 0
@@ -237,14 +258,15 @@ def scan(a):
             i, j, k = render_index(c["pos"], S.box, N, order)
             c["J"] = J[i, j, k].astype(np.float64)
             TN, key, sf = assign(c, P, H, fb, rng)
-            tbX = tb_chunked(P, c, c["T"], 4_000_000)
-            tbN = tb_chunked(P, c, TN, 4_000_000)
-            Sb.add(0, c, tbX, tbN, TN, key, sf)
+            tbX, spX = tb_chunked(P, c, c["T"], 4_000_000, spin=ts_on)
+            tbN, spN = tb_chunked(P, c, TN, 4_000_000, spin=ts_on)
+            Sb.add(0, c, tbX, tbN, TN, key, sf, spX, spN)
             for q in np.unique(cid[sel]):
                 m_ = sel[cid[sel] == q]
-                Su.add(q, {k_: v[m_] for k_, v in c.items()}, tbX[m_], tbN[m_], TN[m_], key[m_], sf[m_])
+                Su.add(q, {k_: v[m_] for k_, v in c.items()}, tbX[m_], tbN[m_], TN[m_], key[m_], sf[m_],
+                       *((spX[m_], spN[m_]) if ts_on else ()))
             nsel += len(sel)
-            del c, TN, key, sf, tbX, tbN
+            del c, TN, key, sf, tbX, tbN, spX, spN
         elif len(sel):
             c_all = prep_cells(S, i0, i1)
             c = {k: v[sel] for k, v in c_all.items()}
@@ -252,11 +274,12 @@ def scan(a):
             i, j, k = render_index(c["pos"], S.box, N, order)
             c["J"] = J[i, j, k].astype(np.float64)
             TN, key, sf = assign(c, P, H, fb, rng)
-            tbX = tb_chunked(P, c, c["T"], 4_000_000)
-            tbN = tb_chunked(P, c, TN, 4_000_000)
+            tbX, spX = tb_chunked(P, c, c["T"], 4_000_000, spin=ts_on)
+            tbN, spN = tb_chunked(P, c, TN, 4_000_000, spin=ts_on)
             for q in np.unique(cid[sel]):
                 m_ = cid[sel] == q
-                Su.add(q, {k_: v[m_] for k_, v in c.items()}, tbX[m_], tbN[m_], TN[m_], key[m_], sf[m_])
+                Su.add(q, {k_: v[m_] for k_, v in c.items()}, tbX[m_], tbN[m_], TN[m_], key[m_], sf[m_],
+                       *((spX[m_], spN[m_]) if ts_on else ()))
             nsel += len(sel)
         if (i0 - r0) // a.chunk % 20 == 0:
             el = time.time() - t0
@@ -374,6 +397,30 @@ def merge(a):
         w, iX, iN = key[s, 0].sum(), key[s, 1].sum(), key[s, 2].sum()
         print(f"  neutral IGM, {lab:11s}: <1/T>^-1 X {w / iX:8.2f} K, no X {w / iN:8.2f} K; <1-Tg/T> {1 - Tg * iX / w:+.3f} "
               f"-> {1 - Tg * iN / w:+.3f}")
+    tkey = "box_ts" if kind == "box" else "ts"
+    has = [tkey in d.files for d in D]
+    if any(has) and not all(has):
+        sys.exit(f"STOP: {has.count(False)} of {len(D)} task files have no T_S sums (written before 2026-11-24): "
+                 f"delete them and rerun those tasks")
+    if all(has) and sum(d[tkey] for d in D)[0, 0, 0] > 0:
+        ts = sum(d[tkey] for d in D)
+        reg = "whole box" if kind == "box" else "cubes"
+        print(f"  temperatures ({reg}; H I-weighted; T_S,eff = T_g / (1 - <1 - T_g/T_S>) = <1/T_S>^-1), T_g = {Tg:.3f} K:")
+        for i, lab in enumerate(TS_SEL):
+            W = ts[i, :, 0]
+            Th, sp = W / ts[i, :, 1], ts[i, :, 2] / W
+            Ts = Tg / (1.0 - sp)
+            print(f"    {lab:15s}: <1/T>^-1 X {Th[0]:9.3f} K, no X {Th[1]:9.3f} K | <1 - T_g/T_S> X {sp[0]:+.4f}, no X "
+                  f"{sp[1]:+.4f} | T_S,eff X {Ts[0]:9.3f} K, no X {Ts[1]:9.3f} K")
+            sfx = "" if i == 0 else "_all"
+            res.update({f"T_X{sfx}": Th[0], f"T_noX{sfx}": Th[1], f"spin_X{sfx}": sp[0], f"spin_noX{sfx}": sp[1],
+                        f"TS_X{sfx}": Ts[0], f"TS_noX{sfx}": Ts[1]})
+        wk, iX, iN = key[:, 0].sum(), key[:, 1].sum(), key[:, 2].sum()
+        print(f"    check, neutral <1/T>^-1 from the key sums: X {wk / iX:.6f} K, no X {wk / iN:.6f} K (H I weight "
+              f"ratio {ts[0, 0, 0] / wk:.9f})")
+        res.update(ts=ts, Tgamma=Tg, ts_region=reg)
+    else:
+        print("  (no T_S sums in these task files: written before 2026-11-24 or spin model 0)")
     fn = os.path.join(od, f"noX_{a.snap:03d}.npz")
     np.savez(fn, **res)
     print(f"wrote {fn}")
@@ -409,6 +456,23 @@ def box_X_640(stats, z, max_dz):
         return ms[ia], f"map {rs[ia]}"
     w = (z - zs[ia]) / (zs[ib] - zs[ia])
     return ms[ia] + w * (ms[ib] - ms[ia]), f"maps {rs[ib]}/{rs[ia]} (z {zs[ib]:.4f}/{zs[ia]:.4f}, weight of {rs[ib]} {w:.3f})"
+
+
+TCOLS = ["Tgamma", "T_X", "T_noX", "TS_X", "TS_noX", "T_X_all", "T_noX_all", "TS_X_all", "TS_noX_all",
+         "pair_T_X", "pair_T_noX", "pair_TS_X", "pair_TS_noX", "pair_T_X_all", "pair_T_noX_all", "pair_TS_X_all",
+         "pair_TS_noX_all"]          # H I-weighted <1/T>^-1 and T_S,eff = <1/T_S>^-1 [K]; no suffix: neutral non-SF
+
+
+def pair_T(out, snap):
+    """the pair's whole-box T and T_S (pair_T_TS.py), keyed like TCOLS; nan where the files are missing"""
+    r = {}
+    for run, tag in ((RUNS[1], "X"), (RUNS[0], "noX")):
+        p_ = os.path.join(out, run, "cells_TTS", f"cells_TTS_{snap:03d}.npz")
+        P = np.load(p_) if os.path.exists(p_) else None
+        for sfx in ("", "_all"):
+            r[f"pair_T_{tag}{sfx}"] = float(P[f"T{sfx}"]) if P is not None else np.nan
+            r[f"pair_TS_{tag}{sfx}"] = float(P[f"TS{sfx}"]) if P is not None else np.nan
+    return r
 
 
 def summary(a):
@@ -452,7 +516,9 @@ def summary(a):
             zz_ = float(f.attrs["z"])
         rows.append(dict(snap=s_, z=zz_, X_box=bx, X_box_src="cells", X_640=nan, X_cubes=nan, err_X_cubes=nan,
                          noX_box_est=nan, effect_cubes=nan, noX_cubes=nan, err_noX_cubes=nan, effect=nan, err_effect=nan,
-                         pair_X=nan, pair_noX=nan, noX_valid=0, note=f"X only ({nf} H scan files)"))
+                         pair_X=nan, pair_noX=nan, noX_valid=0, note=f"X only ({nf} H scan files)",
+                         **{c_: nan for c_ in TCOLS}))
+        rows[-1]["Tgamma"] = 2.7255 * (1.0 + zz_)
     for f_ in fs:
         D = np.load(f_)
         s, z = int(D["snap"]), float(D["z"])
@@ -485,6 +551,10 @@ def summary(a):
                          err_noX_cubes=float(D["err_noX_cubes"]) if ok else nan, effect=eff if ok else nan,
                          err_effect=eE if ok else nan, pair_X=pr[0], pair_noX=pr[1],
                          noX_valid=int(ok), note=t640, eff_all=eff))
+        tl = {c_: (float(D[c_]) if c_ in D.files and (ok or "noX" not in c_) else nan) for c_ in TCOLS[1:9]}
+        if "ts_region" in D.files and str(D["ts_region"]) != "whole box":
+            sys.exit(f"STOP: {f_}: T / T_S sums are from the {D['ts_region']}, not the whole box")
+        rows[-1].update(Tgamma=2.7255 * (1.0 + z), **tl, **pair_T(a.out, s))
     rows.sort(key=lambda r: -r["z"])
     print(" snap      z | Lumina X: box (src)       | 640^3 box | cubes            | Lumina no X: box est. | cubes"
           "            | X-ray effect     | 50 cMpc cells: X | no X")
@@ -496,6 +566,12 @@ def summary(a):
               f"{fmt(r['pair_X'])} | {fmt(r['pair_noX'])}"
               + ("" if r["noX_valid"] or r["X_box_src"] == "cells" and not np.isfinite(r["X_cubes"]) else
                  f"  <- no X not valid (z < --zmin {a.zmin})"))
+    print(" snap      z |  T_g   | <1/T>^-1 neutral H I [K]: Lumina X, no X | pair X, no X || T_S,eff [K]: Lumina X, no X"
+          " | pair X, no X")
+    for r in rows:
+        f1 = lambda v: f"{v:8.2f}" if np.isfinite(v) else "     nan"
+        print(f"  {r['snap']:03d} {r['z']:7.3f} | {r['Tgamma']:6.2f} | {f1(r['T_X'])} {f1(r['T_noX'])} | {f1(r['pair_T_X'])} "
+              f"{f1(r['pair_T_noX'])} || {f1(r['TS_X'])} {f1(r['TS_noX'])} | {f1(r['pair_TS_X'])} {f1(r['pair_TS_noX'])}")
     print("  640^3 box X: " + "; ".join(f"{r['snap']:03d} {r['note']}" for r in rows if r["note"].startswith("map")))
     both = [r for r in rows if r["X_box_src"] == "cells" and np.isfinite(r["X_640"])]
     if both:
@@ -503,13 +579,13 @@ def summary(a):
               ", ".join(f"{r['snap']:03d} (z = {r['z']:.2f}) {r['X_640']:+.3f} / {r['X_box']:+.3f}" for r in both))
     os.makedirs(a.data, exist_ok=True)
     cols = ["snap", "z", "X_box", "X_box_src", "X_640", "X_cubes", "err_X_cubes", "noX_box_est", "noX_cubes",
-            "err_noX_cubes", "effect", "err_effect", "effect_cubes", "pair_X", "pair_noX", "noX_valid"]
+            "err_noX_cubes", "effect", "err_effect", "effect_cubes", "pair_X", "pair_noX", "noX_valid"] + TCOLS
     fc = os.path.join(a.data, "lumina_noX_global.csv")
     with open(fc, "w") as f:
         f.write(f"# lumina_noX.py summary --sub {' '.join(a.sub)} --stats640 {a.stats640} --x-only "
                 f"{' '.join(map(str, a.x_only))} --zmin {a.zmin}; X_box: gas-cell whole box (src cells) or 640^3 maps (src "
                 f"640) or a whole-box scan (src cells_box: X and no X summed over every cell, effect = box effect, no "
-                f"sampling error); otherwise noX_box_est = X_box - cube effect (jackknife err_effect)\n")
+                f"sampling error); otherwise noX_box_est = X_box - cube effect (jackknife err_effect); T_*: H I-weighted <1/T>^-1, TS_*: <1/T_S>^-1 [K], neutral non-SF (no suffix) or all H I (_all), whole box (lumina_noX scan --whole-box; pair_T_TS.py); Tgamma = 2.7255 (1+z) K\n")
         f.write(",".join(cols) + "\n")
         for r in rows:
             f.write(",".join(str(r[c]) if c in ("snap", "X_box_src", "noX_valid") else f"{r[c]:.6g}" for c in cols) + "\n")
