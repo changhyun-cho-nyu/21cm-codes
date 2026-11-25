@@ -4,8 +4,12 @@ check_ionization_history.py
 The global ionization history of Lumina from the 640^3 renders, and a check of the snapshot <-> z <-> x tables
 that the notebooks hard-code (xhii_vals / xheiii_vals / z_match / z_map).
 
-For each snapshot: z from the render header, and four global averages of x_HII and x_HeIII (= HeIII / y; the
-render He fractions are per H nucleus):
+For each snapshot: z from the render header, and four global averages of x_HII, x_HeIII (= HeIII / y; the
+render He fractions are per H nucleus) and x_HeII (= HeII / y; added 2026-11-24 for the global figure, user); and
+T_HI_pix = sum(w) / sum(w / Temperature), w = Density (1 - HII_Fraction): the H I-weighted <1/T>^-1 of the pixels
+(render Temperature is mass-weighted; star-forming gas counts as neutral, as in the renders), the 640^3 counterpart of
+the whole-box gas-cell T_X_all of xray/lumina_noX.py (all H I, same weight), to see where the pixels can stand in
+for the gas cells (user, 2026-11-24). Averages:
   V     sum(Volume * HII_VolumeFraction) / sum(Volume)   volume-weighted over the gas cells (as Zier+26 Figs 16, 21
                                                           and the LIM paper Fig. 2: <x>_V); exact for any pixel size
   Vpix  pixel mean of HII_VolumeFraction                 = V if every pixel holds the same gas volume
@@ -36,7 +40,7 @@ X_H = 0.76
 Y_HE = (1.0 - X_H) / (4.0 * X_H)
 SNAP_SWITCH = 428                      # snapshots > 428 are in the second render directory
 DEFS = ("V", "Vpix", "M", "pix")
-COLS = ["snap", "z"] + [f"xHII_{d}" for d in DEFS] + [f"xHeIII_{d}" for d in DEFS]
+COLS = ["snap", "z"] + [f"xHII_{d}" for d in DEFS] + [f"xHeIII_{d}" for d in DEFS] + [f"xHeII_{d}" for d in DEFS] + ["T_HI_pix"]
 
 # What the notebooks use (PS_redshift, visual_PS, visual_maps, PS2Bubble, one-stat, subvol_VID, bispec_H/He):
 # x -> (z_match, snapshot of bispec z_map)
@@ -75,7 +79,8 @@ def measure_snap(d, s, planes):
     if max(zs) - min(zs) > 1e-6:
         print(f"  WARNING snap {s}: header redshifts differ between files: {zs}")
     names = {"rho": "Density", "xM": "HII_Fraction", "xV": "HII_VolumeFraction", "vol": "Volume",
-             "hM": "HeIII_Fraction", "hV": "HeIII_VolumeFraction"}
+             "hM": "HeIII_Fraction", "hV": "HeIII_VolumeFraction", "eM": "HeII_Fraction", "eV": "HeII_VolumeFraction",
+             "T": "Temperature"}
     files, ds = {}, {}
     for k, n in names.items():
         files[k], ds[k] = open_field(d, n, s)
@@ -83,7 +88,8 @@ def measure_snap(d, s, planes):
         print(f"  snap {s}: no Density / HII_Fraction in {d}, skipped")
         return None
     N = ds["rho"].shape[0]
-    S = dict.fromkeys(["rho", "rho_xM", "xM", "xV", "vol", "vol_xV", "rho_hM", "hM", "hV", "vol_hV"], 0.0)
+    S = dict.fromkeys(["rho", "rho_xM", "xM", "xV", "vol", "vol_xV", "rho_hM", "hM", "hV", "vol_hV",
+                       "rho_eM", "eM", "eV", "vol_eV", "w", "w_iT"], 0.0)
     for i0 in range(0, N, planes):
         sl = slice(i0, min(N, i0 + planes))
         g = {k: (v[sl].astype(np.float64) if v is not None else None) for k, v in ds.items()}
@@ -98,6 +104,17 @@ def measure_snap(d, s, planes):
             S["hV"] += g["hV"].sum()
             if g["vol"] is not None:
                 S["vol_hV"] += (g["vol"] * g["hV"]).sum()
+        if g["T"] is not None:
+            w = g["rho"] * (1.0 - g["xM"])
+            if np.any(g["T"] <= 0):
+                raise SystemExit(f"snap {s}: Temperature <= 0 in {int(np.sum(g['T'] <= 0))} pixels")
+            S["w"] += w.sum(); S["w_iT"] += (w / g["T"]).sum()
+        if g["eM"] is not None:
+            S["rho_eM"] += (g["rho"] * g["eM"]).sum(); S["eM"] += g["eM"].sum()
+        if g["eV"] is not None:
+            S["eV"] += g["eV"].sum()
+            if g["vol"] is not None:
+                S["vol_eV"] += (g["vol"] * g["eV"]).sum()
     for f in files.values():
         if f is not None:
             f.close()
@@ -111,7 +128,12 @@ def measure_snap(d, s, planes):
            "xHeIII_V": S["vol_hV"] / S["vol"] / Y_HE if have["hV"] and have["vol"] else nan,
            "xHeIII_Vpix": S["hV"] / n3 / Y_HE if have["hV"] else nan,
            "xHeIII_M": S["rho_hM"] / S["rho"] / Y_HE if have["hM"] else nan,
-           "xHeIII_pix": S["hM"] / n3 / Y_HE if have["hM"] else nan}
+           "xHeIII_pix": S["hM"] / n3 / Y_HE if have["hM"] else nan,
+           "xHeII_V": S["vol_eV"] / S["vol"] / Y_HE if have["eV"] and have["vol"] else nan,
+           "xHeII_Vpix": S["eV"] / n3 / Y_HE if have["eV"] else nan,
+           "xHeII_M": S["rho_eM"] / S["rho"] / Y_HE if have["eM"] else nan,
+           "xHeII_pix": S["eM"] / n3 / Y_HE if have["eM"] else nan,
+           "T_HI_pix": S["w"] / S["w_iT"] if have["T"] and S["w_iT"] > 0 else nan}
     missing = [names[k] for k in names if not have[k]]
     if missing:
         print(f"  snap {s}: missing {missing}")
@@ -129,7 +151,8 @@ def measure(a):
             fo.write(",".join(f"{row[c]:d}" if c == "snap" else f"{row[c]:.8g}" for c in COLS) + "\n")
             fo.flush()
             print(f"snap {s:3d} z {row['z']:.4f}  x_HII V {row['xHII_V']:.4f} M {row['xHII_M']:.4f} "
-                  f"pix {row['xHII_pix']:.4f}  x_HeIII V {row['xHeIII_V']:.4f} M {row['xHeIII_M']:.4f}", flush=True)
+                  f"pix {row['xHII_pix']:.4f}  x_HeIII V {row['xHeIII_V']:.4f} M {row['xHeIII_M']:.4f}  x_HeII V "
+                  f"{row['xHeII_V']:.4f} M {row['xHeII_M']:.4f}  <1/T>^-1_HI {row['T_HI_pix']:.4g} K", flush=True)
     os.replace(a.out + ".part", a.out)
 
 
@@ -194,11 +217,22 @@ def report(a):
             print(f"  {x0:4.1f} " + " ".join(f"{c:>26}" for c in cells) + f" {zm:9.3f} "
                   + (f"{zier[x0]:8.2f}" if x0 in zier else f"{'':8}"))
 
+    if a.compare:
+        with open(a.compare) as f_:
+            nskip = next(i for i, l_ in enumerate(f_) if not l_.startswith("#"))      # the history's comment lines
+        o = np.genfromtxt(a.compare, delimiter=",", names=True, skip_header=nskip)
+        common = np.intersect1d(o["snap"].astype(int), snap)
+        io = {int(s_): i for i, s_ in enumerate(o["snap"].astype(int))}
+        print(f"\ncompare with {a.compare}: {len(common)} common snapshots")
+        for c in [c_ for c_ in COLS if c_ in o.dtype.names and c_ != "snap"]:
+            d = np.array([t[c][at[s_]] - o[c][io[s_]] for s_ in common])
+            print(f"  {c:12s} max |new - old| {np.nanmax(np.abs(d)):.3g}")
     if a.write:
         with open(a.write, "w") as fo:
             fo.write("# Lumina global ionization history from the 640^3 renders (check_ionization_history.py)\n")
             fo.write("# V: volume-weighted (Volume x *_VolumeFraction); Vpix: pixel mean of *_VolumeFraction; "
-                     "M: mass-weighted (Density x *_Fraction); pix: pixel mean of *_Fraction; x_HeIII = HeIII/y\n")
+                     "M: mass-weighted (Density x *_Fraction); pix: pixel mean of *_Fraction; x_HeIII = HeIII/y, x_HeII = HeII/y; "
+                     "T_HI_pix: H I-weighted <1/T>^-1 of the pixels [K], w = Density (1 - HII_Fraction)\n")
             fo.write(",".join(COLS) + "\n")
             for r in t:
                 fo.write(",".join(f"{int(r[c]):d}" if c == "snap" else f"{r[c]:.8g}" for c in COLS) + "\n")
@@ -220,6 +254,7 @@ def main():
     r = sub.add_parser("report")
     r.add_argument("--csv", required=True, help="glob of the measure CSVs (quote it)")
     r.add_argument("--write", default="", help="merged history CSV")
+    r.add_argument("--compare", default="", help="an earlier merged history: max difference per common column")
     a = p.parse_args()
     measure(a) if a.mode == "measure" else report(a)
 

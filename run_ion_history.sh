@@ -13,15 +13,19 @@
 #SBATCH --mail-type=END,FAIL
 #
 # Global ionization history of every snapshot (0-708) from the 640^3 renders (check_ionization_history.py):
-# header z and x_HII, x_HeIII volume-weighted, mass-weighted and pixel means. Task i does snapshots i, i+16, ...
+# header z and x_HII, x_HeIII, x_HeII volume-weighted, mass-weighted and pixel means. Task i does snapshots i, i+16, ...
 #   mkdir -p logs && sbatch run_ion_history.sh
 # then, when all tasks are done:
 #   python check_ionization_history.py report --csv "$OUT_DIR/part_*.csv" --write $OUT_DIR/ionization_history.csv
+# x_HeII added 2026-11-24: rerun into a new directory and compare before replacing the old history, e.g.
+#   OUT_DIR=/orcd/data/mvogelsb/004/chcho/ion_history_heii sbatch -p ou_mki run_ion_history.sh
+#   python check_ionization_history.py report --csv "$OUT_DIR/part_*.csv" --write $OUT_DIR/ionization_history.csv \
+#       --compare /orcd/data/mvogelsb/004/chcho/ion_history/ionization_history.csv
 
 BASE=/orcd/data/mvogelsb/005/mkilab001/mvogelsblab003/Lab/Thesan-XL
 DIRA=$BASE/Flagship_new/postprocessing/ren_640
 DIRB=$BASE/Flagship_below_z_4p75_new/postprocessing/ren_640
-OUT_DIR=/orcd/data/mvogelsb/004/chcho/ion_history
+OUT_DIR=${OUT_DIR:-/orcd/data/mvogelsb/004/chcho/ion_history}
 NTASK=16
 
 source ~/.bashrc
