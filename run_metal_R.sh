@@ -15,8 +15,8 @@
 # <J_star>(production young-star Z mix), H and He bands, at every render with a stellar J file in JDIRS.
 # Box means only (production SFR_eff_summary.csv + BPASS + weights): no boxes are read; minutes.
 #     mkdir -p logs && sbatch -p ou_mki run_metal_R.sh
-# Then run_metal_H640.sh and run_metal_cells.sh (both read $OUT/R_Z.csv).
-# A render that only a test J directory has (cubes stops with "no R for ..."): rerun with
+# Then run_metal_H640.sh and run_metal_box.sh (both read $OUT/R_Z.csv).
+# A render that only a test J directory has (box stops with "no R for ..."): rerun with
 #     JDIRS="$D/Jalpha $D/Jalpha_fullsnap $D/Jalpha_test" sbatch -p ou_mki run_metal_R.sh
 D=/orcd/data/mvogelsb/004/chcho
 OUT=${OUT:-$D/metallicity}

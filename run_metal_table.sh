@@ -11,10 +11,10 @@
 #SBATCH --mail-user=chcho@mit.edu
 #SBATCH --mail-type=END,FAIL
 #
-# Appendix sec:metallicity, step 4: merge the cube task files of every snapshot (metallicity_global.py merge; whole-box
-# gas-cell fiducial from the scan files + the cubes' change for each Z, jackknife errors) and collect them with the
-# 640^3 rows into $OUT/metallicity_global.{csv,png}. Minutes.
-#     sbatch -p ou_mki run_metal_table.sh          (after run_metal_cells.sh for H and He, and run_metal_H640.sh)
+# Appendix sec:metallicity, step 4: sum the whole-box task files of every snapshot (metallicity_global.py box-merge;
+# checks every row block's fiducial against the gas-cell scan) and collect them with the 640^3 rows into
+# $OUT/metallicity_global.{csv,png}. Minutes.
+#     sbatch -p ou_mki run_metal_table.sh          (after run_metal_box.sh for H and He, and run_metal_H640.sh)
 D=/orcd/data/mvogelsb/004/chcho
 OUT=${OUT:-$D/metallicity}
 
@@ -25,10 +25,9 @@ cd "$SLURM_SUBMIT_DIR"
 [ -f metallicity_global.py ] || { echo "submit from the 21cm-codes directory"; exit 1; }
 echo "table: $(date), commit $(git rev-parse --short HEAD)"
 for LINE in H He; do
-    for f in $(ls "$OUT/cells_$LINE"/cubes_*_000.npz 2>/dev/null); do
-        SNAP=$(basename $f | cut -d_ -f2 | sed 's/^0*//')
+    for SNAP in $(ls "$OUT/box_$LINE"/box_*_0000.npz 2>/dev/null | xargs -n1 basename | cut -d_ -f2 | sed 's/^0*//'); do
         if [ "$LINE" = H ]; then SCAN=$D/cell_test_H_$SNAP; else SCAN=$D/cell_test_$SNAP; fi
-        python -u metallicity_global.py merge --line $LINE --snap $SNAP --scan-dir $SCAN --out "$OUT"
+        python -u metallicity_global.py box-merge --line $LINE --snap $SNAP --scan-dir $SCAN --out "$OUT"
     done
 done
 python -u metallicity_global.py table --out "$OUT" --png

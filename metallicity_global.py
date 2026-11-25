@@ -18,19 +18,18 @@ Method (approximation: J_star,j(x) = R_j(z) J_star,fid(x) in every pixel)
          Neglected: the spatial variation of J_star,j/J_star,fid (each voxel's own SFR history inside the 300/100 Myr
          window; the spectral shape changes the weight of near and far shells). It enters the global mean only at
          second order (through the non-linear T_S for H, through its correlation with dT_b/dJ for He).
-2. map640 --snap N : 21 cm, 640^3 render pixels (low z): dT_b for J = R_j J_star + J_AGN, every pixel (or every
-         --stride-th pixel per axis), all 14 variants (fiducial + 13 Z) in one read of the fields; the fiducial mean is
-         checked against the production RIN map (--rin).
-3. cubes --line L --snap N : gas cells (H at z >= 8, He at z <= 10): the 64 random cubes stored by the gas-cell scans
-         (test_cells_Tb.py, cell_test[_H]_NN/scan_L_NNN_*.hdf5), J of each cell = stored J + (R_j - 1) J_star at the
-         cell's pixel (linear in z between two renders where the scan interpolated). The stored J is reproduced from
-         the given J files bit for bit before anything else (checks files, render axis order and weights); the
-         fiducial dT_b is recomputed and compared with the stored one.
-   merge --line L --snap N : cube sums -> global_j = whole-box gas-cell fiducial (sum_V_tb / sum_V of the scan
-         files, exact) + (<dT_b>_cubes,j - <dT_b>_cubes,fid), jackknife over the cubes (the cube sample estimates the
-         change without bias; the ratio form box x cubes_j/cubes_fid is written too, for comparison).
-         map640 --stride > 1 likewise: production map mean + the change on the pixel subset.
-4. table : every merged result and map640 row -> one CSV (+ PNG with --png).
+2. map640 --snap N : 21 cm, 640^3 render pixels (low z): dT_b for J = R_j J_star + J_AGN in every pixel, all 14
+         variants (fiducial + 13 Z) in one read of the fields; the fiducial mean is checked against the production RIN
+         map (--rin).
+3. box --line L --snap N --task T : gas cells (H at z >= 8, He at z <= 10), EVERY cell of the full snapshot (user,
+         2026-11-24: whole box, no cubes or other samples). The rows are the gas-cell scan's row blocks
+         (test_cells_Tb.py, cell_test[_H]_NN/scan_L_NNN_*.hdf5), each split into --split tasks; J of each cell =
+         the scan's J at its pixel (the same files, float32 operations, render axis order and z interpolation) +
+         (R_j - 1) J_star. The J files are identified by reproducing J stored by the scan exactly (a file check).
+   box-merge --line L --snap N : sums all tasks (they must tile the snapshot once) -> whole-box <dT_b> per variant;
+         check: every scan block's fiducial sum V and sum V dT_b must equal the gas-cell scan's (same cells, J,
+         physics), to --tol-sum.
+4. table : every box-merge result and map640 row -> one CSV (+ PNG with --png).
 
 Usage (ORCD; job scripts run_metal_*.sh)
 -----
@@ -38,9 +37,9 @@ Usage (ORCD; job scripts run_metal_*.sh)
          --jdir .../Jalpha [.../Jalpha_fullsnap ...] --out .../metallicity/R_Z.csv [--snaps ...]
   python metallicity_global.py map640 --snap 300 --dir <ren_640> --rcsv R_Z.csv --jdir .../Jalpha \\
          --rin .../Tb_maps_prod/H_real_wf/RIN_300.hdf5 --out .../metallicity
-  python metallicity_global.py cubes --line He --snap 116 --snapdir <snapshots> --scan-dir .../cell_test_116 \\
-         --rcsv R_Z.csv --jdir .../Jalpha --task 0 --ntask 8 --out .../metallicity
-  python metallicity_global.py merge --line He --snap 116 --scan-dir .../cell_test_116 --out .../metallicity
+  python metallicity_global.py box --line He --snap 116 --snapdir <snapshots> --scan-dir .../cell_test_116 \\
+         --rcsv R_Z.csv --jdir .../Jalpha --task 0 --split 4 --out .../metallicity   [--max-rows 4000000: timing]
+  python metallicity_global.py box-merge --line He --snap 116 --scan-dir .../cell_test_116 --out .../metallicity
   python metallicity_global.py table --out .../metallicity [--png]
 """
 import argparse
@@ -49,6 +48,7 @@ import glob
 import os
 import sys
 import time
+from collections import defaultdict
 
 import h5py
 import numpy as np
@@ -356,7 +356,7 @@ def cmd_map640(a):
     Js, Ja = load_3d(js, z), load_3d(ja, z)
     if Js.shape != (N,) * 3 or Ja.shape != (N,) * 3:
         sys.exit("ERROR: J shape differs from the render")
-    st = a.stride
+    st = 1                                             # every pixel (no subsampling)
     print(f"render {s} (z = {z:.4f}, N = {N}) in {d}; J {js} + {ja}; stride {st}; R = " +
           " ".join(f"{r:.4f}" for r in R[1:]), flush=True)
     nv = len(R)
@@ -402,7 +402,7 @@ def cmd_map640(a):
               f"({'same pixels' if st == 1 else f'every {st}th pixel'}): ratio {m[0] / mmap:.6f}")
         if st == 1 and abs(m[0] / mmap - 1.0) > a.tol_map:
             sys.exit(f"STOP: the fiducial recomputed here differs from the map by more than {a.tol_map:g}")
-    # every pixel: the means themselves; a pixel subset (--stride > 1): production map mean + the subset's change
+    # every pixel: the means themselves
     glob_ = (mmap + (m - m[0])) if (st > 1 and np.isfinite(mmap)) else m
     os.makedirs(a.out, exist_ok=True)
     fn = os.path.join(a.out, f"H640_{s:03d}.csv")
@@ -417,7 +417,7 @@ def cmd_map640(a):
 
 
 # ---------------------------------------------------------------------------------------------------------------------
-# 3. gas cells of the scan cubes
+# 3. every gas cell of the full snapshot (whole box)
 # ---------------------------------------------------------------------------------------------------------------------
 def scan_files(a):
     d = a.scan_dir
@@ -432,6 +432,9 @@ def scan_files(a):
         vals = {tuple(np.atleast_1d(x[k]).tolist()) for x in A}
         if len(vals) != 1:
             sys.exit(f"STOP: scan files differ in {k}: {vals}")
+    rows = sorted(tuple(int(v) for v in x["rows"]) for x in A)
+    if rows[0][0] != 0 or any(rows[i][1] != rows[i + 1][0] for i in range(len(rows) - 1)):
+        sys.exit(f"STOP: the scan files' row blocks do not tile the snapshot: {rows[:3]} ...")
     return fs, A[0], A
 
 
@@ -452,20 +455,17 @@ def jsnap_of(basename, line):
     return int(m.group(1)) if m else None
 
 
-def read_cube(fs, q, keys, nmax=None):
-    parts, n = [], 0
+def stored_J_sample(fs, nmax=200_000):
+    """positions and J of cells the gas-cell scan stored (its cube groups); used ONLY to identify which J files the scan
+    used (a file check, not a result)"""
     for f_ in fs:
         with h5py.File(f_, "r") as f:
-            g = f.get(f"cube_{q:03d}")
-            if g is not None and g["m"].shape[0] > 0:
-                parts.append({k: g[k][()] for k in keys})
-                n += len(parts[-1][keys[0]])
-        if nmax and n >= nmax:
-            break
-    if not parts:
-        sys.exit(f"STOP: cube {q} has no cells")
-    c = {k: np.concatenate([p_[k] for p_ in parts]) for k in keys}
-    return {k: v[:nmax] for k, v in c.items()} if nmax else c
+            for q in sorted(k for k in f if k.startswith("cube_")):
+                g = f[q]
+                if g["m"].shape[0] > 0:
+                    n = min(nmax, g["m"].shape[0])
+                    return {"pos": g["pos"][:n], "J": g["J"][:n]}
+    sys.exit("STOP: no stored cells in the scan files to identify the J files")
 
 
 def rel_diff(Jrep, Jstored):
@@ -473,36 +473,24 @@ def rel_diff(Jrep, Jstored):
     return float(np.max(np.abs(Jrep.astype(np.float64) - Jst) / np.maximum(np.abs(Jst), 1e-300)))
 
 
-def cmd_cubes(a):
-    from test_cells_Tb import Snapshot, Phys, render_index
-    Zg, Rtab = read_R(a.rcsv)
-    fs, A, _ = scan_files(a)
-    S = Snapshot(a.snapdir, a.snap)
-    sm = int(A.get("spin_model", 1))
-    if a.line == "H" and sm != 1:
-        sys.exit(f"STOP: the H scan used spin model {sm}")
-    P = Phys(S, a.line, sm)
-    if abs(S.z - float(A["z"])) > 1e-6 or abs(P.rho_mean / float(A["rho_mean"]) - 1) > 1e-9:
-        sys.exit(f"STOP: snapshot z {S.z} / rho_mean {P.rho_mean} vs scan files {A['z']} / {A['rho_mean']}")
-    if "J_files" in A and sval(A["J_files"]).strip() == "none":
-        sys.exit("STOP: this scan used J = 0 (--J none): no metallicity dependence, nothing to do")
-    order = tuple(int(x) for x in np.atleast_1d(A["order"]))
+def resolve_J(a, A, fs, S, order, Rtab):
+    """the J files the gas-cell scan used (recorded names, else the J render near render_snap whose J reproduces the
+    stored J exactly), loaded, with R of each side; also whether the scan interpolated J in z between two renders"""
+    from test_cells_Tb import render_index
     ra = int(A["render_snap"])
     interp = int(A.get("J_interp", 0)) == 1
     sides = [[ra, 1.0, a.jsnap]]
     if interp:
         rb, wb = int(A["render_snap_b"]), float(A["J_weight_b"])
-        sides = [[ra, 1.0 - wb, a.jsnap], [rb, wb, a.jsnap_b if a.jsnap_b is not None else rb]]   # J_b at render b
-    for i, sd in enumerate(sides):                     # the J render of each side
-        if sd[2] is None and "J_files" in A:           # scans from 2026-11-19 on record the J file names
+        sides = [[ra, 1.0 - wb, a.jsnap], [rb, wb, a.jsnap_b if a.jsnap_b is not None else rb]]
+    for i, sd in enumerate(sides):
+        if sd[2] is None and "J_files" in A:
             rec = sval(A["J_files"] if i == 0 else A["J_b_files"]).split(";")
             sd[2] = next(jsnap_of(x, a.line) for x in rec if jsnap_of(x, a.line) is not None)
     if interp and sides[0][2] is None:
         sides[0][2] = ra                               # run_cells_Tb.sh: with RSNAP_B, J at the renders themselves
 
     def cands(js_fixed, r):
-        """(J render, stellar file, AGN file) for every allowed J render and every --jdir, in order; an unknown J
-        render (older scans) is searched among r, r -+ 1, r -+ 2, r -+ 3"""
         rs = [js_fixed] if js_fixed is not None else [r] + [r + d for k in (1, 2, 3) for d in (-k, k)]
         out = []
         for js in rs:
@@ -516,9 +504,8 @@ def cmd_cubes(a):
     for sd, c in zip(sides, C):
         if not c:
             sys.exit(f"STOP: no J files for render {sd[0]} (J render {sd[2]}) in {a.jdir}")
-    # which files: the pair (or pairs) that reproduce the stored J of the first cube's cells exactly
     import itertools
-    c0 = read_cube(fs, 0, ("pos", "J"), nmax=200_000)
+    c0 = stored_J_sample(fs)
     wb_ = sides[1][1] if interp else 0.0
     tried, chosen = [], None
     for combo in itertools.product(*C):
@@ -535,7 +522,7 @@ def cmd_cubes(a):
     if chosen is None:
         sys.exit(f"STOP: no J files reproduce the stored J (max rel diff per candidate: {tried}); check --jdir / --jsnap")
     if len(tried) > 1 or sides[0][2] is None:
-        print(f"J files found from the stored J; tried: {tried}")
+        print(f"J files identified from the scan's stored J; tried: {tried}")
     J = []
     for (r, w, _), (js, ps, pa), (Js_, Ja_) in zip(sides, chosen[0], chosen[1]):
         zr = Rtab[(a.line, js)][0] if (a.line, js) in Rtab else None
@@ -546,115 +533,199 @@ def cmd_cubes(a):
         print(f"J of render {r}: file render {js} (weight {w:.4f}): {ps} + {pa}\n    stellar file: SFR_input "
               f"{at.get('SFR_input', '?')!r}, IGM_transmission {at.get('IGM_transmission', '-')!r}, f_esc_star "
               f"{at.get('f_esc_star', '-')}; R = " + " ".join(f"{x:.4f}" for x in J[-1]["R"][1:]), flush=True)
+    return J, interp
+
+
+def solve_ts_illinois(Tg, T, A, xc, tauGP, tauTs, tol=1e-12, itmax=200):
+    """the T_S root of tb_physics.solve_ts_wf (same F, same bracket, same input and 1/T_c checks), found by the
+    Illinois variant of regula falsi in ln T_S instead of bisection: ~2x faster; laptop test on 5e6 random cells,
+    z = 8-18: max |dT_S/T_S| 5e-14 vs bisection. Used by 'box' for the 21 cm line; the fiducial of every scan block is
+    checked against the gas-cell scan (bisection) in box-merge."""
+    import tb_physics as TP
+    Tg, T, A, xc, tauGP, tauTs = np.broadcast_arrays(*(np.asarray(v, dtype=float) for v in (Tg, T, A, xc, tauGP, tauTs)))
+    bad = ~(np.isfinite(T) & np.isfinite(A) & np.isfinite(xc) & np.isfinite(tauGP) & np.isfinite(tauTs) & (T > 0))
+    if np.any(bad):
+        raise ValueError(f"T_S: {int(bad.sum())} cells with non-finite or non-positive inputs (T_K, J, x_c, tau)")
+    Tg, T, A, xc, tauGP, tauTs = (np.ascontiguousarray(v).ravel() for v in (Tg, T, A, xc, tauGP, tauTs))
+
+    def F(lTs, ix):
+        Ts = np.exp(lTs)
+        S_, Tci, xcmb = TP.wf_terms(Ts, Tg[ix], T[ix], A[ix], tauGP[ix], tauTs[ix])
+        xa = A[ix] * S_
+        return 1.0 / Ts - (xcmb / Tg[ix] + xa * Tci + xc[ix] / T[ix]) / (xcmb + xa + xc[ix])
+    n = T.size
+    ix = np.arange(n)
+    a, b = np.log(0.25 * np.minimum(Tg, T)), np.log(4.0 * np.maximum(Tg, T))
+    fa, fb = F(a, ix), F(b, ix)
+    if np.any(fa <= 0) or np.any(fb >= 0):
+        raise ValueError(f"T_S not bracketed in {int(np.sum(fa <= 0) + np.sum(fb >= 0))} cells")
+    x = 0.5 * (a + b)
+    side = np.zeros(n, np.int8)
+    act = ix
+    for _ in range(itmax):
+        aa, bb, ffa, ffb = a[act], b[act], fa[act], fb[act]
+        c = (aa * ffb - bb * ffa) / (ffb - ffa)
+        c = np.where((c > aa) & (c < bb), c, 0.5 * (aa + bb))       # stay strictly inside the bracket
+        fc = F(c, act)
+        x[act] = c
+        pos = fc > 0                                               # root in [c, b]
+        sa = side[act]
+        a[act] = np.where(pos, c, aa); fa[act] = np.where(pos, fc, ffa)
+        b[act] = np.where(pos, bb, c); fb[act] = np.where(pos, ffb, fc)
+        kb, ka = act[pos & (sa == 1)], act[~pos & (sa == -1)]
+        fb[kb] *= 0.5; fa[ka] *= 0.5                               # Illinois: same end kept twice
+        side[act] = np.where(pos, 1, -1)
+        act = act[~((b[act] - a[act] < tol) | (fc == 0))]
+        if act.size == 0:
+            break
+    else:
+        raise ValueError(f"T_S: {act.size} cells not converged in {itmax} iterations")
+    Ts = np.exp(x)
+    _, Tci, _ = TP.wf_terms(np.maximum(Ts, Tg), Tg, T, A, tauGP, tauTs)
+    if np.any(Tci <= 0):
+        raise ValueError(f"T_S: 1/T_c <= 0 in {int(np.sum(Tci <= 0))} cells (T_K min {float(T.min()):.3g} K)")
+    return Ts
+
+
+def task_rows(A_all, task, split):
+    """task -> (block = the gas-cell scan's task whose rows it covers, sub-block, rows r0..r1)"""
+    blocks = sorted(tuple(int(v) for v in x["rows"]) for x in A_all)
+    b, sub = divmod(task, split)
+    if b >= len(blocks):
+        sys.exit(f"ERROR: --task {task} >= {len(blocks)} blocks x --split {split}")
+    e = np.linspace(blocks[b][0], blocks[b][1], split + 1).astype(np.int64)
+    return b, sub, int(e[sub]), int(e[sub + 1]), blocks[b]
+
+
+def cmd_box(a):
+    """one task: rows r0..r1 of the full snapshot (all cells there), dT_b for the fiducial J and the 13 Z"""
+    from test_cells_Tb import Snapshot, Phys, prep_cells, render_index
+    Zg, Rtab = read_R(a.rcsv)
+    fs, A, A_all = scan_files(a)
+    S = Snapshot(a.snapdir, a.snap)
+    sm = int(A.get("spin_model", 1))
+    if a.line == "H" and sm != 1:
+        sys.exit(f"STOP: the H scan used spin model {sm}")
+    P = Phys(S, a.line, sm)
+    if abs(S.z - float(A["z"])) > 1e-6 or abs(P.rho_mean / float(A["rho_mean"]) - 1) > 1e-9:
+        sys.exit(f"STOP: snapshot z {S.z} / rho_mean {P.rho_mean} vs scan files {A['z']} / {A['rho_mean']}")
+    if int(sum(int(x.get("n_cells", 0)) for x in A_all)) not in (0, S.n):
+        sys.exit(f"STOP: the scan files hold {sum(int(x.get('n_cells', 0)) for x in A_all)} cells, the snapshot {S.n}")
+    if "J_files" in A and sval(A["J_files"]).strip() == "none":
+        sys.exit("STOP: this scan used J = 0 (--J none): no metallicity dependence, nothing to do")
+    order = tuple(int(x) for x in np.atleast_1d(A["order"]))
+    b, sub, r0, r1, blk = task_rows(A_all, a.task, a.split)
+    if a.max_rows:
+        r1 = min(r1, r0 + a.max_rows)
+    J, interp = resolve_J(a, A, fs, S, order, Rtab)
+    if a.line == "H" and not a.bisection:
+        import tb_physics
+        tb_physics.solve_ts_wf = solve_ts_illinois             # this process only; checked in box-merge
     N = J[0]["Js"].shape[0]
-    ncube = int(A["n_cube"])
-    mine = [q for q in range(ncube) if q % a.ntask == a.task]
     nv = 1 + len(Zg)
-    print(f"{a.line} snapshot {a.snap}: z = {S.z:.5f}, spin model {sm}, {len(fs)} scan files, render order {order}, "
-          f"J {'linear in z between 2 renders' if interp else 'at one render'}; task {a.task}/{a.ntask}: cubes {mine}",
-          flush=True)
-    cube = np.zeros((ncube, 2 + nv))                       # n, V, V tb_v
-    chk = np.zeros(4)                                      # J: max rel diff; tb: n, max |d|, sum |tb|
+    print(f"{a.line} snapshot {a.snap}: z = {S.z:.5f}, spin model {sm}, render order {order}, "
+          f"J {'linear in z between 2 renders' if interp else 'at one render'}; task {a.task} = scan block {b} "
+          f"(rows {blk[0]:,}-{blk[1]:,}), part {sub}/{a.split}: rows {r0:,}-{r1:,} ({r1 - r0:,} cells)"
+          f"{'  [TIMING RUN: --max-rows, no output written]' if a.max_rows else ''}", flush=True)
+    SV = 0.0
+    SVtb = np.zeros(nv)
+    ncell = 0
     t0 = time.time()
-    for q in mine:
-        c = read_cube(fs, q, ("pos", "rho", "V", "T", "xHII", "fII", "fIII", "J", "tb"))
-        i, j, k = render_index(c["pos"].astype(np.float64), S.box, N, order)
-        # the scan's J, reproduced with its float32 operations (test_cells_Tb.load_J and J_at)
+    for i0 in range(r0, r1, a.rows):
+        i1 = min(r1, i0 + a.rows)
+        c = prep_cells(S, i0, i1)
+        i, j, k = render_index(c["pos"], S.box, N, order)
+        del c["pos"]
+        # the scan's J (test_cells_Tb load_J / J_at float32 operations), then the stellar part per side
         tot = [np.float32(0) + s_["Js"][i, j, k] + s_["Ja"][i, j, k] for s_ in J]
-        Jrep = tot[0] if not interp else ((1.0 - J[1]["w"]) * tot[0] + J[1]["w"] * tot[1]).astype(np.float32)
-        d_ = rel_diff(Jrep, c["J"])
-        chk[0] = max(chk[0], d_)
-        if d_ > a.tol_j:
-            sys.exit(f"STOP: cube {q}: the stored J is not reproduced from these J files (max rel diff {d_:.2e}): "
-                     f"wrong files, axis order or weights")
-        Jc = c["J"].astype(np.float64)
+        Jc = (tot[0] if not interp else ((1.0 - J[1]["w"]) * tot[0] + J[1]["w"] * tot[1]).astype(np.float32)).astype(np.float64)
         Jstar = [s_["w"] * s_["Js"][i, j, k].astype(np.float64) for s_ in J]
-        rho, T, xHII = c["rho"].astype(np.float64), c["T"].astype(np.float64), c["xHII"].astype(np.float64)
-        fII, fIII, V = c["fII"].astype(np.float64), c["fIII"].astype(np.float64), c["V"].astype(np.float64)
-        cube[q, 0] += len(V); cube[q, 1] += V.sum()
+        del i, j, k, tot
+        V = c["V"]
+        SV += V.sum()
         for v in range(nv):
-            Jv = Jc + sum((s_["R"][v] - 1.0) * js for s_, js in zip(J, Jstar))
-            tb = np.empty(len(V))
+            Jv = Jc + sum((s_["R"][v] - 1.0) * js for s_, js in zip(J, Jstar)) if v else Jc
             for c0 in range(0, len(V), a.chunk):
                 sl = slice(c0, c0 + a.chunk)
-                tb[sl] = P.tb(rho[sl], T[sl], xHII[sl], fII[sl], fIII[sl], Jv[sl])
-            if not np.all(np.isfinite(tb)):
-                sys.exit(f"STOP: non-finite dT_b in cube {q}, variant {v}")
-            if v == 0:
-                d_ = np.abs(tb - c["tb"].astype(np.float64))
-                chk[1] += len(tb); chk[2] = max(chk[2], float(d_.max())); chk[3] += float(np.abs(tb).sum())
-            cube[q, 2 + v] += np.sum(V * tb)
-        print(f"  cube {q:2d}: {len(V):,} cells, <dT_b> fid {cube[q, 2] / cube[q, 1]:+.5g}, Z={zlabel(Zg[0])} "
-              f"{cube[q, 3] / cube[q, 1]:+.5g}, Z={zlabel(Zg[-1])} {cube[q, 2 + nv - 1] / cube[q, 1]:+.5g}; J max rel diff "
-              f"{chk[0]:.1e}, fid tb max |recomputed - stored| {chk[2]:.2e} ({time.time() - t0:.0f} s)", flush=True)
-        del c
-    od = os.path.join(a.out, f"cells_{a.line}")
+                tb = P.tb(c["rho"][sl], c["T"][sl], c["xHII"][sl], c["fII"][sl], c["fIII"][sl], Jv[sl])
+                if not np.all(np.isfinite(tb)):
+                    sys.exit(f"STOP: non-finite dT_b in rows {i0}-{i1}, variant {v}")
+                SVtb[v] += np.sum(V[sl] * tb)
+        ncell += i1 - i0
+        el = time.time() - t0
+        print(f"  rows {i0 - r0 + (i1 - i0):,}/{r1 - r0:,}: {el / 60:.1f} min; {el / ncell * 1e6:.2f} us per cell "
+              f"({nv} variants); <dT_b> fid {SVtb[0] / SV:+.6g}, Z={zlabel(Zg[0])} {SVtb[1] / SV:+.6g}, "
+              f"Z={zlabel(Zg[-1])} {SVtb[-1] / SV:+.6g}", flush=True)
+    rate = (time.time() - t0) / max(ncell, 1)
+    if a.max_rows:
+        nall = S.n
+        print(f"TIMING: {rate * 1e6:.2f} us per cell for {nv} variants on this node -> {rate * (blk[1] - blk[0]) / a.split / 3600:.1f} h "
+              f"per task (--split {a.split}), {rate * nall / 3600:.0f} task-hours for the whole snapshot ({nall:,} cells)")
+        return
+    od = os.path.join(a.out, f"box_{a.line}")
     os.makedirs(od, exist_ok=True)
-    fn = os.path.join(od, f"cubes_{a.snap:03d}_{a.task:03d}.npz")
-    np.savez(fn + ".part.npz", cube=cube, check=chk, mine=np.array(mine), z=S.z, snap=a.snap, line=a.line, task=a.task,
-             ntask=a.ntask, n_cube=ncube, Z_grid=Zg, R=np.array([s_["R"] for s_ in J]),
+    fn = os.path.join(od, f"box_{a.snap:03d}_{a.task:04d}.npz")
+    np.savez(fn + ".part.npz", SV=SV, SVtb=SVtb, ncell=ncell, rows=np.array([r0, r1]), block=b, sub=sub, split=a.split,
+             task=a.task, z=S.z, snap=a.snap, line=a.line, Z_grid=Zg, R=np.array([s_["R"] for s_ in J]),
              renders=np.array([s_["render"] for s_ in J]), weights=np.array([s_["w"] for s_ in J]),
              J_files=";".join(f"{s_['ps']};{s_['pa']}" for s_ in J), scan_dir=os.path.abspath(a.scan_dir))
     os.replace(fn + ".part.npz", fn)
-    print(f"wrote {fn} ({(time.time() - t0) / 60:.1f} min)")
+    print(f"wrote {fn} ({(time.time() - t0) / 3600:.2f} h, {rate * 1e6:.2f} us per cell)")
 
 
-def cmd_merge(a):
-    od = os.path.join(a.out, f"cells_{a.line}")
-    fs = sorted(f for f in glob.glob(os.path.join(od, f"cubes_{a.snap:03d}_*.npz")) if not f.endswith(".part.npz"))
+def cmd_box_merge(a):
+    od = os.path.join(a.out, f"box_{a.line}")
+    fs = sorted(f for f in glob.glob(os.path.join(od, f"box_{a.snap:03d}_*.npz")) if not f.endswith(".part.npz"))
     if not fs:
         sys.exit(f"no task files for {a.line} {a.snap} in {od}")
     D = [np.load(f) for f in fs]
-    nt = {int(d["ntask"]) for d in D}
-    if len(nt) != 1 or len(D) != list(nt)[0] or sorted(int(d["task"]) for d in D) != list(range(len(D))):
-        sys.exit(f"STOP: {len(D)} task files with ntask {sorted(nt)}: incomplete or mixed")
+    split = {int(d["split"]) for d in D}
+    if len(split) != 1:
+        sys.exit(f"STOP: task files with different --split {sorted(split)}")
+    split = split.pop()
     for k in ("R", "renders", "weights", "Z_grid"):
         if any(not np.array_equal(d[k], D[0][k]) for d in D):
             sys.exit(f"STOP: the task files differ in {k}")
-    cube = sum(d["cube"] for d in D)
-    if np.any(cube[:, 0] == 0):
-        sys.exit(f"STOP: cubes without cells: {np.flatnonzero(cube[:, 0] == 0)}")
-    Jmax = max(float(d["check"][0]) for d in D)
-    ntb = sum(float(d["check"][1]) for d in D)
-    dmax = max(float(d["check"][2]) for d in D)
-    stb = sum(float(d["check"][3]) for d in D)
+    _, _, A_all = scan_files(a)
+    blocks = sorted(tuple(int(v) for v in x["rows"]) for x in A_all)
+    got = sorted(int(d["task"]) for d in D)
+    if got != list(range(len(blocks) * split)):
+        miss = sorted(set(range(len(blocks) * split)) - set(got))
+        sys.exit(f"STOP: {len(D)} task files, need {len(blocks) * split}; missing tasks {miss[:20]}")
+    rows = sorted(tuple(int(v) for v in d["rows"]) for d in D)
+    S_ = int(sum(r[1] - r[0] for r in rows))
+    if rows[0][0] != 0 or any(rows[i][1] != rows[i + 1][0] for i in range(len(rows) - 1)) or S_ != blocks[-1][1]:
+        sys.exit("STOP: the task rows do not tile the snapshot exactly once")
+    # check: every block's fiducial sums equal the gas-cell scan's (same cells, same J, same physics)
+    by_block = defaultdict(lambda: [0.0, 0.0])
+    for d in D:
+        by_block[int(d["block"])][0] += float(d["SV"]); by_block[int(d["block"])][1] += float(d["SVtb"][0])
+    worst_v = worst_t = 0.0
+    for x in A_all:
+        b = blocks.index(tuple(int(v) for v in x["rows"]))
+        sv, svt = by_block[b]
+        worst_v = max(worst_v, abs(sv / float(x["sum_V"]) - 1.0))
+        worst_t = max(worst_t, abs(svt - float(x["sum_V_tb"])) / max(abs(float(x["sum_V_tb"])), 1e-300))
+    SV = sum(float(d["SV"]) for d in D)
+    SVtb = sum(d["SVtb"] for d in D)
+    m = SVtb / SV
+    box_scan = sum(float(x["sum_V_tb"]) for x in A_all) / sum(float(x["sum_V"]) for x in A_all)
     Zg = D[0]["Z_grid"]
     z = float(D[0]["z"])
-    V, Vtb = cube[:, 1], cube[:, 2:]
-    n = len(V)
-    m = Vtb.sum(axis=0) / V.sum()
-    jk = np.array([(Vtb.sum(axis=0) - Vtb[i]) / (V.sum() - V[i]) for i in range(n)])     # (n, nv) jackknife means
-    err = lambda x: np.sqrt((n - 1) / n * np.sum((x - x.mean(axis=0))**2, axis=0))
-    diff, ediff = m - m[0], err(jk - jk[:, :1])                    # change of the cube mean, Z_j - fiducial
-    ratio = m / m[0] if m[0] != 0 else np.full_like(m, np.nan)
-    eratio = err(jk / jk[:, :1]) if np.all(jk[:, 0] != 0) else np.full_like(m, np.nan)
-    fs_scan = sorted(f for f in glob.glob(os.path.join(a.scan_dir, f"scan_{a.line}_{a.snap:03d}_*.hdf5"))
-                     if not f.endswith(".part"))
-    sv = svt = 0.0
-    for f_ in fs_scan:
-        with h5py.File(f_, "r") as f:
-            sv += float(f.attrs["sum_V"]); svt += float(f.attrs["sum_V_tb"])
-    box = svt / sv
-    glob_ = box + diff                         # whole-box fiducial + the cubes' change (unbiased for the change)
     unit = "mK" if a.line == "H" else "uK"
-    print(f"{a.line} snapshot {a.snap}, z = {z:.4f}: {len(D)} task files, {int(cube[:, 0].sum()):,} cells in {n} cubes")
-    print(f"  checks: stored J reproduced to max rel {Jmax:.1e}; fiducial dT_b recomputed vs stored on {int(ntb):,} cells: "
-          f"max |diff| {dmax:.2e} {unit} (mean |dT_b| {stb / max(ntb, 1):.3e})")
-    print(f"  whole box (exact, {len(fs_scan)} scan files): fiducial {box:+.6g} {unit}; cubes fiducial {m[0]:+.6g}")
-    print("  global(Z_j) = whole box + (cubes(Z_j) - cubes(fid)); the ratio estimate box x cubes(Z_j)/cubes(fid) for comparison")
+    print(f"{a.line} snapshot {a.snap}, z = {z:.4f}: {len(D)} task files, {int(sum(int(d['ncell']) for d in D)):,} cells "
+          f"(every cell of the snapshot)")
+    print(f"  check per scan block (fiducial vs the gas-cell scan): max |sum V ratio - 1| {worst_v:.1e}, "
+          f"max |sum V dT_b ratio - 1| {worst_t:.1e}; whole box fiducial {m[0]:+.7g} {unit} (scan {box_scan:+.7g})")
+    if worst_v > 1e-9 or worst_t > a.tol_sum:
+        sys.exit(f"STOP: the fiducial does not reproduce the gas-cell scan (tolerance {a.tol_sum:g})")
     for j in range(len(Zg)):
-        print(f"    Z = {zlabel(Zg[j]):>6s}: change {diff[1 + j]:+.5g} +- {ediff[1 + j]:.2g} {unit} -> {glob_[1 + j]:+.6g} {unit}"
-              f"   (ratio {ratio[1 + j]:.5f} +- {eratio[1 + j]:.5f} -> {box * ratio[1 + j]:+.6g})")
-    fn = os.path.join(od, f"cells_{a.line}_{a.snap:03d}.csv")
-    nZ = len(Zg)
+        print(f"    Z = {zlabel(Zg[j]):>6s}: {m[1 + j]:+.6g} {unit}  (change {m[1 + j] - m[0]:+.4g})")
+    fn = os.path.join(od, f"box_{a.line}_{a.snap:03d}.csv")
     with open(fn, "w", newline="") as fo:
         w = csv.writer(fo)
-        w.writerow(["line", "source", "snap", "z", "box_fid", "cubes_fid"] + [f"dTb_{j:02d}" for j in range(nZ)] +
-                   [f"err_{j:02d}" for j in range(nZ)] + [f"ratio_{j:02d}" for j in range(nZ)] +
-                   [f"err_ratio_{j:02d}" for j in range(nZ)])
-        w.writerow([a.line, "cells", a.snap, repr(z), repr(box), repr(float(m[0]))] +
-                   [repr(float(x)) for x in glob_[1:]] + [repr(float(x)) for x in ediff[1:]] +
-                   [repr(float(x)) for x in ratio[1:]] + [repr(float(x)) for x in eratio[1:]])
+        w.writerow(["line", "source", "snap", "z", "box_fid", "check_sum_V_tb"] + [f"dTb_{j:02d}" for j in range(len(Zg))])
+        w.writerow([a.line, "cells", a.snap, repr(z), repr(float(m[0])), repr(worst_t)] + [repr(float(x)) for x in m[1:]])
     print(f"wrote {fn}")
 
 
@@ -663,7 +734,7 @@ def cmd_merge(a):
 # ---------------------------------------------------------------------------------------------------------------------
 def cmd_table(a):
     rows = []
-    for p in sorted(glob.glob(os.path.join(a.out, "H640_*.csv")) + glob.glob(os.path.join(a.out, "cells_*", "cells_*.csv"))):
+    for p in sorted(glob.glob(os.path.join(a.out, "H640_*.csv")) + glob.glob(os.path.join(a.out, "box_*", "box_*_[0-9]*.csv"))):
         with open(p) as f:
             rows += list(csv.DictReader(f))
     if not rows:
@@ -733,33 +804,37 @@ def main():
     m.add_argument("--jdir", nargs="+", default=[])
     m.add_argument("--J-star"); m.add_argument("--J-agn")
     m.add_argument("--rin", help="production RIN_N.hdf5 (SPIN_MODEL 1) to check the fiducial mean")
-    m.add_argument("--stride", type=int, default=1)
     m.add_argument("--planes", type=int, default=8)
     m.add_argument("--tol-map", type=float, default=1e-4)
     m.add_argument("--out", required=True)
-    for nm in ("cubes", "merge"):
-        c = sub.add_parser(nm)
+    for nm in ("box", "box-merge"):
+        c = sub.add_parser(nm, help="every gas cell of a full snapshot, 14 variants" if nm == "box" else
+                           "sum the box task files, check against the gas-cell scan, write the global values")
         c.add_argument("--line", choices=LINES, required=True)
         c.add_argument("--snap", type=int, required=True)
-        c.add_argument("--scan-dir", required=True)
+        c.add_argument("--scan-dir", required=True, help="the gas-cell scan of this snapshot (row blocks, J files, checks)")
         c.add_argument("--out", required=True)
-        if nm == "cubes":
+        if nm == "box":
             c.add_argument("--snapdir", required=True)
             c.add_argument("--rcsv", required=True)
             c.add_argument("--jdir", nargs="+", required=True)
             c.add_argument("--tr-tag", default="tr_sfmask")
-            c.add_argument("--task", type=int, default=0)
-            c.add_argument("--ntask", type=int, default=1)
-            c.add_argument("--chunk", type=int, default=4_000_000)
+            c.add_argument("--task", type=int, required=True, help="0 .. (scan blocks x --split) - 1")
+            c.add_argument("--split", type=int, default=1, help="tasks per scan row block")
+            c.add_argument("--rows", type=int, default=2_000_000, help="rows read at a time")
+            c.add_argument("--chunk", type=int, default=1_000_000, help="cells per dT_b call")
+            c.add_argument("--max-rows", type=int, help="timing run: only this many rows, nothing written")
             c.add_argument("--tol-j", type=float, default=1e-6)
-            c.add_argument("--jsnap", type=int, help="render of the J files (default: recorded in the scan files, "
-                           "else detected: the render near render_snap whose J reproduces the stored J)")
-            c.add_argument("--jsnap-b", type=int, help="second J render (interpolated scans; default render_snap_b)")
+            c.add_argument("--jsnap", type=int)
+            c.add_argument("--jsnap-b", type=int)
+            c.add_argument("--bisection", action="store_true", help="21 cm: the bisection T_S solver (default: Illinois)")
+        else:
+            c.add_argument("--tol-sum", type=float, default=1e-6)
     t = sub.add_parser("table")
     t.add_argument("--out", required=True)
     t.add_argument("--png", action="store_true")
     a = p.parse_args()
-    {"R": cmd_R, "map640": cmd_map640, "cubes": cmd_cubes, "merge": cmd_merge, "table": cmd_table}[a.cmd](a)
+    {"R": cmd_R, "map640": cmd_map640, "box": cmd_box, "box-merge": cmd_box_merge, "table": cmd_table}[a.cmd](a)
 
 
 if __name__ == "__main__":
