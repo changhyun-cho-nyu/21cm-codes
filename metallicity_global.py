@@ -26,6 +26,8 @@ Method (approximation: J_star,j(x) = R_j(z) J_star,fid(x) in every pixel)
          (test_cells_Tb.py, cell_test[_H]_NN/scan_L_NNN_*.hdf5), each split into --split tasks; J of each cell =
          the scan's J at its pixel (the same files, float32 operations, render axis order and z interpolation) +
          (R_j - 1) J_star. The J files are identified by reproducing J stored by the scan exactly (a file check).
+         Two more variants (user, 2026-11-25), for the radiative share of the coupling: 'no_star' (J = J_AGN only:
+         the AGN + collision floor) and 'no_J' (J = 0: collisions only). Radiative share = 1 - <dT_b>_no_J/<dT_b>_fid.
    box-merge --line L --snap N : sums all tasks (they must tile the snapshot once) -> whole-box <dT_b> per variant;
          check: every scan block's fiducial sum V and sum V dT_b must equal the gas-cell scan's (same cells, J,
          physics), to --tol-sum.
@@ -66,6 +68,22 @@ F_ESC = {"H": 1.0, "He": 0.18}                       # F_ESC_STAR_HE (cancels in
 TAU_MAX = {"H": 300.0, "He": 100.0}                  # make_SFR_eff.py windows
 J_NAME = {"H": "Jalpha_H_{}.hdf5", "He": "Jalpha_He_{}_{}.hdf5"}
 AGN_NAME = {"H": "Jalpha_AGN_H_{}.hdf5", "He": "Jalpha_AGN_He_{}_{}.hdf5"}
+EXTRA = ("no_star", "no_J")                           # box variants after the 13 Z: J = J_AGN only, J = 0
+
+
+def variant_J(v, nZ, Jc, Jstar, Jagn, R):
+    """J of box variant v in the cells: 0 = the scan's J (fiducial), 1..nZ = stars at Z_j (Jc + sum (R_j - 1) J_star),
+    nZ+1 = 'no_star' (the AGN J of the files), nZ+2 = 'no_J' (J = 0). Jstar, Jagn: per-side weighted arrays; R: per-side
+    R arrays (index 0 = fiducial = 1)."""
+    if v == 0:
+        return Jc
+    if v <= nZ:
+        return Jc + sum((r[v] - 1.0) * js for r, js in zip(R, Jstar))
+    if v == nZ + 1:
+        return sum(Jagn)
+    if v == nZ + 2:
+        return np.zeros_like(Jc)
+    raise ValueError(f"no variant {v}")
 
 
 def zlabel(Z):
@@ -598,7 +616,8 @@ def task_rows(A_all, task, split):
 
 
 def cmd_box(a):
-    """one task: rows r0..r1 of the full snapshot (all cells there), dT_b for the fiducial J and the 13 Z"""
+    """one task: rows r0..r1 of the full snapshot (all cells there), dT_b for the fiducial J, the 13 Z, J_AGN only and
+    J = 0"""
     from test_cells_Tb import Snapshot, Phys, prep_cells, render_index
     Zg, Rtab = read_R(a.rcsv)
     fs, A, A_all = scan_files(a)
@@ -622,7 +641,9 @@ def cmd_box(a):
         import tb_physics
         tb_physics.solve_ts_wf = solve_ts_illinois             # this process only; checked in box-merge
     N = J[0]["Js"].shape[0]
-    nv = 1 + len(Zg)
+    nZ = len(Zg)
+    nv = 1 + nZ + len(EXTRA)
+    names = ["fid"] + [f"Z_{j:02d}" for j in range(nZ)] + list(EXTRA)
     print(f"{a.line} snapshot {a.snap}: z = {S.z:.5f}, spin model {sm}, render order {order}, "
           f"J {'linear in z between 2 renders' if interp else 'at one render'}; task {a.task} = scan block {b} "
           f"(rows {blk[0]:,}-{blk[1]:,}), part {sub}/{a.split}: rows {r0:,}-{r1:,} ({r1 - r0:,} cells)"
@@ -640,11 +661,12 @@ def cmd_box(a):
         tot = [np.float32(0) + s_["Js"][i, j, k] + s_["Ja"][i, j, k] for s_ in J]
         Jc = (tot[0] if not interp else ((1.0 - J[1]["w"]) * tot[0] + J[1]["w"] * tot[1]).astype(np.float32)).astype(np.float64)
         Jstar = [s_["w"] * s_["Js"][i, j, k].astype(np.float64) for s_ in J]
+        Jagn = [s_["w"] * s_["Ja"][i, j, k].astype(np.float64) for s_ in J]
         del i, j, k, tot
         V = c["V"]
         SV += V.sum()
         for v in range(nv):
-            Jv = Jc + sum((s_["R"][v] - 1.0) * js for s_, js in zip(J, Jstar)) if v else Jc
+            Jv = variant_J(v, nZ, Jc, Jstar, Jagn, [s_["R"] for s_ in J])
             for c0 in range(0, len(V), a.chunk):
                 sl = slice(c0, c0 + a.chunk)
                 tb = P.tb(c["rho"][sl], c["T"][sl], c["xHII"][sl], c["fII"][sl], c["fIII"][sl], Jv[sl])
@@ -655,7 +677,8 @@ def cmd_box(a):
         el = time.time() - t0
         print(f"  rows {i0 - r0 + (i1 - i0):,}/{r1 - r0:,}: {el / 60:.1f} min; {el / ncell * 1e6:.2f} us per cell "
               f"({nv} variants); <dT_b> fid {SVtb[0] / SV:+.6g}, Z={zlabel(Zg[0])} {SVtb[1] / SV:+.6g}, "
-              f"Z={zlabel(Zg[-1])} {SVtb[-1] / SV:+.6g}", flush=True)
+              f"Z={zlabel(Zg[-1])} {SVtb[nZ] / SV:+.6g}, no_star {SVtb[nZ + 1] / SV:+.6g}, no_J {SVtb[nZ + 2] / SV:+.6g}",
+              flush=True)
     rate = (time.time() - t0) / max(ncell, 1)
     if a.max_rows:
         nall = S.n
@@ -666,7 +689,7 @@ def cmd_box(a):
     os.makedirs(od, exist_ok=True)
     fn = os.path.join(od, f"box_{a.snap:03d}_{a.task:04d}.npz")
     np.savez(fn + ".part.npz", SV=SV, SVtb=SVtb, ncell=ncell, rows=np.array([r0, r1]), block=b, sub=sub, split=a.split,
-             task=a.task, z=S.z, snap=a.snap, line=a.line, Z_grid=Zg, R=np.array([s_["R"] for s_ in J]),
+             task=a.task, z=S.z, snap=a.snap, line=a.line, Z_grid=Zg, R=np.array([s_["R"] for s_ in J]), variants=np.array(names),
              renders=np.array([s_["render"] for s_ in J]), weights=np.array([s_["w"] for s_ in J]),
              J_files=";".join(f"{s_['ps']};{s_['pa']}" for s_ in J), scan_dir=os.path.abspath(a.scan_dir))
     os.replace(fn + ".part.npz", fn)
@@ -686,6 +709,18 @@ def cmd_box_merge(a):
     for k in ("R", "renders", "weights", "Z_grid"):
         if any(not np.array_equal(d[k], D[0][k]) for d in D):
             sys.exit(f"STOP: the task files differ in {k}")
+    has_v = {"variants" in d.files for d in D}
+    if len(has_v) != 1:
+        sys.exit("STOP: task files with and without the extra variants (no_star, no_J): rerun the old tasks")
+    nZ = len(D[0]["Z_grid"])
+    if has_v.pop():
+        names = [str(x) for x in D[0]["variants"]]
+        if any([str(x) for x in d["variants"]] != names for d in D) or names != ["fid"] + [f"Z_{j:02d}" for j in range(nZ)] + list(EXTRA):
+            sys.exit(f"STOP: unexpected variant lists in the task files: {names}")
+    else:
+        names = ["fid"] + [f"Z_{j:02d}" for j in range(nZ)]          # files from before the extra variants
+    if any(len(d["SVtb"]) != len(names) for d in D):
+        sys.exit("STOP: SVtb length does not match the variant list")
     _, _, A_all = scan_files(a)
     blocks = sorted(tuple(int(v) for v in x["rows"]) for x in A_all)
     got = sorted(int(d["task"]) for d in D)
@@ -721,11 +756,18 @@ def cmd_box_merge(a):
         sys.exit(f"STOP: the fiducial does not reproduce the gas-cell scan (tolerance {a.tol_sum:g})")
     for j in range(len(Zg)):
         print(f"    Z = {zlabel(Zg[j]):>6s}: {m[1 + j]:+.6g} {unit}  (change {m[1 + j] - m[0]:+.4g})")
+    ex = {nm: (float(m[names.index(nm)]) if nm in names else float("nan")) for nm in EXTRA}
+    if all(np.isfinite(v) for v in ex.values()):
+        print(f"    J_AGN only (no stars): {ex['no_star']:+.6g} {unit}; J = 0 (collisions only): {ex['no_J']:+.6g} {unit}")
+        print(f"    radiative share 1 - <dT_b>_noJ/<dT_b>_fid = {1.0 - ex['no_J'] / m[0]:.4f}; stellar part "
+              f"(<dT_b>_fid - <dT_b>_nostar)/<dT_b>_fid = {(m[0] - ex['no_star']) / m[0]:.4f}")
     fn = os.path.join(od, f"box_{a.line}_{a.snap:03d}.csv")
     with open(fn, "w", newline="") as fo:
         w = csv.writer(fo)
-        w.writerow(["line", "source", "snap", "z", "box_fid", "check_sum_V_tb"] + [f"dTb_{j:02d}" for j in range(len(Zg))])
-        w.writerow([a.line, "cells", a.snap, repr(z), repr(float(m[0])), repr(worst_t)] + [repr(float(x)) for x in m[1:]])
+        w.writerow(["line", "source", "snap", "z", "box_fid", "check_sum_V_tb"] + [f"dTb_{j:02d}" for j in range(len(Zg))]
+                   + [f"dTb_{nm}" for nm in EXTRA])
+        w.writerow([a.line, "cells", a.snap, repr(z), repr(float(m[0])), repr(worst_t)] + [repr(float(x)) for x in m[1:1 + nZ]]
+                   + [repr(ex[nm]) for nm in EXTRA])
     print(f"wrote {fn}")
 
 
@@ -746,7 +788,8 @@ def cmd_table(a):
         if r["source"] == "map640" and not np.isfinite(fid):
             fid = float(r["fid_here"])
         out.append(dict(line=r["line"], source=r["source"], snap=int(r["snap"]), z=float(r["z"]), fiducial=fid,
-                        **{f"dTb_{j:02d}": float(r[f"dTb_{j:02d}"]) for j in range(nZ)}))
+                        **{f"dTb_{j:02d}": float(r[f"dTb_{j:02d}"]) for j in range(nZ)},
+                        **{f"dTb_{nm}": float(r.get(f"dTb_{nm}") or "nan") for nm in EXTRA}))
     out.sort(key=lambda r: (r["line"], -r["z"]))
     fn = os.path.join(a.out, "metallicity_global.csv")
     with open(fn, "w", newline="") as fo:
@@ -771,6 +814,10 @@ def cmd_table(a):
             for j in range(nZ):
                 ax[i].plot(z, [r[f"dTb_{j:02d}"] for r in rr], "-", color=cmap(j / max(nZ - 1, 1)), lw=1)
             ax[i].plot(z, [r["fiducial"] for r in rr], "k-", lw=2, label="fiducial (young-star Z mix)")
+            for nm, ls, lab in (("no_star", "--", "AGN only (no stars)"), ("no_J", ":", r"$J_\alpha = 0$")):
+                y = np.array([r[f"dTb_{nm}"] for r in rr])
+                if np.any(np.isfinite(y)):
+                    ax[i].plot(z, y, "k" + ls, lw=1.5, label=lab)
             ax[i].set_xlabel("z"); ax[i].set_ylabel(r"$\delta T_b$ [" + ("mK" if line == "H" else r"$\mu$K") + "]")
             ax[i].set_title("21 cm" if line == "H" else "3.46 cm"); ax[i].legend(fontsize=8)
         fig.tight_layout()
@@ -808,7 +855,7 @@ def main():
     m.add_argument("--tol-map", type=float, default=1e-4)
     m.add_argument("--out", required=True)
     for nm in ("box", "box-merge"):
-        c = sub.add_parser(nm, help="every gas cell of a full snapshot, 14 variants" if nm == "box" else
+        c = sub.add_parser(nm, help="every gas cell of a full snapshot, 16 variants (fid, 13 Z, no_star, no_J)" if nm == "box" else
                            "sum the box task files, check against the gas-cell scan, write the global values")
         c.add_argument("--line", choices=LINES, required=True)
         c.add_argument("--snap", type=int, required=True)
