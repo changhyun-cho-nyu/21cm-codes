@@ -156,7 +156,7 @@ Nevertheless, the 3.46\,cm line provides access to later cosmic epochs and a har
 The observable quantity of interest is the differential brightness temperature relative to the CMB, $\delta T_{\rm b}$, which encodes the physical state of the IGM. This signal depends on several factors, such as the neutral hydrogen fraction (or singly ionized helium fraction), gas density, kinetic temperature, and the intensity of the  local radiation fields \citep[][]{Furlanetto2006, Pritchard2012}. As a result, fluctuations in $\delta T_{\rm b}$ trace not only the underlying matter distribution but also ionization by UV photons and heating by X-ray sources. This sensitivity makes the 21\,cm and 3.46\,cm signals a rich probe of the timing and morphology of reionization, while also introducing degeneracies between different physical processes that motivate the use of complementary statistical approaches.
 
 
-Detecting either hyperfine signal remains challenging. In the present mean-field model, hydrogen reaches tens of mK while helium reaches only about $0.03\,\mu\mathrm{K}$, although local brightnesses and fluctuation amplitudes differ from these means. The low $^3$He abundance and weak spin coupling both suppress the helium signal. Galactic and extragalactic foregrounds further complicate detection \citep{Dillon2014, Eastwood2019}. The higher observing frequencies of the redshifted 3.46\,cm line reduce synchrotron and ionospheric contamination relative to high-redshift 21\,cm observations, but do not remove the need for foreground and instrument modeling.
+However, detecting the 21\,cm and 3.46\,cm signals from Cosmic Dawn and the EoR remains a significant observational challenge. The expected brightness temperature fluctuations are of order $\sim 10\,\mathrm{mK}$ for hydrogen, while the corresponding $^{3}\text{He}^{+}$ signal is roughly five orders of magnitude fainter ($\approx 0.03\,\mu\mathrm{K}$). This is a direct consequence of the low primordial abundance of $^{3}\text{He}$ ($\sim 10^{-5}$ relative to H), rendering it a uniquely challenging target. For both lines, foreground emission from Galactic synchrotron radiation and extragalactic sources exceeds the cosmological signal by several orders of magnitude \citep{Dillon2014, Eastwood2019}, although the higher rest frequency of the 3.46\,cm line makes it less susceptible to synchrotron and ionospheric contamination than the 21\,cm line.
 
 
 Current radio interferometers, such as the Low-Frequency Array \citep[LOFAR;][]{vanHaarlem2013, Acharya_2024lofar, Mertens2025}, the Murchison Widefield Array \citep[MWA;][]{Tingay2013, Bowman2013, Nunhokee2025, Trott2025}, the Hydrogen Epoch of Reionization Array \citep[HERA;][]{DeBoer2017, HERA2023, HERA2026}, and NenuFAR \citep{Munshi2024, Munshi2025}, measure the hydrogen signal in Fourier space through interferometric visibilities, which complicates direct signal reconstruction. When combined with instrumental noise and the complexity of foreground subtraction, direct tomographic imaging of the high-redshift IGM is extremely difficult with current facilities. These 21\,cm-optimized instruments serve as crucial pathfinders for next-generation observatories like the Square Kilometre Array \citep[SKA;][]{Koopmans2015, Chapman2015}, which will provide the sensitivity required to robustly constrain the thermal and ionization state of the IGM.
@@ -215,17 +215,19 @@ The impact of cosmological radiation fields is modeled using the GPU-accelerated
 
 \lumina incorporates stellar populations, active galactic nuclei (AGN), and X-ray sources, all coupled on-the-fly into the radiative transfer. Stellar radiation, modeled with emissivities based on BPASS binary population synthesis models \citep[v2.2.1;][]{BPASS2017, Stanway2018}, a Chabrier initial mass function \citep{Chabrier2003}, and an effective escape fraction $f_{\rm esc}=0.18$, is the primary driver of \ion{H}{1} reionization and is calibrated to a late reionization history ($z_{\rm end}\approx5.2$). AGN, with composite quasar spectra from \citet{Shen2020}, provide the hard radiation that dominates \ion{He}{2} reionization. X-ray emission from high-mass X-ray binaries and the shock-heated ISM, scaled with the galaxy star formation rate, drives early IGM heating and thus sets the thermal state imprinted on the 21\,cm signal. The construction of these source spectra and their role in our signal calculation are detailed in Section~\ref{sec:others}.
 
+For hydrogen reionization ($z > 4.75$), the radiation field is discretized into six frequency bins, including three dedicated X-ray bins to capture the long mean-free-path propagation of high-energy photons through the neutral IGM. This multi-frequency treatment enables a self-consistent modelling of ionization and heating processes across different spatial scales. Below $z = 4.75$, the focus shifts to \ion{He}{2} reionization ($h\nu>54.42~\mathrm{eV}$), and the radiation field is simplified to a single bin with AGN as the only sources. The \ion{H}{1} and \ion{He}{1} ionization rates are replaced with a spatially uniform UV background from \citet{FaucherGiguere2009}. This transition allows efficient tracking of late-time helium reionization without resolving residual hydrogen ionization structure. Self-shielding against this background is applied only from $z = 3.35$, with the prescription of \citet{Rahmati2013} \citep{Zier2026}. Until then, the background ionizes and heats the densest gas ($n_\mathrm{H} \gtrsim 0.03\,\mathrm{cm^{-3}}$), which the stellar radiation had left partly neutral, and both changes leave small steps in the signals (Section~\ref{sec:global}). These components provide a self-consistent framework for modeling the coupled ionization and thermal evolution of the IGM down to $z=3$.
 
-For hydrogen reionization ($z > 4.75$), the radiation field is discretized into six frequency bins, including three dedicated X-ray bins to capture the long mean-free-path propagation of high-energy photons through the neutral IGM. This multi-frequency treatment enables a self-consistent modelling of ionization and heating processes across different spatial scales. Below $z = 4.75$, the focus shifts to \ion{He}{2} reionization ($h\nu>54.42~\mathrm{eV}$), and the radiation field is simplified to a single AGN-dominated bin. The \ion{H}{1} and \ion{He}{1} ionization rates are replaced with a spatially uniform UV background from \citet{FaucherGiguere2009}. This transition allows efficient tracking of late-time helium reionization without resolving residual hydrogen ionization structure. These components provide a self-consistent framework for modeling the coupled ionization and thermal evolution of the IGM down to $z=3$.
+%For hydrogen reionization ($z > 4.75$), the radiation field is discretized into six frequency bins, including three dedicated X-ray bins to capture the long mean-free-path propagation of high-energy photons through the neutral IGM. This multi-frequency treatment enables a self-consistent modelling of ionization and heating processes across different spatial scales. Below $z = 4.75$, the focus shifts to \ion{He}{2} reionization ($h\nu>54.42~\mathrm{eV}$), and the radiation field is simplified to a single AGN-dominated bin. The \ion{H}{1} and \ion{He}{1} ionization rates are replaced with a spatially uniform UV background from \citet{FaucherGiguere2009}. This transition allows efficient tracking of late-time helium reionization without resolving residual hydrogen ionization structure. These components provide a self-consistent framework for modeling the coupled ionization and thermal evolution of the IGM down to $z=3$.
 
 \subsection{Data products for modeling observable signals}
 
-\lumina provides on-the-fly lightcones and high-cadence Cartesian renders for relating the simulated gas to observable signals \citep{Zier2026}. The available Cartesian products include $2560^3$, $1280^3$, and $640^3$ grids. The signal fields analyzed here use a $640^3$ grid, corresponding to a cell width of $0.78$\,cMpc across the 500\,cMpc volume. The existence of finer renders does not establish convergence of quantities evaluated on this grid. Density, ionization, and temperature enter the brightness nonlinearly, so resolving their individual means is insufficient to guarantee a converged signal.
+To facilitate forward-modeling of current and upcoming observations, \lumina produces a diverse array of data products. These include on-the-fly light-cones constructed using $5120^2$ conical rays from $z=30$ down to $z=3$. These light-cones capture the continuous evolution of the IGM and incorporate both real-space and redshift-space distortions, which are critical for accurate power spectrum estimation. Additionally, the simulation generates high-cadence Cartesian renders of the \ion{H}{1} density and ionized fraction fields on $2560^3$, $1280^3$, and $640^3$ grids. These high-resolution products enable robust predictions for the 21\,cm power spectrum and provide the tomographic imaging templates required for facilities such as HERA and SKA. To translate the underlying physical state of the simulated IGM into observable signals, we extract the local gas density, ionization fractions, and kinetic temperature directly from the \lumina data products. These fundamental grid quantities allow us to evaluate the differential brightness temperature of both the hydrogen and helium hyperfine transitions across the simulated volume.
 
 
 \subsection{Brightness temperature}
 
 The differential brightness temperature of the 21\,cm signal is given relative to the CMB temperature for any patch of the IGM as \citep[][]{Furlanetto2006, Pritchard2012}:
+
 \begin{equation}
     \begin{split}
         \delta T^{\mathrm{H}}_b & =  \frac{T^\mathrm{H}_S - T_\gamma}{1+z} \left(1 - e^{-\tau_\nu} \right) \\
@@ -247,7 +249,7 @@ The differential brightness temperature of the 3.46\,cm \ion{He}{2} signal can b
 where $x_\mathrm{He\,II}$ is the local fraction of singly ionized helium, $[^3{\rm He}/{\rm H}]$ is the primordial number abundance ratio of helium-3 to hydrogen, $T_\gamma$ is the temperature of the surrounding background radiation, and $T^\mathrm{He}_S$ is the spin temperature of the 3.46\,cm transition.
 
 
-We compute $T_S^\mathrm{H}$ and $T_S^\mathrm{He}$ from the collisional and radiative coupling coefficients rather than imposing $T_S=T_K$. Strong coupling to the gas, $T_S\simeq T_K$, must be distinguished from the saturated emission limit, $T_S\gg T_\gamma$, in which the brightness temperature becomes insensitive to $T_S$. Neither condition is assumed for the helium signal. The spatial calculations use the resolved grid fields, while the global histories use the mean-field approximation described in Section~\ref{sec:global}. Appendix~\ref{ap:calculation} gives the coupling prescription and its approximations. The fiducial gas temperatures come from the radiation-hydrodynamic simulation, but their accuracy depends on the source population and energy-deposition model. In particular, unresolved early star formation and the conversion of all absorbed X-ray photoelectron energy into heat, without secondary ionization or excitation, limit the Cosmic Dawn predictions. The fiducial calculation is therefore a maximal-heating prescription for the adopted sources, not a general upper bound on the thermal history or the brightness statistics (Section~\ref{sec:xray_heating}).
+Throughout this paper, we do not assume that the hydrogen and helium spin temperatures are coupled to the gas kinetic temperature. Instead, we compute $T_S^\mathrm{H}$ and $T_S^\mathrm{He}$ explicitly from the collisional and radiative coupling coefficients at every position and redshift, so that the spin temperature is allowed to depart from $T_K$ wherever the coupling is incomplete. This avoids the common saturation assumption ($T_S \simeq T_K$) and lets us follow the self-consistent coupling history of both species. Full details of this spin temperature calculation and caveats are provided in Appendix~\ref{ap:calculation}. We also compute $T_K$ self-consistently from the hydrodynamics rather than imposing an analytic thermal history. While this approach robustly captures the spatial topology of the thermal field, unresolved early star formation introduces general timing uncertainties for the highest-redshift predictions ($z \gtrsim 10$; see Section \ref{sec:highz}). In addition, the gas temperatures are overestimated due to our assumption of a maximal X-ray heating efficiency ($f_{\rm heat} = 1$) without secondary ionization. However, with these caveats in mind, we adopt the fiducial overheated IGM as a useful theoretical upper bound on early heating scenarios. We provide appropriate warnings wherever the IGM temperature or unconverged star formation might compromise results. A detailed discussion of these effects and their impact on the global signal is provided in Section \ref{sec:xray_heating}.
 
 
 % However, rather than strictly a limitation, this overestimation provides a useful theoretical baseline: it allows our fiducial model to serve as an upper bound on early heating scenarios.
@@ -1158,7 +1160,7 @@ Beyond the power spectrum detectability challenges discussed above, a related ob
 \begin{figure}[!t]
     \centering
     \includegraphics[width=\linewidth]{figs/subbox_VID.png}
-    \caption{Cosmic variance of the brightness temperature probability distribution function (VID). Panel (a) shows the hydrogen 21\,cm VID at $z=9.2$ ($x_{\rm HII} = 0.1$), and panel (b) shows the helium 3.46\,cm VID at $z=5$ ($x_{\rm HeIII} = 0.1$). In both panels, the thick black line represents the converged distribution from the full 500\,cMpc \lumina\ volume, while the faint grey lines display the distributions extracted from 125 non-overlapping 100\,cMpc sub-volumes.}
+    \caption{Cosmic variance of the brightness temperature probability distribution function (VID). Panel (a) shows the hydrogen 21\,cm VID at $z=9.2$ ($x_{\rm HII} = 0.1$), and panel (b) shows the helium 3.46\,cm VID at $z=5$ ($x_{\rm HeIII} = 0.1$) from the gas-cell-level map. In both panels, the thick black line represents the converged distribution from the full 500\,cMpc \lumina\ volume, while the faint grey lines display the distributions extracted from 125 non-overlapping 100\,cMpc sub-volumes.}
     \label{fig:subbox}
 \end{figure}
 
@@ -1338,16 +1340,28 @@ Figure~\ref{fig:flowchart} summarizes how the \lumina grid fields enter this cal
 
 The detectability of the 21\,cm and 3.46\,cm signals fundamentally depends on the spin temperatures of \ion{H}{1} and $^3$He\,II, $T_S^{\rm H}$ and $T_S^{\rm He}$. In each case, the spin temperature is determined by three competing physical processes: (1) the absorption and emission of resonant hyperfine photons coupling the gas to the radio background (primarily the CMB); (2) collisions with surrounding particles (neutral hydrogen atoms, free electrons, and protons in the case of \ion{H}{1}, and predominantly free electrons in the case of $^3$He\,II, which only exists in ionized regions); and (3) the resonant scattering of Ly$\alpha$ photons, which induces a spin-flip transition via an intermediate electronic excited state \citep[Wouthuysen--Field effect;][]{Wouthuysen1952, Field1958}. The relevant Ly$\alpha$ photons are \ion{H}{1} Ly$\alpha$ (10.2~eV) for hydrogen and \ion{He}{2} Ly$\alpha$ (40.8~eV) for helium.
 
-Assuming the Rayleigh-Jeans limit, the equilibrium balance of these three processes yields the Field equation \citep{Furlanetto2006, McQuinn2009}, identical in functional form for both species:
+Assuming the Rayleigh--Jeans limit, the equilibrium balance of these three processes yields the Field equation \citep{Furlanetto2006, McQuinn2009}, here including the optical depth of the hyperfine line itself \citep{Venumadhav2018}:
 \begin{equation}
-    \left(T_S^i\right)^{-1} = \frac{T_\gamma^{-1} + x_\alpha^i
+    \left(T_S^i\right)^{-1} = \frac{x_\mathrm{CMB}^i\,T_\gamma^{-1} + x_\alpha^i
     \left(T_\alpha^i\right)^{-1} + x_c^i \, T_K^{-1}}
-    { 1 + x_\alpha^i + x_c^i}\,,
+    {x_\mathrm{CMB}^i + x_\alpha^i + x_c^i}\,,
     \label{eq:Ts}
 \end{equation}
-where $i \in \{{\rm H}, {\rm He}\}$ labels the species, $T_\alpha^i$ is the color temperature of the relevant Ly$\alpha$ radiation field at the corresponding resonance frequency (\ion{H}{1} Ly$\alpha$ for hydrogen, \ion{He}{2} Ly$\alpha$ for helium), $T_K$ is the gas kinetic temperature, and $x_c^i$ and $x_\alpha^i$ are the species-specific coupling coefficients due to atomic collisions and the scattering of Ly$\alpha$ photons, respectively.
+where $i \in \{{\rm H}, {\rm He}\}$ labels the species, $T_\alpha^i$ is the color temperature of the relevant Ly$\alpha$ radiation field at the corresponding resonance frequency (\ion{H}{1} Ly$\alpha$ for hydrogen, \ion{He}{2} Ly$\alpha$ for helium), $T_K$ is the gas kinetic temperature, and $x_c^i$ and $x_\alpha^i$ are the coupling coefficients for atomic collisions and Ly$\alpha$ scattering, respectively. The factor $x_\mathrm{CMB}^i \equiv (1 - e^{-\tau^i_\nu})/\tau^i_\nu$ accounts for the hyperfine optical depth $\tau^i_\nu$. For hydrogen, we evaluate $\tau_\nu$ with the local \ion{H}{1} density in every cell. For helium, $\tau \ll 1$, so $x_\mathrm{CMB}=1$.
 
-Typically, the Ly$\alpha$ color temperature is tightly coupled to the gas kinetic temperature, $T_\alpha^i \approx T_K$, for both species. Because the IGM is optically thick to the relevant Ly$\alpha$ photons in regions where the corresponding ion is abundant---\ion{H}{1} Ly$\alpha$ throughout the bulk neutral IGM, and \ion{He}{2} Ly$\alpha$ within \ion{He}{2} regions during helium reionization---the enormous number of resonant scattering events thermalizes the radiation field, driving the Ly$\alpha$ spectral profile toward a blackbody distribution at temperature $T_K$ near the line center \citep{Wouthuysen1952}. This condition is readily fulfilled throughout the high-redshift IGM in our simulated cosmology.
+
+A common simplification is to set the color temperature equal to the gas temperature, $T_\alpha = T_K$. We do not adopt it for hydrogen, because it fails in the cold gas of cosmic dawn while the Ly$\alpha$ coupling is still building up. Repeated resonant scatterings drive the Ly$\alpha$ spectrum near line center towards a Boltzmann slope at the gas temperature through atomic recoil \citep{Wouthuysen1952, Field1958}. For hydrogen, it is not adequate during cosmic dawn. The scatterings that couple the spin temperature also flip the hyperfine level, and each such scattering exchanges an energy $h_{\nu_{21}}$ between the photon and the atom. The photon spectrum therefore exchanges energy with the spin system as well, and relaxes to a color temperature between $T_K$ and $T_S$, which weakens the coupling \citep{Chuzhoy2006, Hirata2006}. We use the fit of \citet{Hirata2006} to the Fokker--Planck solutions:
+
+\begin{equation}
+    T_\alpha^\mathrm{H} = \frac{T_K}{1 + 0.4055\,\mathrm{K}\,\left(1/T_S^\mathrm{H} - 1/T_K\right)}\,,
+    \label{eq:Tc}
+\end{equation}
+which agrees with the analytic result of \citet{Chuzhoy2006}, $T_\alpha = (1 + 2.5 T_K) T_S / (1 + 2.5 T_S)$. Because $T_\alpha^\mathrm{H}$ depends on $T_S^\mathrm{H}$, Equation~(\ref{eq:Ts}) is solved in each cell by iteration. 
+
+For helium, we keep $T^\mathrm{He}_\alpha = T_K$. By Equation~(\ref{eq:Ts}), the color temperature enters the signal only through $T_\gamma/T^{\mathrm{He}}_\alpha$, and since \ion{He}{2} exists only in photoionized gas with $T_K \gtrsim 10^4\,$K, any plausible departure of $T^\mathrm{He}_\alpha$ from $T_K$ changes $\delta T^{\mathrm{He}}_b$ by less than $10^{-3}$ of its value.
+
+
+%Typically, the Ly$\alpha$ color temperature is tightly coupled to the gas kinetic temperature, $T_\alpha^i \approx T_K$, for both species. Because the IGM is optically thick to the relevant Ly$\alpha$ photons in regions where the corresponding ion is abundant---\ion{H}{1} Ly$\alpha$ throughout the bulk neutral IGM, and \ion{He}{2} Ly$\alpha$ within \ion{He}{2} regions during helium reionization---the enormous number of resonant scattering events thermalizes the radiation field, driving the Ly$\alpha$ spectral profile toward a blackbody distribution at temperature $T_K$ near the line center \citep{Wouthuysen1952}. This condition is readily fulfilled throughout the high-redshift IGM in our simulated cosmology.
 
 
 
@@ -1410,25 +1424,50 @@ S_\alpha^\mathrm{He} J^\mathrm{He}_{\alpha}
 where $f_\alpha = 0.4162$ is the oscillator strength of the Ly$\alpha$ transition. The term $S_\alpha \equiv \int dx \phi_\alpha(x)J_\nu(x)/J_\infty$ is a correction factor of order unity that accounts for the detailed shape of the radiation field near resonance \citep{Chen2004}. Here, $x$ is the dimensionless frequency offset from the line center, $\phi_\alpha(x)$ is the Ly$\alpha$ line profile, and $J_\infty$ represents the background continuum flux evaluated away from the resonance. Finally, $J^{\rm H}_\alpha$ and $J^{\rm He}_\alpha$ are the angle-averaged specific intensities of \ion{H}{1} Ly$\alpha$ and \ion{He}{2} Ly$\alpha$ radiation, respectively, each defined as the number of incident photons per unit area, time, frequency, and solid angle.
 
 
-Although the suppression factor $S_\alpha$ is typically calculated numerically \citep{Chen2004}, the wing approximation provides an excellent analytical fit when spin-exchange collisions are negligible. Under this approximation, the suppression factor is given by \citep{Chuzhoy2006}:
+%Although the suppression factor $S_\alpha$ is typically calculated numerically \citep{Chen2004}, the wing approximation provides an excellent analytical fit when spin-exchange collisions are negligible. Under this approximation, the suppression factor is given by \citep{Chuzhoy2006}:
+
+%\begin{equation}
+%    S^i_\alpha \approx \exp \left[ -0.803 T^{-2/3}_K \left( \frac{10^{-6}}{\gamma^i} \right)^{1/3} \right]\,,
+%\end{equation}
+%where $\gamma^i = (\tau_\mathrm{GP}^{i})^{-1}$ is the Sobolev parameter that parameterizes the bulk velocity of the medium, and $\tau_\mathrm{GP}$ is the Gunn-Peterson optical depth \citep[][]{Gunn1965}, representing the mean Ly$\alpha$ optical depth. For the purpose of evaluating $S_\alpha$ in our simulated volume, we neglect the contribution of peculiar velocities, such that the Sobolev parameter is strictly the inverse of the Gunn-Peterson optical depth.
+
+For hydrogen, we use the suppression factor of \citet{Hirata2006}. It includes the fine structure of the Ly$\alpha$ resonance and spin-flip scattering, and therefore depends on $T_S$:
 
 \begin{equation}
-    S^i_\alpha \approx \exp \left[ -0.803 T^{-2/3}_K \left( \frac{10^{-6}}{\gamma^i} \right)^{1/3} \right]\,,
+\begin{aligned}
+S_\alpha^\mathrm{H} = {} & \Bigl( 1 - 0.0632\,T_K^{-1} + 0.1160\,T_K^{-2} \\
+& {} - 0.4014\,T_K^{-1}T_S^{-1} + 0.3365\,T_K^{-2}T_S^{-1} \Bigr) \\
+& {} \times \left( 1 + 2.984\,\xi + 1.536\,\xi^2 + 3.853\,\xi^3 \right)^{-1}\,,
+\end{aligned}
 \end{equation}
-where $\gamma^i = (\tau_\mathrm{GP}^{i})^{-1}$ is the Sobolev parameter that parameterizes the bulk velocity of the medium, and $\tau_\mathrm{GP}$ is the Gunn-Peterson optical depth \citep[][]{Gunn1965}, representing the mean Ly$\alpha$ optical depth. For the purpose of evaluating $S_\alpha$ in our simulated volume, we neglect the contribution of peculiar velocities, such that the Sobolev parameter is strictly the inverse of the Gunn-Peterson optical depth.
-
-
-
-The $\tau_\mathrm{GP}$ experienced by a photon that redshifts across the entire resonance is \citep[][]{Gunn1965, Furlanetto2006}:
+where
+\begin{equation}
+\xi = \left(10^{-7}\,\tau^\mathrm{H}_\mathrm{GP}\right)^{1/3} T_K^{-2/3}\,,
+\end{equation}
+with temperatures in kelvin. For helium, where spin exchange is negligible, we use the wing approximation \citep{Chuzhoy2006},
 
 \begin{equation}
-    \tau^i_\mathrm{GP} \approx
-    \begin{cases}
-     3\times10^5 \,\bar{x}_\mathrm{H\,I} \left( \frac{1+z}{7} \right)^{3/2}\,, \quad \mathrm{ for\  H\, I}\\
-     6\times10^3 \,\bar{x}_\mathrm{He\,II} \left( \frac{1+z}{7} \right)^{3/2}\,, \quad \mathrm{ for\  He\, II}
-     \end{cases}
+S^\mathrm{He}_\alpha \approx \exp \left[ -0.803\, T_K^{-2/3} \left( 10^{-6}\,\tau^\mathrm{He}_\mathrm{GP} \right)^{1/3} \right]\,,
 \end{equation}
-where $x_\mathrm{H\,I}$ and $x_\mathrm{He\,II}$ are the neutral hydrogen and singly ionized helium fractions. For the spatially resolved fields we use their local values in each cell, and for the global signal their volume averages.
+which gives $S^\mathrm{He}_\alpha > 0.99$ wherever \ion{He}{2} exists. For both species, we neglect peculiar velocities, so the Sobolev parameter is the inverse of the Gunn--Peterson optical depth \citep{Gunn1965}.
+
+The Gunn--Peterson optical depth experienced by a photon that redshifts across the entire resonance is
+\begin{equation}
+    \tau^i_\mathrm{GP} = \frac{\pi e^2 f_\alpha \lambda^i_\alpha}{m_e c}\,\frac{n_i}{H(z)}\,,
+\end{equation}
+where $\lambda^i_\alpha$ is the Ly$\alpha$ wavelength of the species ($1216$\,\AA\ for \ion{H}{1}, $304$\,\AA\ for
+\ion{He}{2}) and $n_i$ is the local proper number density of \ion{H}{1} or \ion{He}{2} \citep{Hirata2006}.
+
+%$The $\tau_\mathrm{GP}$ experienced by a photon that redshifts across the entire resonance is \citep[][]{Gunn1965, Furlanetto2006}:
+
+%\begin{equation}
+    %\tau^i_\mathrm{GP} =
+    %\begin{cases}
+      %  \dfrac{\pi e^2 f_\alpha \lambda_\alpha}{m_e c}\,\dfrac{n_\mathrm{H\,I}}{H(z)}\,, & \text{for H\,I}\,, \\[2ex]
+     %   6\times10^3\, x_\mathrm{He\,II} \left( \dfrac{1+z}{7} \right)^{3/2}\,, & \text{for He\,II}\,,
+    %\end{cases}
+%\end{equation}
+%where $x_\mathrm{H\,I}$ and $x_\mathrm{He\,II}$ are the neutral hydrogen and singly ionized helium fractions. For the spatially resolved fields we use their local values in each cell, and for the global signal their volume averages.
 
 
 
@@ -1443,12 +1482,49 @@ where $x_\mathrm{H\,I}$ and $x_\mathrm{He\,II}$ are the neutral hydrogen and sin
 
 \subsection{Proper \texorpdfstring{Ly$\alpha$}{Lyman-alpha} intensity}
 
+
+The Ly$\alpha$ intensity, defined as the angle-averaged number of incident photons hitting a gas element per unit area, time, frequency, and steradian, is
+
+\begin{equation}
+\begin{split}
+    J^i_\alpha(\mathbf{x}, z) = \frac{(1+z)^2}{4\pi} \sum^{n_\mathrm{max}}_{n=2} f_\mathrm{rec}(n)
+    &\int^{z_\mathrm{max}(n)}_z \frac{c\,dz'}{H(z')} \\
+    &\times \left\langle \epsilon(\nu'_n, z') \right\rangle_{R}\, \mathcal{T}^i_n(\mathbf{x}, R)\,,
+\end{split}
+\label{eq:Jalpha}
+\end{equation}
+where $i \in \{{\rm H}, {\rm He}\}$ labels the species, $f_\mathrm{rec}(n)$ is the fraction of photons redshifting into the Ly$n$ resonance that cascade through Ly$\alpha$ \citep{Pritchard2006} up to $n_\mathrm{max}=30$, the same for \ion{He}{2} because hydrogenic branching ratios do not depend on the nuclear charge, and $z_\mathrm{max}(n)$ is the highest emission redshift from which a photon reaches the Ly$\alpha$ resonance before the Ly$(n+1)$ one. $\langle \epsilon(\nu'_n,z') \rangle_R$ is the comoving spectral emissivity averaged over a spherical shell of comoving radius $R = R(z,z')$ centered on $\mathbf{x}$, and $\mathcal{T}^i_n$ is the IGM transmission of the line photons over that distance, with $\mathcal{T}^{\mathrm{H}}_n = 1$. The emissivity includes the stellar populations (Section~\ref{sec:stars}), which dominate the Ly$\alpha$ background, and AGN (Section~\ref{sec:others}); the hot ISM and HMXBs, which \lumina includes as X-ray sources, emit negligibly in the Lyman bands and are omitted. We do not include the indirect Ly$\alpha$ produced by collisional excitation from secondary electrons, consistent with our assumption of maximal X-ray heating efficiency ($f_\mathrm{heat}=1$), which leaves no absorbed X-ray energy in the excitation channel (Section~\ref{sec:xray_heating}).
+
+
+The emitted frequency $\nu'_n$ at redshift $z'$ that redshifts into the Ly$n$ resonance at $z$ is
+\begin{equation}
+    \nu'_n = \nu_\mathrm{LL}^i (1-n^{-2})\frac{1+z'}{1+z}\,,
+\end{equation}
+where $\nu_\mathrm{LL}$ is the Lyman limit frequency, $3.289 \times 10^{15}\, \mathrm{Hz}$ for \ion{H}{1} and $1.316 \times 10^{16}\, \mathrm{Hz}$ for \ion{He}{2}.
+
+The integral in Equation~(\ref{eq:Jalpha}) ends where $\nu'_n$ reaches the Ly$(n+1)$ frequency, at the maximum emission redshift
+\begin{equation}
+    1 + z_\mathrm{max}(n) = (1+z) \frac{1-(n+1)^{-2}}{1-n^{-2}}\,.
+\end{equation}
+
+We compute the shell averages with the convolution theorem \citep{Mesinger2011}: the emissivity field at $z'$ is Fourier transformed, multiplied by the window of a spherical shell between the radii $R_\mathrm{lo}$ and $R_\mathrm{hi}$, and transformed back. The shell window is
+\begin{equation}
+    W_\mathrm{shell}(k) = \frac{R_\mathrm{hi}^3\, W(kR_\mathrm{hi}) - R_\mathrm{lo}^3\, W(kR_\mathrm{lo})}{R_\mathrm{hi}^3 - R_\mathrm{lo}^3}\,,
+    \label{eq:tophat}
+\end{equation}
+where $W(x) = 3(\sin x - x\cos x)/x^3$ is the Fourier transform of a spherical top hat. For each Lyman line, the $z'$ integral is divided into 200 shells, logarithmically spaced in radius between one cell width and $R(z, z_\mathrm{max}(n))$, and an inner shell for the emission within one cell width, which uses the window of the $1/r^2$ kernel itself, $\mathrm{Si}(kR)/(kR)$. The emissivity at each shell is interpolated linearly in redshift between the two bracketing snapshots, and no emission is counted before the first snapshot ($z=29.4$). The covolution is periodic, so shells larger than the box tend to the box mean. on test fields, this reproduces the exact $1/(4\pi r^2)$ kernel to $2\times10^{-5}$ in the mean and $10^{-4}$ in the power spectrum, and the box mean of $J_\alpha^{\mathrm{H}}$ agrees with a converged quadrature of Equation~(\ref{eq:Jalpha}) to better than 1 per cent at all redshifts. The cost is $\mathcal{O}(N_\mathrm{shells} N^3 \log N)$ instead of $\mathcal{O}(N^6)$ for a direct summation, which makes the calculation tractable on the $640^3$ grid.
+
+Photons in the \ion{He}{2} Lyman band ($40.8$--$54.4$\,eV) lie above the \ion{H}{1} and \ion{He}{1} ionization thresholds and are absorbed in the IGM. We compute $\mathcal{T}^\mathrm{He}_n$ by ray tracing from each cell through the \ion{H}{1} and \ion{He}{1} densities of \lumina, averaged over directions at each radius. Star-forming cells are treated as transparent, as in the radiative transfer of \lumina, where their absorption is part of the escape fraction, and no unresolved absorbers are added. Using the product of the shell-averaged emissivity and the direction-averaged transmission neglects their angular correlation. This lowers $J_\alpha^\mathrm{He}$ by up to 30 per cent at $z \approx 6.3$ and by $\leq 3$ per cent at $z \leq 5$, which changes $\delta T_b^{\mathrm{He}}$ by $\leq 0.3$ per cent.
+
+\begin{comment}
+    
+
 The Ly$\alpha$ intensity, defined as the angle-averaged number of incident photons hitting a gas element per unit area, time, frequency, and steradian, can be calculated using the following equation:
 
 \begin{equation}
     J^i_\alpha = \frac{(1+z)^2}{4\pi} \sum^{n_\mathrm{max}}_{n=2} f_\mathrm{rec} (n) \int^{z_\mathrm{max}(n)}_z \frac{c \, dz'}{H(z')} \epsilon(\nu'_n, z')\,, \label{eq:Jalpha}
 \end{equation}
-where $i \in \{{\rm H}, {\rm He}\}$ labels the species, $f_\mathrm{rec} (n)$ is the recycling fraction of photons that redshift into a Ly$n$ resonance and ultimately cascade through the Ly$\alpha$ resonance \citep[][]{Pritchard2007}, $n_\mathrm{max}$ is the maximum Lyman level considered, $z_\mathrm{max}(n)$ is the maximum redshift from which a photon can be emitted without redshifting into the subsequent Ly$(n+1)$ resonance, and $\epsilon(\nu'_n, z')$ is the comoving spectral emissivity of the radiation sources. The emissivity $\epsilon(\nu'_n, z')$ sums over all radiation sources in \lumina. Beyond the stellar populations (Section \ref{sec:stars}), which dominate the soft-UV Ly$\alpha$ background, we include contributions from the hot ISM, HMXBs, and AGN (Section~\ref{sec:others}). These hard-UV and X-ray sources contribute to the Ly$\alpha$ field directly. However, note that we do not include the indirect Ly$\alpha$ produced by collisional excitation from secondary electrons, consistent with our assumption of maximal X-ray heating efficiency ($f_{\rm heat}=1$), which by construction leaves no absorbed X-ray energy in the excitation channel. We discuss the consequences in Section~\ref{sec:xray_heating}.
+where $i \in \{{\rm H}, {\rm He}\}$ labels the species, $f_\mathrm{rec} (n)$ is the recycling fraction of photons that redshift into a Ly$n$ resonance and ultimately cascade through the Ly$\alpha$ resonance \citep[][]{Pritchard2006, Furlanetto2006}, $n_\mathrm{max}$ is the maximum Lyman level considered, $z_\mathrm{max}(n)$ is the maximum redshift from which a photon can be emitted without redshifting into the subsequent Ly$(n+1)$ resonance, and $\epsilon(\nu'_n, z')$ is the comoving spectral emissivity of the radiation sources. The emissivity $\epsilon(\nu'_n, z')$ sums over all radiation sources in \lumina. Beyond the stellar populations (Section \ref{sec:stars}), which dominate the soft-UV Ly$\alpha$ background, we include contributions from the hot ISM, HMXBs, and AGN (Section~\ref{sec:others}). These hard-UV and X-ray sources contribute to the Ly$\alpha$ field directly. However, note that we do not include the indirect Ly$\alpha$ produced by collisional excitation from secondary electrons, consistent with our assumption of maximal X-ray heating efficiency ($f_{\rm heat}=1$), which by construction leaves no absorbed X-ray energy in the excitation channel. We discuss the consequences in Section~\ref{sec:xray_heating}.
 
 
 The emitted frequency, $\nu'_n$, at a higher redshift $z'$ that redshifts into the Ly$n$ resonance at redshift $z$ is given by:
@@ -1477,43 +1553,54 @@ and transform back to real space. The integral over $z'$ is discretized into $N_
 
 
 Following \citet{Mesinger2011}, we approximate each shell by the SFRD averaged over the full sphere of radius $R$. This preserves the mean of $J^i_\alpha$ exactly but weights nearby emission up to $1.5$ times more heavily than a true shell average, so the local $J^i_\alpha$ changes by much less than this factor wherever distant sources dominate the flux, and by up to this factor only in the immediate vicinity of bright sources. The effect is negligible once the coupling saturates, so for hydrogen it is confined to $z \gtrsim 10$, while for the weakly coupled helium line it is further diluted by the collisional contribution to the coupling.
-
+\end{comment}
 
 \subsection{Stellar photon emissivity} \label{sec:stars}
-Stellar radiation is the primary driver of \ion{H}{1} reionization. In Eq. (\ref{eq:Jalpha}), $\epsilon(\nu_n, z)$ is the comoving photon emissivity from stars, defined as the number of photons emitted per unit comoving volume, per unit proper time, and per unit frequency, evaluated at the rest-frame frequency $\nu_n$ at the source redshift $z$ \citep[][]{Barkana2001}:
-
+Stellar radiation is the primary driver of \ion{H}{1} reionization. The stellar part of the emissivity in Equation~(\ref{eq:Jalpha}) is the comoving photon emissivity $\epsilon_\star$, defined as the number of photons emitted per unit comoving volume, per unit proper time, and per unit frequency, evaluated at the emitted frequency $\nu'_n$ and redshift $z'$ \citep[][]{Barkana2001}:
 \begin{subequations}
 \begin{align}
     \epsilon_\star(\nu,z) & =
     \bar{n}^0_b \,f_\star \,
     \frac{d}{dt}f_\mathrm{coll}(z) \,\epsilon_b(\nu) \label{eq:sub1} \\
-    & = \frac{\dot{\rho}_{\star,\mathrm{cell}}}{m_p} \epsilon_b(\nu)\,, \label{eq:sub2}
+    & = \frac{\dot{\rho}_\star(\mathbf{x}, z)}{m_p}\, \epsilon_b(\nu, z)\,, \label{eq:sub2}
 \end{align}
 \end{subequations}
 where $\bar{n}^0_b$ is the present-day ($z=0$) cosmic mean baryon number density, $f_\star$ is the star formation efficiency within galactic halos, and $f_\mathrm{coll}(z)$ is the collapsed gas fraction in galaxies at redshift $z$.
 
+Within the \lumina framework, the term $\bar{n}^0_b f_\star df_\mathrm{coll}(z)/dt$ corresponds to the star formation rate density (SFRD) of each cell, $\dot{\rho}_\star(\mathbf{x}, z)$, which we take from the SFR renders of \lumina. This contrasts with semi-analytic approaches that must compute $f_\mathrm{coll}$ by integrating over a theoretical halo mass function \citep[e.g.][]{Barkana2005, Kaurov2016, Mesinger2011} in Equation~(\ref{eq:sub1}).
 
-Within the \lumina framework, the term $\bar{n}^0_b f_\star df_\mathrm{coll}(z)/dt$ is intrinsically equivalent to the star formation rate density (SFRD) $\dot{\rho}_{\star,\mathrm{cell}}$, which we extract directly from the simulation snapshots or global data as Eq. (\ref{eq:sub2}). This contrasts with semi-analytic approaches that must compute $f_\mathrm{coll}$ by integrating over a theoretical halo mass function \citep[e.g.][]{Barkana2005, Kaurov2016, Mesinger2011} in Eq. (\ref{eq:sub1}).
+The term $\epsilon_b(\nu, z)$ is the stellar spectral energy distribution (SED), expressed as the number of photons emitted at frequency $\nu$ per baryon incorporated into stars over their lifetime. We use the same BPASS SEDs as in the radiative transfer of \lumina, with the minimum and maximum stellar masses set to $0.1~\mathrm{M}_\odot$ and $100~\mathrm{M}_\odot$, respectively. BPASS tabulates the SED at 13 metallicities ($Z = 10^{-5}\text{--}0.04$), over which the photon yield falls by a factor of 2 in the \ion{H}{1} Lyman band but by a factor of 60 in the \ion{He}{2} band. The stars forming at a given redshift span a broad range of metallicities, and the metal-poor ones dominate the \ion{He}{2}-band output: at $z = 5$, the 19 per cent of the young stellar mass with $Z \leq 10^{-3}$ emits 57 per cent of these photons. A single mean metallicity therefore misrepresents the emission. Instead, we sum the SEDs over the metallicity distribution of the young stars, $\epsilon_b(\nu, z) = \sum_j w_j(z)\, \epsilon_b(\nu, Z_j)$, where $w_j$ is the fraction of the initial mass of stars younger than 20\,Myr at the tabulated metallicity $Z_j$, with each star assigned to its two neighbouring tabulated values, linearly in $\log Z$. Each metallicity thus contributes in proportion to the light it emits, which amounts to luminosity weighting applied to the spectra rather than to $Z$. The weights are computed from the star particles of 32 snapshots between $z = 22.97$ and $3.0$ and interpolated linearly in $z$; above $z = 22.97$, all young stars have $Z = 10^{-5}$. The same weights apply to every cell. We test the sensitivity to the stellar metallicity in Appendix~\ref{sec:metallicity}.
 
-The term $\epsilon_b(\nu)$ characterizes the intrinsic spectral energy distribution (SED) of the stellar radiation sources, representing the number of emitted photons at frequency $\nu$ per baryon incorporated into stars. We use the same BPASS SEDs as in the on-the-fly radiative transfer of \lumina, with the minimum and maximum stellar masses set to $0.1~\mathrm{M}_\odot$ and $100~\mathrm{M}_\odot$, respectively. BPASS tabulates the SED at 13 metallicities ($Z = 10^{-5}\text{--}0.04$). In the Lyman-series integral, $\epsilon_b$ is evaluated at the mass-weighted mean metallicity of all \lumina star particles at the emission redshift $z'$, and the same value is applied to every cell. We interpolate $\epsilon_b$ linearly in $\log Z$ between adjacent tabulated values and adopt $Z = 10^{-5}$ when the mean metallicity falls below this range, as at the highest redshifts, where the stars are nearly metal-free. We refer to this choice as the fiducial model and test its sensitivity to the adopted metallicity in Appendix~\ref{sec:metallicity}.
+A stellar population does not emit its Lyman-band photons at birth but over its lifetime: over $\sim 100$\,Myr in the \ion{H}{1} band, which is dominated by B stars, and much faster in the \ion{He}{2} band, which is dominated by the hottest and shortest-lived stars. The emissivity at a given time is therefore set by the star formation of the preceding $\sim 100$\,Myr, not by the current SFRD. Using the current SFRD in Equation~(\ref{eq:sub2}) would count every photon at the moment its star forms, which overestimates the emissivity while the SFRD rises: for the global star formation history of \lumina, the actual \ion{H}{1}-band emissivity is 0.38 of this instantaneous estimate at $z = 20$ and 0.94 at $z = 6$, and the \ion{He}{2}-band emissivity is 0.99 of it at $z \lesssim 6$. We therefore replace $\dot{\rho}_\star$ in Equation~(\ref{eq:sub2}), separately for each band, by an effective SFRD,
+\begin{equation}
+    \dot{\rho}_{\star,\mathrm{eff}}(\mathbf{x}, t) = \frac{\int_{t-\tau_\mathrm{max}}^{t} \dot{\rho}_\star(\mathbf{x}, t') \sum_j w_j(t')\, \ell_j(t-t')\, dt'}{\sum_j w_j(t)\, N_j}\,,
+    \label{eq:sfr_eff}
+\end{equation}
+where $\ell_j(\tau)$ is the BPASS photon emission rate in the band per unit stellar mass at age $\tau$ and metallicity $Z_j$, and $N_j = \int_0^\infty \ell_j\, d\tau$ is the corresponding lifetime yield. The numerator is the photon rate emitted at time $t$ by all stars formed in the cell during the preceding $\tau_\mathrm{max}$, each at its own age and with the metallicity weights of its formation time. Dividing by the lifetime yield of the stars forming at $t$ converts this rate into the SFRD that reproduces it when multiplied by $\epsilon_b(\nu, z)$ in Equation~(\ref{eq:sub2}). The window $\tau_\mathrm{max}$ is 300\,Myr for the \ion{H}{1} band and 100\,Myr for the \ion{He}{2} band, which contain $\geq 94$ and $\geq 96$ per cent of the lifetime yield. The SFRD of each cell is interpolated linearly in time between consecutive renders (2.0--5.4\,Myr apart) and set to zero before the first. The spectral shape within each band is taken from the lifetime spectrum of the stars forming at $t$, which overestimates $J_\alpha^\mathrm{H}$ by 1--3 per cent at $z \approx 10$ (2--5 per cent at $z \gtrsim 15$) and $J_\alpha^\mathrm{He}$ by $\lesssim 1$ per cent.
+%The term $\epsilon_b(\nu)$ characterizes the intrinsic spectral energy distribution (SED) of the stellar radiation sources, representing the number of emitted photons at frequency $\nu$ per baryon incorporated into stars. We use the same BPASS SEDs as in the on-the-fly radiative transfer of \lumina, with the minimum and maximum stellar masses set to $0.1~\mathrm{M}_\odot$ and $100~\mathrm{M}_\odot$, respectively. BPASS tabulates the SED at 13 metallicities ($Z = 10^{-5}\text{--}0.04$). In the Lyman-series integral, $\epsilon_b$ is evaluated at the mass-weighted mean metallicity of all \lumina star particles at the emission redshift $z'$, and the same value is applied to every cell. We interpolate $\epsilon_b$ linearly in $\log Z$ between adjacent tabulated values and adopt $Z = 10^{-5}$ when the mean metallicity falls below this range, as at the highest redshifts, where the stars are nearly metal-free. We refer to this choice as the fiducial model and test its sensitivity to the adopted metallicity in Appendix~\ref{sec:metallicity}.
 
 
-No escape fraction is applied to $\epsilon_b(\nu)$ in Equation~(\ref{eq:sub2}), for either the \ion{H}{1} or the \ion{He}{2} Lyman band. The Lyman-band continuum that sets $J_\alpha^\mathrm{H}$ lies between Ly$\alpha$ and the Lyman limit ($10.2\text{--}13.6$\,eV), below the \ion{H}{1} ionization threshold, so it is not subject to the photoelectric absorption by host-ISM \ion{H}{1} that suppresses the ionizing output. The stellar escape fraction $f_\mathrm{esc,\star} = 0.18$ of Section~\ref{sec:rt} applies only to the ionizing ($>13.6$\,eV) output and does not enter Equation~(\ref{eq:sub2}). Following standard practice in Ly$\alpha$ background modeling \citep[e.g.][]{Barkana2005, Mesinger2011}, we neglect the remaining host-galaxy losses in this band, such as dust and absorption in the damped wings of the Lyman-series lines. These would lower $J_\alpha^\mathrm{H}$ by a modest factor but have little effect on $\delta T_b^\mathrm{H}$ once $x_\alpha^\mathrm{H} \gg 1$ (Appendix~\ref{sec:metallicity}).
+No escape fraction is applied to $\epsilon_b(\nu,z)$ in the \ion{H}{1} Lyman band. This band lies betwen Ly$\alpha$ and the Lyman limit ($10.2$--$13.6$\,eV), below the \ion{H}{1} ionization threshold, so it is not subject to the photoelectric absorption by host-ISM \ion{H}{1} that suppresses the ionizing output, to which the stellar escape fraction $f_\mathrm{esc,\star} = 0.18$ of Section~\ref{sec:rt} applies. Following standard practice in Ly$\alpha$ background modeling \citep[e.g.][]{Barkana2005, Mesinger2011}, we neglect the remaining wings of the Lyman-series lines. These would lower $J_\alpha^{\mathrm{H}}$ by a modest factor but have little effect on $\delta T_b^{\mathrm{H}}$ once $x_\alpha^{\mathrm{H}} \gg 1$ (Appendix~\ref{sec:metallicity}).
 
+%No escape fraction is applied to $\epsilon_b(\nu)$ in Equation~(\ref{eq:sub2}), for either the \ion{H}{1} or the \ion{He}{2} Lyman band. The Lyman-band continuum that sets $J_\alpha^\mathrm{H}$ lies between Ly$\alpha$ and the Lyman limit ($10.2\text{--}13.6$\,eV), below the \ion{H}{1} ionization threshold, so it is not subject to the photoelectric absorption by host-ISM \ion{H}{1} that suppresses the ionizing output. The stellar escape fraction $f_\mathrm{esc,\star} = 0.18$ of Section~\ref{sec:rt} applies only to the ionizing ($>13.6$\,eV) output and does not enter Equation~(\ref{eq:sub2}). Following standard practice in Ly$\alpha$ background modeling \citep[e.g.][]{Barkana2005, Mesinger2011}, we neglect the remaining host-galaxy losses in this band, such as dust and absorption in the damped wings of the Lyman-series lines. These would lower $J_\alpha^\mathrm{H}$ by a modest factor but have little effect on $\delta T_b^\mathrm{H}$ once $x_\alpha^\mathrm{H} \gg 1$ (Appendix~\ref{sec:metallicity}).
 
-The \ion{He}{2} Lyman band ($40.8\text{--}54.4$\,eV) requires more care. It lies above the \ion{H}{1} and \ion{He}{1} ionization thresholds and is therefore absorbed in both the host ISM and the IGM, neither of which is included in Equation~(\ref{eq:Jalpha}). For stars, this is equivalent to $f_\mathrm{esc} = 1$, whereas the radiative transfer applies the frequency-independent $f_\mathrm{esc,\star} = 0.18$ at $z > 4.75$ \citep{Zier2026}. The true value should lie between the two. The combined \ion{H}{1} and \ion{He}{1} opacity per hydrogen atom is $12\text{--}25$ times lower than at the Lyman limit \citep{Verner1996}, but typical host columns ($N_\mathrm{HI} \gtrsim 10^{20}\,\mathrm{cm^{-2}}$) remain optically thick. If photons escape mainly through low-column channels, the escape fraction stays close to $0.18$. Host absorption alone may therefore lower the stellar contribution by up to $1/0.18 \approx 5.6$. For AGN, the emissivity already includes the luminosity-dependent escape fraction of \lumina, $f_\mathrm{esc}^\mathrm{AGN} = 0.3\,(L_\mathrm{bol}/10^{46}\,\mathrm{erg\,s^{-1}})^{0.07} \approx 0.2\text{--}0.35$ \citep{Zier2026, Shen2026a}, so no further factor is applied.
+In the \ion{He}{2} Lyman band, the photons are also absorbed in the host ISM. We apply the stellar escape fraction of the radiative transfer of \lumina, $f_{\mathrm{esc, \star}} = 0.18$ \citep{Zier2026}, to the stellar emissivity in this band at all redshifts. The combined \ion{H}{1} and \ion{He}{1} opacity epr hydrogen atom is $12$--$25$ times lower than at the Lyman limit \citep{Verner1996}, but typical host columns ($N_\mathrm{H\,I} \gtrsim 10^{20}\,\mathrm{cm^{-2}}$) remain optically thick, so these photons escape mainly through the same low-column channels as the ionizing radiation. Without host absorption ($f_\mathrm{esc}=1$), the stellar contribution would be higher by $1/0.18\approx5.6$. Because the $^{3}\mathrm{He}^{+}$ line is weakly coupled, the emissivity already includes the luminosity-dependent escape fraction of \lumina, $f_\mathrm{esc}^\mathrm{AGN} = 0.3\,(L_\mathrm{bol}/10^{46}\,\mathrm{erg\,s^{-1}})^{0.07} \approx 0.15\text{--}0.25$ \citep{Zier2026, Shen2026a}, so no further factor is applied. We omit local \ion{He}{2} Ly$\alpha$ production from \ion{He}{3} recombination cascades and secondary-electron excitation.
 
-Absorption in the IGM lowers both components further. It is modest after overlap but severe while neutral islands remain ($z \gtrsim 5.5$), where the mean free path in this band is only $\sim 10$ proper kpc. Our $J_\alpha^\mathrm{He}$ is therefore an upper limit on the transported background for the adopted emissivities. Because the $^3$He$^+$ line is weakly coupled, $\delta T_b^\mathrm{He}$ responds to this uncertainty in proportion to the radiative share of the coupling, $x_\alpha/(x_\alpha + x_c)$. We also omit local \ion{He}{2} Ly$\alpha$ production from \ion{He}{3} recombination cascades and secondary-electron excitation, which would add photons beyond this limit.
+%The \ion{He}{2} Lyman band ($40.8\text{--}54.4$\,eV) requires more care. It lies above the \ion{H}{1} and \ion{He}{1} ionization thresholds and is therefore absorbed in both the host ISM and the IGM, neither of which is included in Equation~(\ref{eq:Jalpha}). For stars, this is equivalent to $f_\mathrm{esc} = 1$, whereas the radiative transfer applies the frequency-independent $f_\mathrm{esc,\star} = 0.18$ at $z > 4.75$ \citep{Zier2026}. The true value should lie between the two. The combined \ion{H}{1} and \ion{He}{1} opacity per hydrogen atom is $12\text{--}25$ times lower than at the Lyman limit \citep{Verner1996}, but typical host columns ($N_\mathrm{HI} \gtrsim 10^{20}\,\mathrm{cm^{-2}}$) remain optically thick. If photons escape mainly through low-column channels, the escape fraction stays close to $0.18$. Host absorption alone may therefore lower the stellar contribution by up to $1/0.18 \approx 5.6$. For AGN, the emissivity already includes the luminosity-dependent escape fraction of \lumina, $f_\mathrm{esc}^\mathrm{AGN} = 0.3\,(L_\mathrm{bol}/10^{46}\,\mathrm{erg\,s^{-1}})^{0.07} \approx 0.2\text{--}0.35$ \citep{Zier2026, Shen2026a}, so no further factor is applied.
+
+%Absorption in the IGM lowers both components further. It is modest after overlap but severe while neutral islands remain ($z \gtrsim 5.5$), where the mean free path in this band is only $\sim 10$ proper kpc. Our $J_\alpha^\mathrm{He}$ is therefore an upper limit on the transported background for the adopted emissivities. Because the $^3$He$^+$ line is weakly coupled, $\delta T_b^\mathrm{He}$ responds to this uncertainty in proportion to the radiative share of the coupling, $x_\alpha/(x_\alpha + x_c)$. We also omit local \ion{He}{2} Ly$\alpha$ production from \ion{He}{3} recombination cascades and secondary-electron excitation, which would add photons beyond this limit.
 
 
 \subsection{Other X-ray and hard-UV sources} \label{sec:others}
 
 
-While soft stellar UV radiation dominates the Ly$\alpha$ flux and the ionization history at $z \gtrsim 10$, X-ray heating and harder, non-stellar UV emission become increasingly important as the Universe evolves toward $z \sim 3$. Beyond primary stellar UV, these populations can contribute to the Ly$\alpha$ background through direct UV emission, recombination radiation in partially ionized regions, and collisional excitation by the secondary electrons produced in X-ray photoionization \citep{Madau1997}. We include only their direct emission, which is small compared with the stellar contribution. Their main effect on the hyperfine signals is through X-ray heating, which raises the kinetic temperature $T_K$ through Coulomb collisions. These high-energy components govern the thermal transition of the IGM and the extended tail of reionization, and are essential for both the 21\,cm and the 3.46\,cm signals.
+While soft stellar UV radiation dominates the Ly$\alpha$ flux and the ionization history at $z \gtrsim 10$, X-ray heating and harder, non-stellar UV emission become increasingly important as the Universe evolves toward $z \sim 3$. Beyond primary stellar UV, their sources can contribute to the Ly$\alpha$ background through direct UV emission, recombination radiation in partially ionized regions, and collisional excitation by the secondary electrons produced in X-ray photoionization \citep{Madau1997}.
 
+\lumina includes three high-energy source populations in its radiative transfer: the hot interstellar medium (ISM), high-mass X-ray binaries (HMXBs), and active galactic nuclei (AGN). The hot ISM and HMXBs scale with the star formation rate, and AGN with the black hole accretion rate. Their X-rays set the thermal history of the IGM.
 
-To capture this budget self-consistently, \lumina models three high-energy source populations: the hot interstellar medium (ISM), high-mass X-ray binaries (HMXBs), and active galactic nuclei (AGN). The hot ISM and HMXBs scale with the star formation rate, while AGN scale with the black hole accretion rate. All three are unified within a single radiative transport framework, with the resulting Ly$\alpha$ intensity $J_\alpha$ computed by the same lightcone integration used for the stellar background (Equation \ref{eq:Jalpha}),  summing the emissivity $\epsilon$ over all contributing populations. We note, however, that the early Ly$\alpha$ and X-ray backgrounds at $z \gtrsim 10$ are subject to several physical uncertainties. These include the limited mass resolution of \lumina (which prevents the direct resolution of minihalos), the absence of a Population III (Pop III) stellar model, and sparse observational constraints on the early star formation rate density. We discuss the implications of these limitations in Section \ref{sec:highz}.
+In the Ly$\alpha$ background, we include only the direct emission of AGN, added to the stellar one through the same lightcone integration (Equation~\ref{eq:Jalpha}); that of the hot ISM and HMXBs is negligible. The main effect of these sources on the hyperfine signals is X-ray heating, which raises the kinetic temperature $T_K$ through Coulomb collisions. These high-energy components govern the thermal transition of the IGM and the extended tail of reionization, and are essential for both the 21\,cm and the 3.46\,cm signals.
 
+We note, however, that the early Ly$\alpha$ and X-ray backgrounds at $z \gtrsim 10$ are subject to several physical uncertainties. These include the limited mass resolution of \lumina (which prevents the direct resolution of minihalos), the absence of a Pop III stellar model, and sparse observational constraints on the early SFRD. We discuss the implications of these limitations in Section~\ref{sec:highz}.
 
 A complete description of the SED construction, luminosity calibration, and radiative transport of these fields is presented in \citet{Zier2026}; here we summarize the ingredients relevant to our $J_\alpha$, 21\,cm, and 3.46\,cm predictions.
 
@@ -1523,18 +1610,15 @@ A complete description of the SED construction, luminosity calibration, and radi
 
 
 
-\subsubsection{Hot ISM}
+\subsubsection{Hot ISM and HMXBs}
 
+\lumina also includes X-ray emission from the shock-heated diffuse ISM and from HMXBs, which heats the IGM \citep{Zier2026}. Both sources scale with the local star formation rate. The hot ISM is modeled with a thermal bremsstrahlung spectrum normalized to the empirical $L_X$--SFR relation of \citet{Mineo2012}, $L^{10\text{-}2000\,\mathrm{eV}}[\mathrm{erg \ s^{-1}}]= 3.3 \times 10^{40}\,\left[\mathrm{SFR}/M_\odot\ \mathrm{yr}^{-1}\right]$, and the HMXBs with the intrinsic SEDs of \citet{Fragos2013}, with the normalization corrected in \citet{Fragos2016}, and the metallicity-dependent luminosity of \citet{Madau2017}. Integrating these SEDs over the \ion{H}{1} and \ion{He}{2} Lyman bands, we find that the hot ISM emits about 0.45 photons per baryon incorporated into stars in each band (at most 0.78 for $kT = 0.2$--1\,keV) and the HMXBs at most 0.02. The stellar populations emit $(1.3\text{--}2.0)\times10^4$ and 90--700 photons per baryon in the two bands at $z = 3$--10. Even if all hot-ISM photons escaped their host galaxies, they would amount to less than $10^{-4}$ of the stellar emission in the \ion{H}{1} band. In the \ion{He}{2} band, where the stellar emission is reduced by the escape fraction of 0.18, they would add about 1 per cent at $z \geq 6$ and at most 4 per cent at $z = 3$. The HMXB contribution is smaller still, so we omit both sources from $J_\alpha$.
 
-The shock-heated diffuse ISM is modeled with a thermal bremsstrahlung spectrum, normalized using the empirical $L_X$--SFR relation of \citet{Mineo2012}. We adopt the luminosity normalization $L^{10\text{-}2000\,\mathrm{eV}}[\mathrm{erg \ s^{-1}}]= 3.3 \times 10^{40}\,\left[\mathrm{SFR}/M_\odot\ \mathrm{yr}^{-1}\right]$, and inject the corresponding emission per voxel according to its local SFR, in direct analogy with the stellar Ly$\alpha$ treatment.
-
-
-\subsubsection{HMXBs}
-For HMXBs, we adopt the intrinsic SEDs of \citet{Fragos2013, Fragos2016}. The integrated luminosity depends on both metallicity and the local SFR; we use the parametrization of \citet{Madau2017} and convert their values to our reference band, $L^{10\text{-}2000\,\mathrm{eV}}_{\mathrm{HMXB}}$.
 
 \subsubsection{Black holes}
 
-AGN provide hard ionizing radiation and are the dominant contributors to \ion{He}{2} reionization. We adopt the composite quasar SED of \citet{Shen2020}. For each active black hole, the intrinsic luminosity is $L^{\mathrm{AGN}}_{\mathrm{bol}} = \epsilon_{\mathrm{rad}}\,(1 - \epsilon_{f,\mathrm{high}})\,\dot{M}_{\mathrm{BH}}\,c^2$, where the factor $(1 - \epsilon_{f,\mathrm{high}})$ removes the fraction of the radiated output thermally coupled to the gas as high-accretion (quasar-mode) feedback, leaving the luminosity available for radiative transport. We further apply a luminosity-dependent obscuration correction for unresolved gas and dust following \citet{Hopkins2007} and \citet{Vogelsberger2013}. The resulting AGN luminosities are deposited on the Cartesian grid and smoothed over the corresponding comoving distance to account for radiative transport.
+AGN provide hard ionizing radiation and dominate \ion{He}{2} reionization. As in \lumina, we adopt the composite quasar SED of \citet{Shen2020}. The intrinsic luminosity of each active black hole is $L^{\mathrm{AGN}}_{\mathrm{bol}} = \epsilon_{\mathrm{rad}}\,(1 - \epsilon_{f,\mathrm{high}})\,\dot{M}_{\mathrm{BH}}\,c^2$, where the factor $(1 - \epsilon_{f,\mathrm{high}})$ removes the energy that goes into thermal (quasar-mode) feedback. \lumina corrects this luminosity for obscuration by unresolved gas and dust with $f_\mathrm{esc}^\mathrm{AGN} = 0.3\,(L_\mathrm{bol}/10^{46}\,\mathrm{erg\,s^{-1}})^{0.07}$ \citep{Hopkins2007, Vogelsberger2013}, a single factor applied to $L_\mathrm{bol}$ before the SED is divided into frequency bins, and applies no further escape fraction. We use the obscuration-corrected luminosities of the simulation, rendered on the $640^3$ grid. Because the factor is part of these luminosities, it applies in both Lyman bands; its luminosity-weighted value is 0.195 at $z = 8.9$. The spectral emissivity follows the SED normalized to its integral up to 500\,keV. The AGN contribution to $J_\alpha$ is then computed with Equation~(\ref{eq:Jalpha}), as for the stars.
+%AGN provide hard ionizing radiation and are the dominant contributors to \ion{He}{2} reionization. We adopt the composite quasar SED of \citet{Shen2020}. For each active black hole, the intrinsic luminosity is $L^{\mathrm{AGN}}_{\mathrm{bol}} = \epsilon_{\mathrm{rad}}\,(1 - \epsilon_{f,\mathrm{high}})\,\dot{M}_{\mathrm{BH}}\,c^2$, where the factor $(1 - \epsilon_{f,\mathrm{high}})$ removes the fraction of the radiated output thermally coupled to the gas as high-accretion (quasar-mode) feedback, leaving the luminosity available for radiative transport. We further apply a luminosity-dependent obscuration correction for unresolved gas and dust following \citet{Hopkins2007} and \citet{Vogelsberger2013}. The resulting AGN luminosities are deposited on the Cartesian grid and smoothed over the corresponding comoving distance to account for radiative transport.
 
 
 
@@ -1562,6 +1646,62 @@ The 3.46\,cm signal behaves differently, as its peak amplitude decreases by a fa
 Two caveats apply to the helium amplitude. First, the amplitude of $\delta T_\mathrm{b}^\mathrm{He}$ in \lumina is governed by comparable radiative and collisional contributions, so its radiative part inherits the physical uncertainties of the high-energy stellar spectrum. Second, and more importantly, the $J_\alpha^\mathrm{He}$ entering this calculation is unattenuated and represents a an upper limit on the transported background for the adopted emissivities (Appendix~\ref{sec:stars}). Continuum absorption of the \ion{He}{2} Lyman band in the host ISM and IGM would lower the helium amplitude for every metallicity.
 
 The spread in Figure~\ref{fig:metallicity} thus isolates sensitivity to the stellar spectrum in the absence of attenuation rather than the full uncertainty on the 3.46\,cm amplitude. Stars dominate this band: at $z \approx 5$, their \ion{He}{2} Lyman-band emissivity exceeds that of AGN by a factor of a few, whereas AGN dominate above the $54.4$\,eV ionization threshold \citep[][their Fig.~19]{Zier2026}. While AGN drive \ion{He}{2} reionization, they supply only a minority of the helium Lyman-series photons that set the Wouthuysen--Field coupling of the 3.46\,cm line. AGN emission and collisions establish a metallicity-independent baseline for the coupling, setting a floor on $\delta T_b^\mathrm{He}$ (black dashed curve). This floor compresses the signal variance at high $Z$, where stellar spectra soften. Although AGN can dominate the coupling locally around their hosts, their volume-averaged radiative contribution to the global signal is therefore smaller than both the stellar and the collisional contributions.
+
+
+\section{The global signal without X-ray pre-heating} \label{sec:noxray}
+
+\begin{figure}[!t]
+    \centering
+    \includegraphics[width=\linewidth]{figs/global_noX.png}
+    \caption{Global evolution of \lumina (dark) and \lumina-50 (light), with (blue) and without (red/orange) X-ray pre-heating. (a) Gas (solid) and spin (dashed) temperatures, \ion{H}{1}-weighted harmonic means, and $T_\gamma$ (black). (b) Volume-mean 21\,cm $\delta T_\mathrm{b}^\mathrm{H}$. \textcolor{red}{(TEMP)}}
+    \label{fig:noxray}
+\end{figure}
+
+
+The \lumina run includes the shock-heated ISM and HMXBs as X-ray sources, which pre-heat the neutral IGM before it is reionized \citep{Zier2026}. Repeating the full $500$\,cMpc simulation without these sources is not feasible. We therefore derive the no-X-ray global signal shown in Figure~\ref{fig:global} from the pair of $50$\,cMpc test simulations of \citet{Zier2026}, \lumina-50 and \lumina-50-NoX, and apply the result to every gas cell of \lumina. 
+
+%\subsection{The paired test simulations}
+
+\lumina-50 and \lumina-50-NoX share the mass resolution, the initial conditions and the physics of the flagship run \citep[][Table~3]{Zier2026}. \lumina-50 uses the full source model, whereas \lumina-50-NoX includes only stellar and AGN sources with the three frequency bins below $100$\,eV, and therefore lacks X-ray pre-heating. Both runs follow the same reionization history and galaxy population, and differ substantially only in the temperature of the neutral IGM \citep[][Appendix~B]{Zier2026}. 
+
+%Our gas-cell temperatures reproduce their measurement: the median temperature of neutral ($x_\mathrm{HII} < 10^{-3}$) gas at $0.5 < 1+\delta < 2$ is $16$\,K in both runs at $z = 15$, and $79$\,K without and $2730$\,K with X-rays at $z = 5.73$.
+
+Because the two runs start from identical initial conditions, each gas cell of \lumina-50 has a counterpart in \lumina-50-NoX with the same particle identifier. These counterparts occupy the same positions and have the same densities (the density ratio has a 10th--90th percentile range of $0.998$--$1.001$ at $z = 10$--$12$), so the two runs differ cell by cell only in their thermal and, to a lesser extent, ionization state.
+
+%\subsection{Assigning no-X-ray temperatures to \lumina}
+
+The X-ray heating of a gas cell cannot be removed by subtracting a smooth heating field, because the heating varies strongly from cell to cell. Instead, we replace the temperature of each \lumina cell by a temperature drawn from the no-X-ray run, conditioned on the cell's state. At each full snapshot, we classify gas cells by their overdensity, in bins of $0.05$\,dex in $\log_{10}(1+\delta)$ relative to the mean gas density, and by their ionized fraction, in four classes ($x_\mathrm{HII} < 10^{-3}$, $10^{-3}$--$0.1$, $0.1$--$0.9$ and $\geq 0.9$). The classification uses only quantities of the X-ray run, which are the only ones available for \lumina.
+
+For each class we construct, from the matched pairs, the \ion{H}{1}-weighted temperature distribution of the \lumina-50-NoX cells whose \lumina-50 counterparts fall in that class. We use pairs whose separation is less than two cell sizes and which are not star-forming in either run; they contain $97$--$100$ per cent of the neutral hydrogen of \lumina-50-NoX at $z \geq 6.6$. Classes with fewer than 50 pairs adopt the distribution of the nearest overdensity bin of the same ionization class.
+
+Every non-star-forming gas cell of \lumina then receives a temperature drawn at random from the distribution of its class, while its density, ionization state and local Ly$\alpha$ intensity are kept. Because the drawn temperatures reproduce the no-X-ray distribution of each class, the global mean does not depend on how they are assigned to individual cells: ranking them by the temperature of the X-ray run, by that temperature relative to its local mean, or by the local smoothed density instead changes the mean of the test pair by at most $0.06$\,mK. Star-forming cells are left unchanged.
+
+%\subsection{Validation}
+
+We test the procedure on the test pair itself, applying it to \lumina-50 and comparing the result with \lumina-50-NoX. It recovers $93$--$99$ per cent of the X-ray effect on the global signal at $6 \leq z \leq 12$. The residual always has the same sign, with too little absorption by at most $0.8$\,mK, because the ionization state of each cell is taken from the X-ray run. The procedure requires neutral gas in the training run: \lumina-50-NoX is almost fully reionized by $z = 5.5$, and at $z = 5.73$ only $63$ per cent of the (by then small, $0.11$\,mK) X-ray effect is recovered. We therefore show the no-X-ray signal down to $z = 5.73$.
+
+%\subsection{Result}
+
+Without X-ray pre-heating, the global signal of \lumina reaches an absorption trough of $-31$\,mK at $z \approx 12$, crosses zero at $z \approx 7.5$ and peaks at $+2.7$\,mK at $z \approx 6.6$ (Figure~\ref{fig:noxray}b). The difference from the fiducial signal is largest at $z \approx 10$, where it reaches $39$\,mK, and comes predominantly from gas below the mean density.
+
+\section{The matter contribution to the 3.46\,cm power spectrum} \label{app:he_density}
+
+In the diffuse IGM the 3.46\,cm spin temperature is set mainly by electron collisions, with $x_c \ll 1$ and $T_\mathrm{K} \gg T_\gamma$, so that $1 - T_\gamma/T_S \approx x_c \propto n_e T_\mathrm{K}^{-1/2}$ and
+\begin{equation}
+\delta T_\mathrm{b}^\mathrm{He} \propto x_\mathrm{He\,II}\, x_e\, (1+\delta)^2\, T_\mathrm{K}^{-1/2}.
+\end{equation}
+At a fixed ionization state and temperature, a large-scale overdensity $\delta_L$ changes the signal by $(1+\delta_L)^2 \approx 1 + 2\delta_L$, so the 3.46\,cm signal traces the gas density with a relative bias of about 2. This $n^2$ weighting also concentrates the signal in dense gas: gas with $1+\delta < 10$ contributes 27 per cent of the mean signal at $z = 5$ and 2 per cent at $z = 3.4$.
+
+Figure~\ref{fig:he_density}(a) shows the relative bias $b_\mathrm{rel}(k) \equiv \sqrt{\Delta^2_\mathrm{He}/\Delta^2_\delta}\,/\,\langle\delta T_\mathrm{b}^\mathrm{He}\rangle$, where $\Delta^2_\delta$ is the power spectrum of the gas overdensity in the same cells. It is $\approx 2$ at $k = 0.1\,h\,\mathrm{cMpc}^{-1}$ and rises to $2.6$--$2.8$ at $k = 1\,h\,\mathrm{cMpc}^{-1}$. Writing $\Delta^2_\mathrm{He} = (b_\mathrm{rel}\langle\delta T_\mathrm{b}^\mathrm{He}\rangle)^2\Delta^2_\delta$ explains the nearly constant amplitude in Figure~\ref{fig:ps_helium}: from $z = 5.0$ to $3.4$, $\langle\delta T_\mathrm{b}^\mathrm{He}\rangle^2$ falls by a factor of 0.43 while $\Delta^2_\delta$ grows by a factor of $\approx 1.9$. The mean signal falls much less than the volume-weighted \ion{He}{2} fraction because dense gas is ionized last: at $z = 3.4$ the mass-weighted \ion{He}{3} fraction is 0.83, against 0.93 by volume.
+
+Figure~\ref{fig:he_density}(b) shows the cross-correlation coefficient between the 3.46\,cm signal and the gas density, $r(k) = 0.90$--$0.99$ for $k = 0.05$--$2\,h\,\mathrm{cMpc}^{-1}$. The \ion{He}{3} bubbles appear only as a dip in $b_\mathrm{rel}$ and $r$ at $k \lesssim 0.15\,h\,\mathrm{cMpc}^{-1}$ near the midpoint of helium reionization, where at most 15 per cent of the 3.46\,cm power is not correlated with density, too little to produce a feature in $\Delta^2_\mathrm{He}$.
+
+\begin{figure}
+    \centering
+    \includegraphics[width=\columnwidth]{figs/matter_ps.png}
+    \caption{The 3.46\,cm signal relative to the gas density, from the gas-cell maps at $z = 5.0$--$3.4$ (colour). (a) Relative bias $b_\mathrm{rel}(k)$; the dotted line marks $b_\mathrm{rel} = 2$. (b) Cross-correlation coefficient $r(k)$. The snapshot at $z = 4.0$ has no gas-cell density map and is not shown.}
+    \label{fig:he_density}
+\end{figure}
 
 \end{appendix}
 
