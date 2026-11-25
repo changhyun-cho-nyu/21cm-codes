@@ -1,0 +1,31 @@
+#!/bin/bash
+# Base Config for the floor-box tests (make_variants.py appends the variant flags and NGENIC/PMGRID).
+# Hydro, mesh, gravity and softening flags as in the 50 cMpc X-ray pair and Lumina (xray/data/xray_inspect.txt,
+# Lumina snap_036 /Config); no radiative transfer, cooling or star formation (no sources before z ~ 20; the tests
+# isolate the hydro: Jeans floor, 5 K clamp, entropy switch, real shocks).
+VORONOI
+VORONOI_DYNAMIC_UPDATE
+REGULARIZE_MESH_CM_DRIFT
+REGULARIZE_MESH_CM_DRIFT_USE_SOUNDSPEED
+REGULARIZE_MESH_FACE_ANGLE
+REFINEMENT_SPLIT_CELLS
+REFINEMENT_MERGE_CELLS
+RIEMANN_HLLC
+TREE_BASED_TIMESTEPS
+SELFGRAVITY
+HIERARCHICAL_GRAVITY
+NSOFTTYPES=2
+MULTIPLE_NODE_SOFTENING
+INDIVIDUAL_GRAVITY_SOFTENING=32
+ADAPTIVE_HYDRO_SOFTENING
+RCUT=5.0
+DOUBLEPRECISION=1
+DOUBLEPRECISION_FFTW
+NGB_TREE_DOUBLEPRECISION
+HAVE_HDF5
+NGENIC_2LPT
+CREATE_GRID
+GENERATE_GAS_IN_ICS
+GADGET2_HEADER
+INCLUDE_RELATIVISTIC_OMEGAS
+OFFSET_FOR_NON_CONTIGUOUS_IDS
