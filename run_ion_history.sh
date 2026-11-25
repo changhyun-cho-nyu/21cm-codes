@@ -28,6 +28,7 @@ BASE=/orcd/data/mvogelsb/005/mkilab001/mvogelsblab003/Lab/Thesan-XL
 DIRA=$BASE/Flagship_new/postprocessing/ren_640
 DIRB=$BASE/Flagship_below_z_4p75_new/postprocessing/ren_640
 OUT_DIR=${OUT_DIR:-/orcd/data/mvogelsb/004/chcho/ion_history}
+EXTRA=${EXTRA:-}                       # e.g. "--only-T --snaps 0 20 40 ..." (quick global T_HI_pix)
 NTASK=${NTASK:-16}                     # must equal the array size
 
 source ~/.bashrc
@@ -39,5 +40,5 @@ mkdir -p "$OUT_DIR"
 T=$(printf "%02d" $SLURM_ARRAY_TASK_ID)
 echo "task $T of $NTASK, $(date), commit $(git rev-parse --short HEAD)"
 python -u check_ionization_history.py measure --dirA $DIRA --dirB $DIRB --task $SLURM_ARRAY_TASK_ID --ntask $NTASK \
-    --out "$OUT_DIR/part_$T.csv"
+    --out "$OUT_DIR/part_$T.csv" $EXTRA
 echo "done $(date)"

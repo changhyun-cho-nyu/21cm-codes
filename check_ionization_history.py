@@ -67,7 +67,7 @@ def open_field(d, name, s):
     return None, None
 
 
-def measure_snap(d, s, planes):
+def measure_snap(d, s, planes, only_T=False):
     zs = []
     for p in (os.path.join(d, "All", f"All_{s:03d}.hdf5"), os.path.join(d, "Density", f"Density_{s:03d}.hdf5")):
         if os.path.exists(p):
@@ -81,9 +81,10 @@ def measure_snap(d, s, planes):
     names = {"rho": "Density", "xM": "HII_Fraction", "xV": "HII_VolumeFraction", "vol": "Volume",
              "hM": "HeIII_Fraction", "hV": "HeIII_VolumeFraction", "eM": "HeII_Fraction", "eV": "HeII_VolumeFraction",
              "T": "Temperature"}
+    use = ("rho", "xM", "T") if only_T else tuple(names)   # quick global T_HI_pix (and x_HII_M): three fields
     files, ds = {}, {}
     for k, n in names.items():
-        files[k], ds[k] = open_field(d, n, s)
+        files[k], ds[k] = open_field(d, n, s) if k in use else (None, None)
     if ds["rho"] is None or ds["xM"] is None:
         print(f"  snap {s}: no Density / HII_Fraction in {d}, skipped")
         return None
@@ -134,18 +135,18 @@ def measure_snap(d, s, planes):
            "xHeII_M": S["rho_eM"] / S["rho"] / Y_HE if have["eM"] else nan,
            "xHeII_pix": S["eM"] / n3 / Y_HE if have["eM"] else nan,
            "T_HI_pix": S["w"] / S["w_iT"] if have["T"] and S["w_iT"] > 0 else nan}
-    missing = [names[k] for k in names if not have[k]]
+    missing = [names[k] for k in names if k in use and not have[k]]
     if missing:
         print(f"  snap {s}: missing {missing}")
     return row
 
 
 def measure(a):
-    snaps = [s for s in range(a.smin, a.smax + 1)][a.task::a.ntask]
+    snaps = (sorted(a.snaps) if a.snaps else list(range(a.smin, a.smax + 1)))[a.task::a.ntask]
     with open(a.out + ".part", "w") as fo:
         fo.write(",".join(COLS) + "\n")
         for s in snaps:
-            row = measure_snap(a.dirA if s <= SNAP_SWITCH else a.dirB, s, a.planes)
+            row = measure_snap(a.dirA if s <= SNAP_SWITCH else a.dirB, s, a.planes, a.only_T)
             if row is None:
                 continue
             fo.write(",".join(f"{row[c]:d}" if c == "snap" else f"{row[c]:.8g}" for c in COLS) + "\n")
@@ -250,6 +251,9 @@ def main():
     m.add_argument("--task", type=int, default=0)
     m.add_argument("--ntask", type=int, default=1)
     m.add_argument("--planes", type=int, default=32)
+    m.add_argument("--snaps", type=int, nargs="+", default=None, help="these snapshots instead of smin..smax")
+    m.add_argument("--only-T", action="store_true",
+                   help="read only Density, HII_Fraction, Temperature: T_HI_pix and x_HII_M, pix (others nan)")
     m.add_argument("--out", required=True)
     r = sub.add_parser("report")
     r.add_argument("--csv", required=True, help="glob of the measure CSVs (quote it)")
