@@ -21,18 +21,21 @@
 #   OUT_DIR=/orcd/data/mvogelsb/004/chcho/ion_history_heii sbatch -p ou_mki run_ion_history.sh
 #   python check_ionization_history.py report --csv "$OUT_DIR/part_*.csv" --write $OUT_DIR/ionization_history.csv \
 #       --compare /orcd/data/mvogelsb/004/chcho/ion_history/ionization_history.csv
+#   2026-11-24: 9 fields at ~0.73 h per snapshot (shared-filesystem load) -> 44 snapshots per task does not fit 12 h;
+#   use NTASK=32 --array=0-31 --time=24:00:00 (~22 snapshots, ~16 h per task)
 
 BASE=/orcd/data/mvogelsb/005/mkilab001/mvogelsblab003/Lab/Thesan-XL
 DIRA=$BASE/Flagship_new/postprocessing/ren_640
 DIRB=$BASE/Flagship_below_z_4p75_new/postprocessing/ren_640
 OUT_DIR=${OUT_DIR:-/orcd/data/mvogelsb/004/chcho/ion_history}
-NTASK=16
+NTASK=${NTASK:-16}                     # must equal the array size
 
 source ~/.bashrc
 conda activate jupyter_env
 set -eo pipefail
 cd "$SLURM_SUBMIT_DIR"
 mkdir -p "$OUT_DIR"
+[ "$NTASK" = "${SLURM_ARRAY_TASK_COUNT:-$NTASK}" ] || { echo "ERROR: NTASK=$NTASK, array of $SLURM_ARRAY_TASK_COUNT"; exit 1; }
 T=$(printf "%02d" $SLURM_ARRAY_TASK_ID)
 echo "task $T of $NTASK, $(date), commit $(git rev-parse --short HEAD)"
 python -u check_ionization_history.py measure --dirA $DIRA --dirB $DIRB --task $SLURM_ARRAY_TASK_ID --ntask $NTASK \
