@@ -15,6 +15,8 @@
 # EVERY gas cell of the full snapshot (whole box; user 2026-11-24: no cubes or samples). Each of the gas-cell scan's 32
 # row blocks is split into SPLIT tasks: array = (number of SNAPS) x 32 x SPLIT. J of each cell = the scan's J + (R_j - 1)
 # J_star; the J files are identified from the scan, and box-merge checks every block's fiducial sums against it.
+# 21 cm T_S: tb_physics.solve_ts_wf_fast (box --solver fast, default since 2026-11-25; the Illinois solver projected
+# 113 us per cell, 6,800 task-hours per H snapshot, job 30532575).
 #   1. timing (one task, MAXROWS rows, nothing written; prints us per cell and the task-hours of the whole snapshot):
 #        mkdir -p logs && MAXROWS=4000000 LINE=H  SNAPS=48  sbatch -p ou_mki --array=0 --time=02:00:00 run_metal_box.sh
 #        MAXROWS=4000000 LINE=He SNAPS=116 sbatch -p ou_mki --array=0 --time=02:00:00 run_metal_box.sh
@@ -27,7 +29,7 @@ D=/orcd/data/mvogelsb/004/chcho
 OUT=${OUT:-$D/metallicity}
 LINE=${LINE:-H}
 if [ "$LINE" = H ]; then
-    SNAPS=(${SNAPS:-11 17 24 36 48 57 66})
+    SNAPS=(${SNAPS:-17 24 36 48 57 66})          # not 11 (z = 22.97): the figure takes z >= 23 from the 640^3 maps (user, 2026-11-25)
 else
     SNAPS=(${SNAPS:-48 57 66 74 80 86 92 97 102 106 111 116 121 126 131 139 141 144 146 150 152 155 158})
 fi

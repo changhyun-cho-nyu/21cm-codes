@@ -558,7 +558,8 @@ def solve_ts_illinois(Tg, T, A, xc, tauGP, tauTs, tol=1e-12, itmax=200):
     """the T_S root of tb_physics.solve_ts_wf (same F, same bracket, same input and 1/T_c checks), found by the
     Illinois variant of regula falsi in ln T_S instead of bisection: ~2x faster; laptop test on 5e6 random cells,
     z = 8-18: max |dT_S/T_S| 5e-14 vs bisection. Used by 'box' for the 21 cm line; the fiducial of every scan block is
-    checked against the gas-cell scan (bisection) in box-merge."""
+    checked against the gas-cell scan (bisection) in box-merge. Since 2026-11-25 'box' uses tb_physics.solve_ts_wf_fast
+    by default (--solver fast); this one stays as --solver illinois."""
     import tb_physics as TP
     Tg, T, A, xc, tauGP, tauTs = np.broadcast_arrays(*(np.asarray(v, dtype=float) for v in (Tg, T, A, xc, tauGP, tauTs)))
     bad = ~(np.isfinite(T) & np.isfinite(A) & np.isfinite(xc) & np.isfinite(tauGP) & np.isfinite(tauTs) & (T > 0))
@@ -625,7 +626,10 @@ def cmd_box(a):
     sm = int(A.get("spin_model", 1))
     if a.line == "H" and sm != 1:
         sys.exit(f"STOP: the H scan used spin model {sm}")
-    P = Phys(S, a.line, sm)
+    if a.line == "H" and a.solver == "illinois":
+        import tb_physics
+        tb_physics.solve_ts_wf = solve_ts_illinois             # this process only; checked in box-merge
+    P = Phys(S, a.line, sm, solver="fast" if a.solver == "fast" else "bisect")
     if abs(S.z - float(A["z"])) > 1e-6 or abs(P.rho_mean / float(A["rho_mean"]) - 1) > 1e-9:
         sys.exit(f"STOP: snapshot z {S.z} / rho_mean {P.rho_mean} vs scan files {A['z']} / {A['rho_mean']}")
     if int(sum(int(x.get("n_cells", 0)) for x in A_all)) not in (0, S.n):
@@ -637,14 +641,11 @@ def cmd_box(a):
     if a.max_rows:
         r1 = min(r1, r0 + a.max_rows)
     J, interp = resolve_J(a, A, fs, S, order, Rtab)
-    if a.line == "H" and not a.bisection:
-        import tb_physics
-        tb_physics.solve_ts_wf = solve_ts_illinois             # this process only; checked in box-merge
     N = J[0]["Js"].shape[0]
     nZ = len(Zg)
     nv = 1 + nZ + len(EXTRA)
     names = ["fid"] + [f"Z_{j:02d}" for j in range(nZ)] + list(EXTRA)
-    print(f"{a.line} snapshot {a.snap}: z = {S.z:.5f}, spin model {sm}, render order {order}, "
+    print(f"{a.line} snapshot {a.snap}: z = {S.z:.5f}, spin model {sm}, T_S solver {a.solver if a.line == 'H' else '-'}, render order {order}, "
           f"J {'linear in z between 2 renders' if interp else 'at one render'}; task {a.task} = scan block {b} "
           f"(rows {blk[0]:,}-{blk[1]:,}), part {sub}/{a.split}: rows {r0:,}-{r1:,} ({r1 - r0:,} cells)"
           f"{'  [TIMING RUN: --max-rows, no output written]' if a.max_rows else ''}", flush=True)
@@ -689,7 +690,7 @@ def cmd_box(a):
     os.makedirs(od, exist_ok=True)
     fn = os.path.join(od, f"box_{a.snap:03d}_{a.task:04d}.npz")
     np.savez(fn + ".part.npz", SV=SV, SVtb=SVtb, ncell=ncell, rows=np.array([r0, r1]), block=b, sub=sub, split=a.split,
-             task=a.task, z=S.z, snap=a.snap, line=a.line, Z_grid=Zg, R=np.array([s_["R"] for s_ in J]), variants=np.array(names),
+             task=a.task, z=S.z, snap=a.snap, line=a.line, solver=a.solver if a.line == "H" else "-", Z_grid=Zg, R=np.array([s_["R"] for s_ in J]), variants=np.array(names),
              renders=np.array([s_["render"] for s_ in J]), weights=np.array([s_["w"] for s_ in J]),
              J_files=";".join(f"{s_['ps']};{s_['pa']}" for s_ in J), scan_dir=os.path.abspath(a.scan_dir))
     os.replace(fn + ".part.npz", fn)
@@ -874,7 +875,9 @@ def main():
             c.add_argument("--tol-j", type=float, default=1e-6)
             c.add_argument("--jsnap", type=int)
             c.add_argument("--jsnap-b", type=int)
-            c.add_argument("--bisection", action="store_true", help="21 cm: the bisection T_S solver (default: Illinois)")
+            c.add_argument("--solver", choices=["fast", "illinois", "bisect"], default="fast",
+                           help="21 cm T_S solver: tb_physics.solve_ts_wf_fast (quadratic in 1/T_S, default, 2026-11-25), "
+                                "solve_ts_illinois, or tb_physics.solve_ts_wf (bisection)")
         else:
             c.add_argument("--tol-sum", type=float, default=1e-6)
     t = sub.add_parser("table")
