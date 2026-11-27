@@ -45,6 +45,8 @@ set -eo pipefail
 cd "$SLURM_SUBMIT_DIR"
 NARR=$(( ${#TABLE[@]} * NTASK ))
 # a sub-range of the array (one snapshot) is allowed; the merge stops unless all NTASK tasks of a snapshot are there
+[ "$NTASK" = 32 ] || [ -n "$ALLOW_NTASK" ] || { echo "ERROR: NTASK=$NTASK: set --array to match and ALLOW_NTASK=1"; exit 1; }
+[[ "${SLURM_ARRAY_TASK_ID:-}" =~ ^[0-9]+$ ]] || { echo "ERROR: not an array task"; exit 1; }
 [ "$SLURM_ARRAY_TASK_ID" -lt "$NARR" ] || { echo "ERROR: array task $SLURM_ARRAY_TASK_ID >= $NARR (0-$((NARR - 1)))"; exit 1; }
 read -r SNAP RUN RSNAP MAX_DZ <<< "${TABLE[$(( SLURM_ARRAY_TASK_ID / NTASK ))]}"
 TASK=$(( SLURM_ARRAY_TASK_ID % NTASK ))

@@ -42,8 +42,8 @@ import time
 
 import numpy as np
 
-from test_cells_Tb import Snapshot, Phys, prep_cells, J_at, choose_order, render_index
-from tb_physics import Y_HE, X_H, M_H
+from test_cells_Tb import Snapshot, Phys, prep_cells, J_at, choose_order, render_index, PROTONMASS
+from tb_physics import Y_HE, X_H, OMEGA_L_DEFAULT
 
 import h5py
 
@@ -78,6 +78,9 @@ def scan(a):
     os.makedirs(a.out, exist_ok=True)
     out = os.path.join(a.out, f"dens_He_{a.snap:03d}_{a.task:03d}.npz")
     if os.path.exists(out):
+        with np.load(out) as t:
+            if "T3_m" not in t:
+                sys.exit(f"STOP: {out} exists without the T-class sums (an older run): use another --out")
         print(f"{out} exists: task done")
         return
     edges = np.linspace(0, S.n, a.ntask + 1).astype(np.int64)
@@ -95,7 +98,7 @@ def scan(a):
     del Rd
     acc = {k: np.zeros(NB + 1) for k in KEYS}
     acc.update({"T3_" + k: np.zeros(NT * (NB + 1)) for k in KEYS_T})
-    nH_fac = X_H * P.rho_unit * (1.0 + S.z)**3 / M_H                # code density -> proper n_H [cm^-3]
+    nH_fac = X_H * P.rho_unit * (1.0 + S.z)**3 / PROTONMASS         # code density -> proper n_H [cm^-3] (as AREPO)
     t0 = time.time()
     for i0 in range(r0, r1, a.chunk):
         i1 = min(r1, i0 + a.chunk)
@@ -209,7 +212,10 @@ def merge(a):
         wr = csv.DictWriter(f, fieldnames=list(rows_out[0]))
         wr.writeheader(); wr.writerows(rows_out)
     print(f"\nwrote {fine} and {cls}")
-    if all("T3_m" in t for t in T):
+    has_T = ["T3_m" in t for t in T]
+    if any(has_T) and not all(has_T):
+        sys.exit("STOP: some task files have the T-class sums and some do not (mixed runs in one directory)")
+    if all(has_T):
         merge_T(a, T, S, names, cut, lo, hi, z, Mtot, ncell)
     else:
         print("\n(no T-class sums in these task files: written before 2026-11-27)")
@@ -225,7 +231,7 @@ def merge_T(a, T, S, names, cut, lo, hi, z, Mtot, ncell):
     if int(round(S3["n"].sum())) != ncell or not np.allclose(S3["m"].sum(0), S["m"], rtol=1e-10, atol=0) \
             or not np.allclose(S3["V_tb"].sum(0), S["V_tb"], rtol=1e-10, atol=1e-300):
         sys.exit("STOP: the T-class sums do not add up to the 1+delta sums")
-    h, om, ol = 0.6766, 0.30964144, 0.69035856                 # Lumina (Planck 2018)
+    h, om, ol = 0.6766, 0.30964144, OMEGA_L_DEFAULT            # Lumina (Planck 2018; Omega_L as the T_b codes)
     tH = 1.0 / (100.0 * h * 1e5 / 3.0857e24 * np.sqrt(om * (1 + z)**3 + ol))
     def rates(sl, tc):
         q = {k: S3[k][tc, sl].sum() for k in KEYS_T}
@@ -251,14 +257,15 @@ def merge_T(a, T, S, names, cut, lo, hi, z, Mtot, ncell):
             rows.append(r)
             print(f"  {name:>12s}  {tn:>8s}   {r['mass_share']:.4f}     {r['x_HeII']:.4f}  {r['HeII_share']:.4f}"
                   f"                     | {g:+.3e}  {trec:9.3g}  {coll:8.3g}")
-    print("\nGamma_eff [s^-1] at 1+delta (0.2-dex windows), by T class:   " + "   ".join(T_NAMES) + "   all T")
+    print("\nGamma_eff [s^-1] in the fine bins within 0.1 dex of 1+delta (window printed), by T class:   "
+          + "   ".join(T_NAMES) + "   all T")
     for d0 in (0.3, 1.0, 3.0, 10.0, 30.0, 100.0, 300.0, 1000.0, 3000.0):
         sl = np.flatnonzero((lo >= np.log10(d0) - 0.1 - 1e-9) & (hi <= np.log10(d0) + 0.1 + 1e-9))
         if sl.size == 0:
             continue
         sl = slice(sl[0], sl[-1] + 1)
         vals = [rates(sl, tc)[1] for tc in list(range(NT)) + [allT]]
-        print(f"  {d0:7g}:  " + "   ".join(f"{v:+.3e}" for v in vals))
+        print(f"  {d0:7g} ({10**lo[sl.start]:.3g}-{10**hi[sl.stop - 1]:.3g}):  " + "   ".join(f"{v:+.3e}" for v in vals))
     out = os.path.join(a.out, f"dens_He_{a.snap:03d}_T.csv")
     with open(out, "w", newline="") as f:
         wr = csv.writer(f)
