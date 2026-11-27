@@ -38,6 +38,10 @@ cd "$SLURM_SUBMIT_DIR"
 V=${VARIANTS[$SLURM_ARRAY_TASK_ID]}
 [ -n "$V" ] || { echo "no variant for array task $SLURM_ARRAY_TASK_ID"; exit 1; }
 GSL_PREFIX=${GSL_ROOT_DIR:?gsl module did not set GSL_ROOT_DIR}
+# GMP (voronoi.h includes gmp.h): no module on ORCD and no system headers (only /usr/lib64/libgmp.so.10), so use the
+# spack install (job 30631701 failed with "gmp.h: No such file or directory", 2026-11-26)
+GMP_PREFIX=${GMP_PREFIX:-/orcd/software/core/001/spack/pkg/gmp/6.2.1/vb6uboo}
+[ -f "$GMP_PREFIX/include/gmp.h" ] || { echo "no gmp.h in $GMP_PREFIX/include (set GMP_PREFIX)"; exit 1; }
 D=$W/$V
 df -h /orcd/data/mvogelsb/004 | tail -1
 echo "variant $V -> $D, $(date), commit $(git rev-parse --short HEAD), host $(hostname), $SLURM_NTASKS MPI tasks"
@@ -58,6 +62,8 @@ ifeq (\$(SYSTYPE), "orcd-floorbox")
   FFTW_LIBS = -L$FFTW_PREFIX/lib -Wl,-rpath,$FFTW_PREFIX/lib
   HDF5INCL  = -I$HDF5_PREFIX/include -DH5_USE_16_API=1
   HDF5LIB   = -L$HDF5_PREFIX/lib -Wl,-rpath,$HDF5_PREFIX/lib -lhdf5 -lz
+  GMP_INCL  = -I$GMP_PREFIX/include
+  GMP_LIBS  = -L$GMP_PREFIX/lib -Wl,-rpath,$GMP_PREFIX/lib
   LINKER    = mpicxx
   MPICHLIB  =
 endif
