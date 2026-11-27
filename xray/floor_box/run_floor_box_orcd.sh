@@ -50,6 +50,19 @@ echo "variant $V -> $D, $(date), commit $(git rev-parse --short HEAD), host $(ho
 mkdir -p "$D"
 rsync -a --delete --exclude .git --exclude build --exclude Arepo "$SRC/" "$D/arepo/"
 echo 'SYSTYPE="orcd-floorbox"' > "$D/arepo/Makefile.systype"       # the copy's file named Frontier
+# forcetree.cc, do_gravity_hydro.cc, run.cc and cooling/cooling.cc call the RT debug printer mpi_printf_rt without an
+# #ifdef MRT; it is declared only in MRT/RT.h (included only with MRT), so without RT the build fails (job 30722651).
+# A no-op in proto.h's own "#ifdef MRT / #include MRT/RT.h" block, inside proto.h's include guard; stops if the
+# block is not found exactly once.
+python3 - "$D/arepo/src/proto.h" <<'PY'
+import sys
+p = sys.argv[1]; s = open(p).read()
+old = '#ifdef MRT\n#include "MRT/RT.h"\n#endif\n'
+new = '#ifdef MRT\n#include "MRT/RT.h"\n#else\ninline void mpi_printf_rt(const int, const char *, ...) {}  /* floor_box: RT off */\n#endif\n'
+if s.count(old) != 1:
+    sys.exit(f"ERROR: MRT/RT.h include block found {s.count(old)} times in {p}")
+open(p, "w").write(s.replace(old, new))
+PY
 cat >> "$D/arepo/makefiles/systypes.make" <<EOF
 
 ifeq (\$(SYSTYPE), "orcd-floorbox")
@@ -73,9 +86,10 @@ EOF
 python -u prepare_orcd.py variant --variant "$V" --arepo "$D/arepo" --config "$SRC/Config.sh" --params "$PARAMS" \
     --out "$D" --maxmem 2500
 
-# 3. build into <D> (Config.sh, build/, Arepo)
-( cd "$D/arepo" && SYSTYPE=orcd-floorbox make build -j "$SLURM_NTASKS" TARGET_DIR="$D" ) > "$D/build.log" 2>&1 \
-    || { echo "BUILD FAILED"; grep -m20 -i "error" "$D/build.log"; tail -20 "$D/build.log"; exit 1; }
+# 3. build into <D> (Config.sh, build/, Arepo); -k: compile every file, so a failed build lists all its errors
+( cd "$D/arepo" && SYSTYPE=orcd-floorbox make -k build -j "$SLURM_NTASKS" TARGET_DIR="$D" ) > "$D/build.log" 2>&1 \
+    || { echo "BUILD FAILED"; grep "error:" "$D/build.log" | sed -E 's/:[0-9]+:[0-9]+:/:/' | sort | uniq -c | sort -rn | head -40
+         tail -20 "$D/build.log"; exit 1; }
 echo "build OK $(date)"
 
 # 4. run

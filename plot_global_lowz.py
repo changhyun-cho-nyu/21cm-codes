@@ -60,11 +60,12 @@ def lowz_band(stats, cells_path, zmax=10.02, verbose=True):
     tsx = np.array([fnum(r["pair_TS_X_all"]) for r in cells])
 
     # resolution ratio at the gas-cell snapshots, then 1 where the maps are the reference
-    gc = np.array([s == "cells" and np.isfinite(x) and np.isfinite(y) and z <= zmax
+    gc = np.array([s.startswith("cells") and np.isfinite(x) and np.isfinite(y) and z <= zmax   # cells | cells_box
                    for s, x, y, z in zip(src, x640, xbox, zc)])
     zr = list(zc[gc])
     rr = list(x640[gc] / xbox[gc])
     z640 = zc[np.array([s == "640" for s in src])]
+    z640 = z640[z640 < min(zr)] if zr else z640       # anchor r = 1 only below the gas-cell range
     if len(z640):
         zr.append(z640.max())
         rr.append(1.0)

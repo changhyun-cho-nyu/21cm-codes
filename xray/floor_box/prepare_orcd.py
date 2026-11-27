@@ -32,11 +32,13 @@ ZOUT = (45, 40, 36, 33, 30, 27, 24, 21, 18, 15, 12)
 NMAX = 128                            # white-noise grid shared by all variants
 SEED = 20261125
 # removed from Lumina's Config: radiative transfer, galaxy physics, group finding, outputs, restarts and memory
-# layouts for the 6000^3 run (none acts on cold neutral gas before sources form)
+# layouts for the 6000^3 run (none acts on cold neutral gas before sources form). SHAREDNODEMEMORY is kept (2026-11-27):
+# the kept HIERARCHICAL_DOMAIN_DECOMPOSITION needs it (domain.cc: "Not implemented" without it, and SMM is declared only
+# with it; job 30722651 failed there); both are parallelisation flags, as in the run's own Config
 REMOVE_PREFIX = ("MRT", "GFM", "BH_", "FOF", "SUBFIND", "REIONIZATION_", "POWERSPEC_ON_OUTPUT")
 REMOVE = {"COOLING", "UVB_OFF", "USE_SFR", "SOFTEREQS", "STEEPER_SFR_FOR_STARBURST", "BLACK_HOLES", "DRAINGAS",
           "MERGERTREE", "CUDA", "AMD_HIP", "EOR_LOG", "RT_LOG", "RENDERGRID", "CONEGRID", "PROJECTION_GRID",
-          "MTNG", "SHAREDNODEMEMORY", "RESTART_XL", "MULTIPLE_RESTARTS", "HIERARCHICAL_RESTARTS", "MEMORY_SAVING_XL",
+          "MTNG", "RESTART_XL", "MULTIPLE_RESTARTS", "HIERARCHICAL_RESTARTS", "MEMORY_SAVING_XL",
           "VORONOI_SEARCH_XL", "EVALPOTENTIAL", "OUTPUT_COORDINATES_AS_INTEGERS", "OUTPUT_VELOCITIES_IN_HALF_PRECISION",
           "DEBUG_ENABLE_FPU_EXCEPTIONS"}
 ADD = {"GENERATE_GAS_IN_ICS": ""}
@@ -307,7 +309,7 @@ def cmd_variant(a):
     over = dict(InitCondFile="ics", OutputDir="output", OutputListFilename="output_list.txt", BoxSize=f"{box:.4f}",
                 TimeMax=f"{1.0 / (1.0 + a.zend):.8f}", MinGasTemp=str(tmin), NumFilesPerSnapshot="1",
                 MaxFilesWithConcurrentIO="1", TimeLimitCPU=str(a.cpu_limit), CpuTimeBetRestartFile="3600",
-                MaxMemSize=str(a.maxmem), CoolingOn="0", StarformationOn="0", ResubmitCommand="none",
+                MaxMemSize=str(a.maxmem), MaxMemSizeNode=str(a.maxmem_node), CoolingOn="0", StarformationOn="0", ResubmitCommand="none",
                 OutputListOn="1", TimeBetSnapshot="0", TimeOfFirstSnapshot="0")
     write_params(tags, used, over, os.path.join(a.out, "param.txt"))
     output_list(os.path.join(a.out, "output_list.txt"), a.zend)
@@ -342,6 +344,9 @@ def main():
     v.add_argument("--n", type=int, default=64)
     v.add_argument("--zend", type=float, default=12.0)
     v.add_argument("--maxmem", type=int, default=4000)
+    v.add_argument("--maxmem-node", type=int, default=4000,
+                   help="MaxMemSizeNode [MB], the SHAREDNODEMEMORY pool allocated once per node (run: 7000); "
+                        "with 32 tasks x --maxmem 2500 it keeps the job inside --mem=100G")
     v.add_argument("--cpu-limit", type=int, default=82800)
     for s in (v, sp.add_parser("check-tags")):
         s.add_argument("--arepo", required=True)
