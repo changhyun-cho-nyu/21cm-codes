@@ -49,6 +49,7 @@ echo "variant $V -> $D, $(date), commit $(git rev-parse --short HEAD), host $(ho
 # 1. private copy of the run's source, with a system type for ORCD's modules
 mkdir -p "$D"
 rsync -a --delete --exclude .git --exclude build --exclude Arepo "$SRC/" "$D/arepo/"
+chmod u+x "$D/arepo/git_version.sh"    # not executable in the run's source: version.cc was never made (job 30723794)
 echo 'SYSTYPE="orcd-floorbox"' > "$D/arepo/Makefile.systype"       # the copy's file named Frontier
 # Source patches for building the run's (Frontier) source without RT and GPUs, applied to the private copy; each
 # replacement must match exactly once, else the task stops:
@@ -59,6 +60,9 @@ echo 'SYSTYPE="orcd-floorbox"' > "$D/arepo/Makefile.systype"       # the copy's 
 #    put under the run's own flag AMD_HIP, which prepare_orcd.py removes.
 #  - backward.cc, system.cc: BACKWARD_HAS_BFD 1 needs binutils' bfd.h (none on ORCD; job 30723410): 0, so the crash
 #    backtrace (BACKTRACE) uses backward.hpp's unwind + backtrace_symbols backends (no source line numbers).
+#  - voronoi_makeimage.cc: proto.h declares open_image_files with a 25th argument FILE **h1 that the definition lacks,
+#    so its callers link to nothing (the run never compiled this file: it is under #if !defined(MTNG), and
+#    prepare_orcd.py removes MTNG); the definition gets the (unused) h1. No image flag is set, so it is never called.
 python3 - "$D/arepo/src" <<'PY'
 import os, sys
 src = sys.argv[1]
@@ -69,6 +73,7 @@ patches = [
     ("main.cc", "hipInit(0);\n", "#ifdef AMD_HIP\nhipInit(0);\n#endif\n"),
     ("backward.cc", "#define BACKWARD_HAS_BFD 1\n", "#define BACKWARD_HAS_BFD 0  /* floor_box: no bfd.h on ORCD */\n"),
     ("system.cc", "#define BACKWARD_HAS_BFD 1\n", "#define BACKWARD_HAS_BFD 0  /* floor_box: no bfd.h on ORCD */\n"),
+    ("voronoi_makeimage.cc", "FILE **hrih, FILE **sxrates)\n", "FILE **hrih, FILE **sxrates, FILE **h1)\n"),
 ]
 for f, old, new in patches:
     p = os.path.join(src, f); s = open(p).read()
