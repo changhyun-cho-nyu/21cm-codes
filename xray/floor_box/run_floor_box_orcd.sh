@@ -2,7 +2,7 @@
 #SBATCH --job-name=floorbox
 #SBATCH --output=logs/floorbox_%A_%a.out
 #SBATCH --error=logs/floorbox_%A_%a.err
-#SBATCH --array=0-6
+#SBATCH --array=0-7
 #SBATCH --nodes=1
 #SBATCH --ntasks=32
 #SBATCH --cpus-per-task=1
@@ -15,14 +15,16 @@
 # Floor-box tests built from the AREPO source of the 50 cMpc X-ray runs (Oliver's tree, read only), one variant per
 # array task (prepare_orcd.py: Lumina's own Config minus RT / galaxy physics / output flags, the exact parameter
 # tags this Config requires with the run's values, Zel'dovich ICs at z = 49 shared by all variants):
-#   0 fid  1 nofloor  2 noclamp  3 entropy  4 clean  5 fid_hr  6 clean_hr
+#   0 fid  1 nofloor  2 noclamp  3 entropy  4 clean  5 fid_hr  6 clean_hr  7 fid_exact
+# 3, 4, 6, 7 use the exact Riemann solver (the entropy switch needs it in this source; fid_exact = fid with it, so
+# fid_exact vs fid is the solver's effect and entropy vs fid_exact the switch's; prepare_orcd.py, 2026-11-27).
 # Each task: copy the source (no .git, build or binary) to <W>/<variant>/arepo, prepare, build with SYSTYPE
 # orcd-floorbox (added to the copy), run mpirun -np 32 ./Arepo param.txt in <W>/<variant>.
 #   cd xray/floor_box && mkdir -p logs
 #   smoke test first:  sbatch -p ou_mki --array=0 --time=01:00:00 run_floor_box_orcd.sh
 #   then:              sbatch -p ou_mki --array=1-6 run_floor_box_orcd.sh   (0 again only if the test was cut short)
 #   analysis:          python analyze_floor_box.py --root /orcd/data/mvogelsb/004/chcho/xray/floor_box
-VARIANTS=(fid nofloor noclamp entropy clean fid_hr clean_hr)
+VARIANTS=(fid nofloor noclamp entropy clean fid_hr clean_hr fid_exact)
 SRC=/nfs/mvogelsblab002/Users/ozier/SonjaXrayPaper/withXrays/arepo
 PARAMS=/nfs/mvogelsblab002/Users/ozier/SonjaXrayPaper/withoutXrays/output/parameters-usedvalues
 W=${W:-/orcd/data/mvogelsb/004/chcho/xray/floor_box}

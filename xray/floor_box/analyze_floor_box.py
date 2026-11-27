@@ -27,9 +27,9 @@ X_H, K_B, M_P, GAMMA_M1 = 0.76, 1.380649e-16, 1.67262192e-24, 2.0 / 3.0
 MU = 4.0 / (1.0 + 3.0 * X_H)
 T0, Z0, TCMB0 = 54.17, 49.0, 2.7255
 DBINS = (0.0, 0.5, 1.0, 2.0, 3.0, 10.0, np.inf)
-ORDER = ("fid", "nofloor", "noclamp", "entropy", "clean", "fid_hr", "clean_hr")
+ORDER = ("fid", "fid_exact", "nofloor", "noclamp", "entropy", "clean", "fid_hr", "clean_hr")
 COLORS = {"fid": "#1f1f1e", "nofloor": "#2a78d6", "noclamp": "#2e9e5b", "entropy": "#eb6834", "clean": "#8a55c7",
-          "fid_hr": "#6b6b68", "clean_hr": "#c23b54"}
+          "fid_hr": "#6b6b68", "clean_hr": "#c23b54", "fid_exact": "#b08a1e"}
 
 
 def wq(x, w, q):

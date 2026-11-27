@@ -44,10 +44,18 @@ REMOVE = {"COOLING", "UVB_OFF", "USE_SFR", "SOFTEREQS", "STEEPER_SFR_FOR_STARBUR
 ADD = {"GENERATE_GAS_IN_ICS": ""}
 FLOOR = ("ENFORCE_JEANS_STABILITY_OF_CELLS", "ENFORCE_JEANS_STABILITY_OF_CELLS_EEOS")
 ENTROPY = {"USE_ENTROPY_FOR_COLD_FLOWS": "", "ENTROPY_MACH_THRESHOLD": "1.1"}
-VARIANTS = {   # name: (floor, entropy switch, MinGasTemp [K], grid factor)
-    "fid": (True, False, 5.0, 1), "nofloor": (False, False, 5.0, 1), "noclamp": (True, False, 0.01, 1),
-    "entropy": (True, True, 5.0, 1), "clean": (False, True, 0.01, 1),
-    "fid_hr": (True, False, 5.0, 2), "clean_hr": (False, True, 0.01, 2)}
+# The entropy switch needs the exact Riemann solver in this source: it keeps the entropy where MaxMach < 1.1
+# (update_primitive_variables.cc; without ENTROPY_MACH_THRESHOLD it stops, "not implemented any more"), MaxMach comes
+# from get_mach_numbers, and that is defined only in riemann.cc, which compiles only without RIEMANN_HLLC/HLL/ROSUNOV/
+# HLLD/GAMMA (jobs 30726810_3/4/6: undefined get_mach_numbers). So the entropy variants drop the run's RIEMANN_HLLC
+# (exact solver), and fid_exact (fid with the exact solver) separates the solver's effect from the switch's
+# (user, 2026-11-27: option A).
+EXACT_SOLVER_REMOVES = ("RIEMANN_HLLC",)
+VARIANTS = {   # name: (floor, entropy switch, MinGasTemp [K], grid factor, exact Riemann solver)
+    "fid": (True, False, 5.0, 1, False), "nofloor": (False, False, 5.0, 1, False),
+    "noclamp": (True, False, 0.01, 1, False), "entropy": (True, True, 5.0, 1, True),
+    "clean": (False, True, 0.01, 1, True), "fid_hr": (True, False, 5.0, 2, False),
+    "clean_hr": (False, True, 0.01, 2, True), "fid_exact": (True, False, 5.0, 1, True)}
 
 
 # ---------------------------------------------------------------- Config
@@ -63,8 +71,13 @@ def read_config(path):
 
 
 def variant_config(run_cfg, variant, n):
-    floor, entropy, _, _ = VARIANTS[variant]
+    floor, entropy, _, _, exact = VARIANTS[variant]
+    if entropy and not exact:
+        sys.exit(f"STOP: variant {variant}: the entropy switch needs the exact Riemann solver in this source")
     cfg = {k: v for k, v in run_cfg.items() if k not in REMOVE and not k.startswith(REMOVE_PREFIX)}
+    if exact:
+        for k in EXACT_SOLVER_REMOVES:
+            cfg.pop(k, None)
     for k in FLOOR:
         cfg.pop(k, None)
         if floor:
@@ -298,7 +311,7 @@ def output_list(path, zend=12.0):
 
 # ---------------------------------------------------------------- commands
 def cmd_variant(a):
-    floor, entropy, tmin, fac = VARIANTS[a.variant]
+    floor, entropy, tmin, fac, exact = VARIANTS[a.variant]
     n = a.n * fac
     box = SPACING * a.n
     os.makedirs(a.out, exist_ok=True)
@@ -314,7 +327,8 @@ def cmd_variant(a):
     write_params(tags, used, over, os.path.join(a.out, "param.txt"))
     output_list(os.path.join(a.out, "output_list.txt"), a.zend)
     info = make_ics(n, box, used, os.path.join(a.out, "ics.hdf5"))
-    print(f"{a.variant}: N = {n}^3, box {box:.2f} ckpc/h, floor {floor}, entropy switch {entropy}, MinGasTemp {tmin} K")
+    print(f"{a.variant}: N = {n}^3, box {box:.2f} ckpc/h, floor {floor}, entropy switch {entropy}, MinGasTemp {tmin} K, "
+          f"Riemann solver {'exact' if exact else 'HLLC'}")
     print(f"  Config: {len(cfg)} flags (run Config {len(read_config(a.config))}); param.txt: {len(tags)} tags")
     print(f"  ICs: a = {info['a']}, D(1)/D(a) = {info['D_ratio']:.3f}, f = {info['f']:.4f}, velocity prefactor "
           f"{info['vel_prefac']:.4f}, particle mass {info['mdm']:.6g} (x {1 - float(used['OmegaBaryon']) / float(used['Omega0']):.4f} "
