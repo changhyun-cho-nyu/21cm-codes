@@ -50,18 +50,32 @@ echo "variant $V -> $D, $(date), commit $(git rev-parse --short HEAD), host $(ho
 mkdir -p "$D"
 rsync -a --delete --exclude .git --exclude build --exclude Arepo "$SRC/" "$D/arepo/"
 echo 'SYSTYPE="orcd-floorbox"' > "$D/arepo/Makefile.systype"       # the copy's file named Frontier
-# forcetree.cc, do_gravity_hydro.cc, run.cc and cooling/cooling.cc call the RT debug printer mpi_printf_rt without an
-# #ifdef MRT; it is declared only in MRT/RT.h (included only with MRT), so without RT the build fails (job 30722651).
-# A no-op in proto.h's own "#ifdef MRT / #include MRT/RT.h" block, inside proto.h's include guard; stops if the
-# block is not found exactly once.
-python3 - "$D/arepo/src/proto.h" <<'PY'
-import sys
-p = sys.argv[1]; s = open(p).read()
-old = '#ifdef MRT\n#include "MRT/RT.h"\n#endif\n'
-new = '#ifdef MRT\n#include "MRT/RT.h"\n#else\ninline void mpi_printf_rt(const int, const char *, ...) {}  /* floor_box: RT off */\n#endif\n'
-if s.count(old) != 1:
-    sys.exit(f"ERROR: MRT/RT.h include block found {s.count(old)} times in {p}")
-open(p, "w").write(s.replace(old, new))
+# Source patches for building the run's (Frontier) source without RT and GPUs, applied to the private copy; each
+# replacement must match exactly once, else the task stops:
+#  - proto.h: forcetree.cc, do_gravity_hydro.cc, run.cc and cooling/cooling.cc call the RT debug printer mpi_printf_rt
+#    without #ifdef MRT; it is declared only in MRT/RT.h (included only with MRT; job 30722651): a no-op in the #else
+#    of proto.h's own MRT include, inside proto.h's include guard.
+#  - main.cc: #include <hip/hip_runtime_api.h> and hipInit(0) without #ifdef (Frontier's AMD GPUs; job 30723410):
+#    put under the run's own flag AMD_HIP, which prepare_orcd.py removes.
+#  - backward.cc, system.cc: BACKWARD_HAS_BFD 1 needs binutils' bfd.h (none on ORCD; job 30723410): 0, so the crash
+#    backtrace (BACKTRACE) uses backward.hpp's unwind + backtrace_symbols backends (no source line numbers).
+python3 - "$D/arepo/src" <<'PY'
+import os, sys
+src = sys.argv[1]
+patches = [
+    ("proto.h", '#ifdef MRT\n#include "MRT/RT.h"\n#endif\n',
+     '#ifdef MRT\n#include "MRT/RT.h"\n#else\ninline void mpi_printf_rt(const int, const char *, ...) {}  /* floor_box: RT off */\n#endif\n'),
+    ("main.cc", "#include <hip/hip_runtime_api.h>\n", "#ifdef AMD_HIP\n#include <hip/hip_runtime_api.h>\n#endif\n"),
+    ("main.cc", "hipInit(0);\n", "#ifdef AMD_HIP\nhipInit(0);\n#endif\n"),
+    ("backward.cc", "#define BACKWARD_HAS_BFD 1\n", "#define BACKWARD_HAS_BFD 0  /* floor_box: no bfd.h on ORCD */\n"),
+    ("system.cc", "#define BACKWARD_HAS_BFD 1\n", "#define BACKWARD_HAS_BFD 0  /* floor_box: no bfd.h on ORCD */\n"),
+]
+for f, old, new in patches:
+    p = os.path.join(src, f); s = open(p).read()
+    if s.count(old) != 1:
+        sys.exit(f"ERROR: {old!r} found {s.count(old)} times in {p}")
+    open(p, "w").write(s.replace(old, new))
+print(f"source patches: {len(patches)} applied")
 PY
 cat >> "$D/arepo/makefiles/systypes.make" <<EOF
 
