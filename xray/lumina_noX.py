@@ -359,7 +359,8 @@ def merge(a):
             sys.exit(f"STOP: {int(bc[0]):,} cells summed, {rows:,} rows read")
         print(f"  old construction for comparison: box X - cube effect = {bX - (mX - mN):+.4f} +- {err(jE):.4f} mK "
               f"(direct {bN:+.4f}); cube effect {mX - mN:+.4f} vs box effect {bX - bN:+.4f} mK")
-        res.update(mean_X_box=bX, mean_noX_box=bN, effect_box=bX - bN, box_direct=1, n_box=bc[0])
+        res.update(mean_X_box=bX, mean_noX_box=bN, effect_box=bX - bN, box_direct=1, n_box=bc[0],
+                   key_box=key, sf_box=sf, V_box=bc[1])      # whole-box class sums ("key" above is the 64 cubes')
         if hs:
             sv = svt = 0.0
             for f_ in hs:

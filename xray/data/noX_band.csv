@@ -1,0 +1,15 @@
+# Error terms of Lumina's no-X-ray global 21 cm signal (user, 2026-11-27: band = closure bias + void excess), mK
+# closure_bias: option-3 no X too warm on the 50 cMpc pair (closure job 29812220, NOTES.md step 5): true no X lower by this
+# void_bound: Lumina's non-X void excess (~15% of the void T at z = 15, cause unknown) if it persisted: no X higher by at
+#   most this; full-coupling scaling of the neutral 1+delta < 1 class, (c_v/a)(1 - a)(1 - 1/1.15), c_v and a = <1 - Tg/T>
+#   from the whole-box class sums (box_key of the noX_box task files, lumina_noX.py scan --whole-box)
+snap,z,closure_bias,void_bound,void_noX,void_spin_noX
+36,11.93096,0.21,6.001,-37.3872,-4.3383
+48,10.01403,0.57,5.317,-30.3802,-2.9254
+57,8.89670,0.76,3.780,-19.5466,-2.0716
+66,7.99521,0.75,2.411,-10.7990,-1.4048
+74,7.46185,0.58,1.655,-6.4698,-1.0406
+80,6.99057,0.51,1.045,-3.3690,-0.7251
+86,6.63252,0.41,0.649,-1.6585,-0.4999
+92,6.29051,0.17,0.343,-0.6023,-0.2969
+102,5.72847,0.04,0.038,0.1536,0.3440
