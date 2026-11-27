@@ -12,12 +12,23 @@ scan (one array task = 1/ntask of the rows; reads the same fields and uses the s
   delta T_b^He from Phys.tb. Cells are binned in log10(1+delta) (0.05 dex, -3 ... 7, plus under/overflow; star-forming
   cells in their own bin), summing: count, m, V, m x_HII, m x_HeII, m x_HeIII (x = f / y for He), m n_e/n_H, m T, V dT_b.
   Writes <out>/dens_He_<snap>_<task>.npz (small).
+  Also (from 2026-11-27, for the effective He II photoionization rate by density): the same bins split into three T
+  classes (T < 5e4 K: photoionized; 5e4-2e5 K: collisions start; > 2e5 K: collisionally ionized), keys T3_<key> of
+  length 3 (NB+1) (index = bin + (NB+1) x class), with n, m, m x_HeII, m x_HeIII, m T, V dT_b and the per-cell rates
+  m n_e alpha(T) x_HeIII (He III recombinations) and m n_e beta(T) x_HeII (He II collisional ionizations), n_e
+  proper [cm^-3]. alpha, beta: Lumina's own rates (AREPO MRT without MRT_UPDATED_REACTION_RATES, the Config of the
+  snapshots; RT_gpu_thermochemistry.cu): alpha_HeIII = 3.36e-10 T^-0.5 (T/1e3)^-0.2 / (1 + (T/1e6)^0.7) (Cen 1992),
+  beta_HeII = 5.68e-12 T^0.5 exp(-631515/T) / (1 + (T/1e5)^0.5).
 merge: adds the task files (stops unless all ntask are present, from the same snapshot and settings, and their rows
   tile 0 ... N_cells exactly), prints per 1+delta class: mass and volume shares, mass-weighted x_HII, x_HeII, x_HeIII,
   n_e/n_H, T, the class's contribution to <dT_b^He> = sum V dT_b / sum V and its share; the whole-box mean (equal to
   the gas-cell mean of test_cells_Tb.py merge for the same J); and the local slope of x_HeII/x_HeIII against 1+delta
   (photoionization equilibrium with a uniform rate: slope ~ 1). Writes <out>/dens_He_<snap>.csv (fine bins) and
-  dens_He_<snap>_classes.csv.
+  dens_He_<snap>_classes.csv. With T3_ keys (task files from 2026-11-27 on): per 1+delta class and T class the mass
+  share, x_HeII, the share of the class's He II mass, and the effective photoionization rate that balances the gas,
+  Gamma_eff = sum m n_e (alpha x_HeIII - beta x_HeII) / sum m x_HeII (net recombinations per He II ion: exact for a
+  mixture of cells, each in equilibrium), with t_rec / t_H = 1 / (<n_e alpha> t_H) (equilibrium only where << 1);
+  writes dens_He_<snap>_T.csv (fine bins x T classes).
 
   python -u dens_cells_He.py scan --snapdir D --snap 158 --J <J stars> --J <J AGN> --render <ren_640> --render-snap 705 \
       --out <dir> --task T --ntask 32
@@ -32,7 +43,7 @@ import time
 import numpy as np
 
 from test_cells_Tb import Snapshot, Phys, prep_cells, J_at, choose_order, render_index
-from tb_physics import Y_HE
+from tb_physics import Y_HE, X_H, M_H
 
 import h5py
 
@@ -43,6 +54,20 @@ LOG_EDGES = LOG_EDGES[np.concatenate([[True], np.diff(LOG_EDGES) > 1e-6])]   # (
 NB = len(LOG_EDGES) + 1                                        # + underflow (0) and overflow (NB-1)
 I_SF = NB                                                      # star-forming cells: their own bin
 KEYS = ("n", "m", "V", "m_xHII", "m_xHeII", "m_xHeIII", "m_ne", "m_T", "V_tb")
+T_EDGES = (5e4, 2e5)                                           # T classes [K]: < 5e4, 5e4-2e5, > 2e5
+T_NAMES = ("T<5e4", "5e4-2e5", "T>2e5")
+NT = len(T_EDGES) + 1
+KEYS_T = ("n", "m", "m_xHeII", "m_xHeIII", "m_T", "V_tb", "m_rec", "m_coll")
+
+
+def alpha_HeIII(T):
+    """He III -> He II recombination [cm^3 s^-1], Lumina's rate (Cen 1992; AREPO MRT, no MRT_UPDATED_REACTION_RATES)"""
+    return 3.36e-10 * T**-0.5 * (T / 1e3)**-0.2 / (1.0 + (T / 1e6)**0.7)
+
+
+def beta_HeII(T):
+    """He II collisional ionization [cm^3 s^-1], Lumina's rate (Cen 1992)"""
+    return 5.68e-12 * np.sqrt(T) * np.exp(-631515.0 / T) / (1.0 + np.sqrt(T / 1e5))
 
 
 def scan(a):
@@ -69,6 +94,8 @@ def scan(a):
     order = choose_order(S, (r0, min(r1, r0 + 5_000_000)), Rd, S.box)
     del Rd
     acc = {k: np.zeros(NB + 1) for k in KEYS}
+    acc.update({"T3_" + k: np.zeros(NT * (NB + 1)) for k in KEYS_T})
+    nH_fac = X_H * P.rho_unit * (1.0 + S.z)**3 / M_H                # code density -> proper n_H [cm^-3]
     t0 = time.time()
     for i0 in range(r0, r1, a.chunk):
         i1 = min(r1, i0 + a.chunk)
@@ -88,11 +115,17 @@ def scan(a):
              "m_T": m * c["T"], "V_tb": V * tb}
         for key in KEYS:
             acc[key] += np.bincount(b, w[key], minlength=NB + 1)
+        ne = (c["xHII"] + c["fII"] + 2.0 * c["fIII"]) * nH_fac * c["rho"]
+        w.update({"m_rec": m * ne * alpha_HeIII(c["T"]) * c["fIII"] / Y_HE,
+                  "m_coll": m * ne * beta_HeII(c["T"]) * c["fII"] / Y_HE})
+        b3 = b + (NB + 1) * np.searchsorted(T_EDGES, c["T"], side="right")
+        for key in KEYS_T:
+            acc["T3_" + key] += np.bincount(b3, w[key], minlength=NT * (NB + 1))
         print(f"  rows {i1:,} / {r1:,}: {time.time() - t0:.0f} s", flush=True)
     part = out + ".part.npz"
     np.savez(part, snap=a.snap, z=S.z, task=a.task, ntask=a.ntask, rows=np.array([r0, r1]), n_total=S.n,
              rho_mean=P.rho_mean, render_snap=a.render_snap, J_files=";".join(os.path.basename(x) for x in a.J),
-             log_edges=LOG_EDGES, **acc)
+             log_edges=LOG_EDGES, t_edges=np.array(T_EDGES), **acc)
     os.replace(part, out)
     print(f"wrote {out} ({time.time() - t0:.0f} s)")
 
@@ -176,6 +209,70 @@ def merge(a):
         wr = csv.DictWriter(f, fieldnames=list(rows_out[0]))
         wr.writeheader(); wr.writerows(rows_out)
     print(f"\nwrote {fine} and {cls}")
+    if all("T3_m" in t for t in T):
+        merge_T(a, T, S, names, cut, lo, hi, z, Mtot, ncell)
+    else:
+        print("\n(no T-class sums in these task files: written before 2026-11-27)")
+
+
+def merge_T(a, T, S, names, cut, lo, hi, z, Mtot, ncell):
+    """effective He II photoionization rate by 1+delta and T class (T3_ sums)"""
+    import csv
+    for t in T:
+        if not np.allclose(t["t_edges"], T_EDGES):
+            sys.exit("STOP: task files with other T classes")
+    S3 = {k: sum(t["T3_" + k] for t in T).reshape(NT, NB + 1) for k in KEYS_T}
+    if int(round(S3["n"].sum())) != ncell or not np.allclose(S3["m"].sum(0), S["m"], rtol=1e-10, atol=0) \
+            or not np.allclose(S3["V_tb"].sum(0), S["V_tb"], rtol=1e-10, atol=1e-300):
+        sys.exit("STOP: the T-class sums do not add up to the 1+delta sums")
+    h, om, ol = 0.6766, 0.30964144, 0.69035856                 # Lumina (Planck 2018)
+    tH = 1.0 / (100.0 * h * 1e5 / 3.0857e24 * np.sqrt(om * (1 + z)**3 + ol))
+    def rates(sl, tc):
+        q = {k: S3[k][tc, sl].sum() for k in KEYS_T}
+        g = (q["m_rec"] - q["m_coll"]) / q["m_xHeII"] if q["m_xHeII"] > 0 else np.nan
+        trec = q["m_xHeIII"] / q["m_rec"] / tH if q["m_rec"] > 0 else np.nan
+        coll = q["m_coll"] / q["m_rec"] if q["m_rec"] > 0 else np.nan
+        return q, g, trec, coll
+    allT = slice(0, NT)
+    print(f"\nEffective He II photoionization rate, Gamma_eff = sum m n_e (alpha x_HeIII - beta x_HeII) / sum m x_HeII "
+          f"[s^-1] (Lumina's rates; t_H = {tH / 3.156e16:.2f} Gyr)")
+    print("  1+delta class  T class   mass share  x_HeII  share of the class's He II | Gamma_eff   t_rec/t_H  coll/rec")
+    rows = []
+    for name, b0, b1 in zip(names, cut[:-1], cut[1:]):
+        sl = slice(b0, b1)
+        heII_all = S3["m_xHeII"][:, sl].sum()
+        for tc, tn in list(enumerate(T_NAMES)) + [(allT, "all T")]:
+            q, g, trec, coll = rates(sl, tc)
+            if q["m"] <= 0:
+                continue
+            r = dict(cls=name, T_class=tn, mass_share=q["m"] / Mtot, x_HeII=q["m_xHeII"] / q["m"],
+                     HeII_share=q["m_xHeII"] / heII_all if heII_all > 0 else np.nan, Gamma_eff=g, trec_tH=trec,
+                     coll_rec=coll)
+            rows.append(r)
+            print(f"  {name:>12s}  {tn:>8s}   {r['mass_share']:.4f}     {r['x_HeII']:.4f}  {r['HeII_share']:.4f}"
+                  f"                     | {g:+.3e}  {trec:9.3g}  {coll:8.3g}")
+    print("\nGamma_eff [s^-1] at 1+delta (0.2-dex windows), by T class:   " + "   ".join(T_NAMES) + "   all T")
+    for d0 in (0.3, 1.0, 3.0, 10.0, 30.0, 100.0, 300.0, 1000.0, 3000.0):
+        sl = np.flatnonzero((lo >= np.log10(d0) - 0.1 - 1e-9) & (hi <= np.log10(d0) + 0.1 + 1e-9))
+        if sl.size == 0:
+            continue
+        sl = slice(sl[0], sl[-1] + 1)
+        vals = [rates(sl, tc)[1] for tc in list(range(NT)) + [allT]]
+        print(f"  {d0:7g}:  " + "   ".join(f"{v:+.3e}" for v in vals))
+    out = os.path.join(a.out, f"dens_He_{a.snap:03d}_T.csv")
+    with open(out, "w", newline="") as f:
+        wr = csv.writer(f)
+        wr.writerow(["# z", z, "t_H [s]", tH, "T classes", ";".join(T_NAMES)])
+        wr.writerow(["T_class", "bin", "log10_1pd_lo", "log10_1pd_hi"] + list(KEYS_T))
+        for tc, tn in enumerate(T_NAMES):
+            for b in range(NB + 1):
+                name = "star-forming" if b == I_SF else str(b)
+                l0 = "" if b == I_SF else lo[b]; h0 = "" if b == I_SF else hi[b]
+                wr.writerow([tn, name, l0, h0] + [S3[k][tc, b] for k in KEYS_T])
+    cl = os.path.join(a.out, f"dens_He_{a.snap:03d}_T_classes.csv")
+    with open(cl, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=list(rows[0])); w.writeheader(); w.writerows(rows)
+    print(f"\nwrote {out} and {cl}")
 
 
 def main():

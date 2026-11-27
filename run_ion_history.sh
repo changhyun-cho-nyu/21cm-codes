@@ -23,6 +23,9 @@
 #       --compare /orcd/data/mvogelsb/004/chcho/ion_history/ionization_history.csv
 #   2026-11-24: 9 fields at ~0.73 h per snapshot (shared-filesystem load) -> 44 snapshots per task does not fit 12 h;
 #   use NTASK=32 --array=0-31 --time=24:00:00 (~22 snapshots, ~16 h per task)
+# All-gas temperatures T_M, T_V, T_Vpix (2026-11-27, panel (a) of the global figure): five fields, every render
+#   OUT_DIR=/orcd/data/mvogelsb/004/chcho/ion_history_Tall NTASK=64 EXTRA="--only-T" \
+#       sbatch -p ou_mki --array=0-63 --time=24:00:00 run_ion_history.sh
 
 BASE=/orcd/data/mvogelsb/005/mkilab001/mvogelsblab003/Lab/Thesan-XL
 DIRA=$BASE/Flagship_new/postprocessing/ren_640

@@ -22,9 +22,12 @@
 # J: the He J of the earlier gas-cell scans (cell_test_summary.csv), so the whole-box means can be checked against
 # cell_uK there (0.09081 / 0.0780 / 0.0442 uK). 136: J at render 500 (z = 4.0116, as the original scan, 2026-10-16), so
 # render 500 is passed (the J file's z must match the render's) with MAX_DZ = 0.01 (snapshot z = 4.0042).
+# From 2026-11-27 the task files also hold the T-class sums and Lumina's He rates (effective He II photoionization rate
+# by density; the merge prints it). The first run (job 30624503) is in dens_He/ without them; the new default output is
+# dens_He_T/. All three snapshots: sbatch run_dens_cells.sh; only z = 3.0 (158): sbatch --array=64-95 run_dens_cells.sh
 
 NTASK=${NTASK:-32}
-OUT_DIR=${OUT_DIR:-/orcd/data/mvogelsb/004/chcho/dens_He}
+OUT_DIR=${OUT_DIR:-/orcd/data/mvogelsb/004/chcho/dens_He_T}
 JDIR=${JDIR:-/orcd/data/mvogelsb/004/chcho/Jalpha}       # production He J (= the test J at 406 and 500, JALPHA_NOTES 6.1)
 TR_TAG=${TR_TAG:-tr_sfmask}
 #        snap  run    render  max_dz
@@ -41,8 +44,8 @@ conda activate jupyter_env
 set -eo pipefail
 cd "$SLURM_SUBMIT_DIR"
 NARR=$(( ${#TABLE[@]} * NTASK ))
-[ -z "$SLURM_ARRAY_TASK_COUNT" ] || [ "$SLURM_ARRAY_TASK_COUNT" = "$NARR" ] || \
-    { echo "ERROR: the array has $SLURM_ARRAY_TASK_COUNT tasks, need $NARR (sbatch --array=0-$((NARR - 1)))"; exit 1; }
+# a sub-range of the array (one snapshot) is allowed; the merge stops unless all NTASK tasks of a snapshot are there
+[ "$SLURM_ARRAY_TASK_ID" -lt "$NARR" ] || { echo "ERROR: array task $SLURM_ARRAY_TASK_ID >= $NARR (0-$((NARR - 1)))"; exit 1; }
 read -r SNAP RUN RSNAP MAX_DZ <<< "${TABLE[$(( SLURM_ARRAY_TASK_ID / NTASK ))]}"
 TASK=$(( SLURM_ARRAY_TASK_ID % NTASK ))
 if [ "$RUN" = above ]; then SD=$SNAP_ABOVE; else SD=$SNAP_BELOW; fi
