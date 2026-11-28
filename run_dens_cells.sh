@@ -16,23 +16,27 @@
 # Full snapshots 116 (z = 5.00), 136 (4.00), 158 (3.00); NTASK tasks each, array task = snapshot index x NTASK + task.
 #   mkdir -p logs && sbatch run_dens_cells.sh
 # Then, once all tasks are done (seconds each):
-#   for s in 116 136 158; do python dens_cells_He.py merge --snap $s --out $OUT_DIR --ntask 32; done
+#   for s in 116 136 158; do python dens_cells_He.py merge --snap $s --out /orcd/data/mvogelsb/004/chcho/dens_He_Ly --ntask 32; done
 # Reads 8 gas fields of each snapshot once (~3 x 4 TB); writes 96 small npz files (~50 kB). A task whose output exists
 # is skipped, so a resubmission redoes only the failed ones.
 # J: the He J of the earlier gas-cell scans (cell_test_summary.csv), so the whole-box means can be checked against
-# cell_uK there (0.09081 / 0.0780 / 0.0442 uK). 136: J at render 500 (z = 4.0116, as the original scan, 2026-10-16), so
-# render 500 is passed (the J file's z must match the render's) with MAX_DZ = 0.01 (snapshot z = 4.0042).
+# cell_uK there (0.09081 / 0.0780 / 0.0442 uK). 136: J at render 500 (z = 4.0116, as the original scan, 2026-10-16) in
+# the runs to dens_He/ and dens_He_T/ (render 500, MAX_DZ = 0.01); from 2026-11-27 (dens_He_Ly/) the production J at the
+# matching render 501 (dz = 0; user), so the z = 4 mean differs slightly from 0.0780 (J 500).
 # From 2026-11-27 the task files also hold the T-class sums and Lumina's He rates (effective He II photoionization rate
 # by density; the merge prints it). The first run (job 30624503) is in dens_He/ without them; the new default output is
-# dens_He_T/. All three snapshots: sbatch run_dens_cells.sh; only z = 3.0 (158): sbatch --array=64-95 run_dens_cells.sh
+# dens_He_T/ (z = 3.0 only, job 30724213). From 2026-11-27 they also hold V dT_b with J = 0 (x_alpha = 0), for the
+# gas-cell Lyman alpha share of the signal (the merge prints it, whole box and by 1+delta); the new default output is
+# dens_He_Ly/ (a task stops if its own output file is an older one; the merge stops on mixed files). All three snapshots: sbatch run_dens_cells.sh;
+# only z = 3.0 (158): sbatch --array=64-95 run_dens_cells.sh
 
 NTASK=${NTASK:-32}
-OUT_DIR=${OUT_DIR:-/orcd/data/mvogelsb/004/chcho/dens_He_T}
+OUT_DIR=${OUT_DIR:-/orcd/data/mvogelsb/004/chcho/dens_He_Ly}
 JDIR=${JDIR:-/orcd/data/mvogelsb/004/chcho/Jalpha}       # production He J (= the test J at 406 and 500, JALPHA_NOTES 6.1)
 TR_TAG=${TR_TAG:-tr_sfmask}
 #        snap  run    render  max_dz
 TABLE=("116 above  406 1e-4"
-       "136 below  500 0.01"
+       "136 below  501 1e-4"
        "158 below  705 1e-4")
 
 SNAP_ABOVE=/orcd/data/mvogelsb/005/Lumina/Lumina_above_z_4p75/snapshots

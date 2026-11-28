@@ -30,7 +30,7 @@ set -eo pipefail
 cd "$SLURM_SUBMIT_DIR"
 [ "${#SNAPS[@]}" = "${SLURM_ARRAY_TASK_COUNT:-${#SNAPS[@]}}" ] || { echo "ERROR: ${#SNAPS[@]} snapshots, array of $SLURM_ARRAY_TASK_COUNT"; exit 1; }
 S=${SNAPS[$SLURM_ARRAY_TASK_ID]}
-D=$U/cell_test_$S
+D=${SCANDIR:-$U/cell_test_$S}     # 136 IGM rerun (2026-11-27): SCANDIR=$U/igm_cells_136
 mkdir -p "$OUT"
 echo "full snapshot $S, $D, $(date), commit $(git rev-parse --short HEAD)"
 MAP=$D/cellrho_$(printf %03d $S).hdf5

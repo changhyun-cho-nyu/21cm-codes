@@ -2,7 +2,7 @@
 #SBATCH --job-name=crossIGM
 #SBATCH --output=logs/crossIGM_%A_%a.out
 #SBATCH --error=logs/crossIGM_%A_%a.err
-#SBATCH --array=0-11
+#SBATCH --array=0-12
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
@@ -15,7 +15,10 @@
 # Is the He III bubble imprint on the 3.46 cm signal carried by the IGM, the gas the simulation resolves well, or by the
 # dense halo gas (user, 2026-11-27)? cross_spectrum.py on the whole-box IGM-only gas-cell maps that test_cells_Tb.py merge
 # wrote with --igm-cuts (cell_test*/cellmap_He_NNN.hdf5: dTb_cell = all cells, dTb_cell_igm_lt{100,30,10,3} = only the
-# cells with 1+delta below the cut; 136 has none), one array task per full snapshot:
+# cells with 1+delta below the cut), one array task per full snapshot. 136 (z = 4.0, array task 12, added 2026-11-27):
+# its map in cell_test/ (J at render 500) has no IGM maps; the rerun with IGM_CUTS and J at render 501 is written to
+# igm_cells_136/, outside the cell_test* glob so that the VID, PS and bispectrum codes keep the old 136 map (user,
+# 2026-11-27). A snapshot's igm_cells_<snap>/ is used before the cell_test* match (sbatch --array=12 run_cross_he_igm.sh):
 #   1. A = x_HeIII (render HeIII_VolumeFraction), B0 = gas-cell density (cellrho_NNN.hdf5:rho)  -> cross_x_rho_NNN.npz
 #   2. A = each He map, B0 = HeIII_VolumeFraction, B1 = gas-cell density                       -> cross_igm_<map>_NNN.npz
 # Then the table (1 - r^2 with density, r with x_HeIII, partial r(He, x_HeIII | density), share of the mean):
@@ -27,7 +30,7 @@ U=${U:-/orcd/data/mvogelsb/004/chcho}
 R=${R:-/orcd/data/mvogelsb/005/mkilab001/mvogelsblab003/Lab/Thesan-XL}
 OUT=${OUT:-$U/cross_he_igm}
 BOX=${BOX:-338300}
-read -ra PAIRS <<< "${PAIRS:-116:406 121:428 126:452 131:476 139:516 141:528 144:552 146:582 150:614 152:641 155:672 158:705}"
+read -ra PAIRS <<< "${PAIRS:-116:406 121:428 126:452 131:476 139:516 141:528 144:552 146:582 150:614 152:641 155:672 158:705 136:501}"
 MAPS="dTb_cell dTb_cell_igm_lt100 dTb_cell_igm_lt30 dTb_cell_igm_lt10 dTb_cell_igm_lt3"
 
 [ -n "$SKIP_ENV" ] || { source ~/.bashrc; conda activate jupyter_env; }
@@ -42,12 +45,15 @@ rdir() { if [ "$1" -le 428 ]; then echo $R/Flagship_new/postprocessing/ren_640; 
 field() { local p="$1/$2/$2_$3.hdf5"; [ -f "$p" ] && echo "$p:$2" || echo "$1/All/All_$3.hdf5:$2"; }
 one() {   # exactly one file matching the pattern, or stop
     local m; m=$(ls $1 2>/dev/null || true)
-    [ -n "$m" ] && [ "$(echo "$m" | wc -l)" -eq 1 ] || { echo "STOP: expected one file for $1, found: '${m}'"; exit 1; }
+    [ -n "$m" ] && [ "$(echo "$m" | wc -l)" -eq 1 ] || { echo "STOP: expected one file for $1, found: '${m}'" >&2; exit 1; }
     echo "$m"
 }
 pr=${PAIRS[$ID]}; s=${pr%%:*}; r=${pr##*:}; S=$(printf %03d $s); RS=$(printf %03d $r); D=$(rdir $r)
-cm=$(one "$U/cell_test*/cellmap_He_$S.hdf5")
-rho=$(one "$U/cell_test*/cellrho_$S.hdf5")
+pick() {  # igm_cells_<snap>/ first (136: the IGM rerun), else exactly one match in cell_test*/
+    if [ -f "$U/igm_cells_$s/$1" ]; then echo "$U/igm_cells_$s/$1"; else one "$U/cell_test*/$1"; fi
+}
+cm=$(pick "cellmap_He_$S.hdf5")
+rho=$(pick "cellrho_$S.hdf5")
 x=$(field $D HeIII_VolumeFraction $RS)
 python -c "import h5py,sys; f=h5py.File(sys.argv[1],'r'); m=[k for k in sys.argv[2:] if k not in f]; sys.exit(f'STOP: {sys.argv[1]} has no {m}' if m else 0)" "$cm" $MAPS
 echo "full snapshot $s, render $r: $cm, $rho, $x"

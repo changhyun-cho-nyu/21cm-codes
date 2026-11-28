@@ -29,6 +29,9 @@ merge: adds the task files (stops unless all ntask are present, from the same sn
   Gamma_eff = sum m n_e (alpha x_HeIII - beta x_HeII) / sum m x_HeII (net recombinations per He II ion: exact for a
   mixture of cells, each in equilibrium), with t_rec / t_H = 1 / (<n_e alpha> t_H) (equilibrium only where << 1);
   writes dens_He_<snap>_T.csv (fine bins x T classes).
+  Also (from 2026-11-27, for the gas-cell Lyman alpha share): V dT_b with J = 0 (x_alpha = 0) of every cell, key V_tb0,
+  in the 1+delta bins and the T classes. The merge prints 1 - <dT_b(J = 0)> / <dT_b> for the whole box and by 1+delta
+  class (the definition of the 640^3 "Lya share"); the CSVs get a V_tb0 column. Task files without it still merge.
 
   python -u dens_cells_He.py scan --snapdir D --snap 158 --J <J stars> --J <J AGN> --render <ren_640> --render-snap 705 \
       --out <dir> --task T --ntask 32
@@ -53,11 +56,12 @@ LOG_EDGES = np.unique(np.concatenate([np.round(np.arange(-3.0, 7.0001, 0.05), 6)
 LOG_EDGES = LOG_EDGES[np.concatenate([[True], np.diff(LOG_EDGES) > 1e-6])]   # (log10 1, 10, ... are on the grid)
 NB = len(LOG_EDGES) + 1                                        # + underflow (0) and overflow (NB-1)
 I_SF = NB                                                      # star-forming cells: their own bin
-KEYS = ("n", "m", "V", "m_xHII", "m_xHeII", "m_xHeIII", "m_ne", "m_T", "V_tb")
+KEYS = ("n", "m", "V", "m_xHII", "m_xHeII", "m_xHeIII", "m_ne", "m_T", "V_tb", "V_tb0")
+KEY_NOLY = "V_tb0"                                             # V dT_b with J = 0 (x_alpha = 0; from 2026-11-27)
 T_EDGES = (5e4, 2e5)                                           # T classes [K]: < 5e4, 5e4-2e5, > 2e5
 T_NAMES = ("T<5e4", "5e4-2e5", "T>2e5")
 NT = len(T_EDGES) + 1
-KEYS_T = ("n", "m", "m_xHeII", "m_xHeIII", "m_T", "V_tb", "m_rec", "m_coll")
+KEYS_T = ("n", "m", "m_xHeII", "m_xHeIII", "m_T", "V_tb", "m_rec", "m_coll", "V_tb0")
 
 
 def alpha_HeIII(T):
@@ -79,8 +83,8 @@ def scan(a):
     out = os.path.join(a.out, f"dens_He_{a.snap:03d}_{a.task:03d}.npz")
     if os.path.exists(out):
         with np.load(out) as t:
-            if "T3_m" not in t:
-                sys.exit(f"STOP: {out} exists without the T-class sums (an older run): use another --out")
+            if "T3_m" not in t or KEY_NOLY not in t:
+                sys.exit(f"STOP: {out} exists without the T-class or J = 0 sums (an older run): use another --out")
         print(f"{out} exists: task done")
         return
     edges = np.linspace(0, S.n, a.ntask + 1).astype(np.int64)
@@ -108,14 +112,16 @@ def scan(a):
         Jc = J[i, j, k].astype(np.float64)
         del i, j, k
         tb = P.tb(c["rho"], c["T"], c["xHII"], c["fII"], c["fIII"], Jc)
-        if not np.all(np.isfinite(tb)):
-            sys.exit(f"STOP: rows {i0}-{i1}: {np.sum(~np.isfinite(tb))} non-finite dT_b")
+        tb0 = P.tb(c["rho"], c["T"], c["xHII"], c["fII"], c["fIII"], np.zeros_like(Jc))   # no Lyman alpha coupling
+        if not (np.all(np.isfinite(tb)) and np.all(np.isfinite(tb0))):
+            sys.exit(f"STOP: rows {i0}-{i1}: {np.sum(~np.isfinite(tb))} / {np.sum(~np.isfinite(tb0))} non-finite dT_b "
+                     f"(J / J = 0)")
         b = np.searchsorted(LOG_EDGES, np.log10(c["rho"] / P.rho_mean), side="right")   # 0: below -3, NB-1: above 7
         b = np.where(sf, I_SF, b)
         m, V = c["m"], c["V"]
         w = {"n": np.ones_like(m), "m": m, "V": V, "m_xHII": m * c["xHII"], "m_xHeII": m * c["fII"] / Y_HE,
              "m_xHeIII": m * c["fIII"] / Y_HE, "m_ne": m * (c["xHII"] + c["fII"] + 2.0 * c["fIII"]),
-             "m_T": m * c["T"], "V_tb": V * tb}
+             "m_T": m * c["T"], "V_tb": V * tb, "V_tb0": V * tb0}
         for key in KEYS:
             acc[key] += np.bincount(b, w[key], minlength=NB + 1)
         ne = (c["xHII"] + c["fII"] + 2.0 * c["fIII"]) * nH_fac * c["rho"]
@@ -145,10 +151,14 @@ def merge(a):
                 sys.exit(f"STOP: {f}: {k} = {t[k]} differs from {ref[k]}")
         if not np.array_equal(t["log_edges"], LOG_EDGES) or int(t["ntask"]) != a.ntask:
             sys.exit(f"STOP: {f}: other bins or ntask than this run")
+    has_ly = [KEY_NOLY in t for t in T]
+    if any(has_ly) and not all(has_ly):
+        sys.exit("STOP: some task files have the J = 0 sums and some do not (mixed runs in one directory)")
+    keys = KEYS if all(has_ly) else tuple(k for k in KEYS if k != KEY_NOLY)
     rows = sorted(tuple(int(v) for v in t["rows"]) for t in T)
     if rows[0][0] != 0 or rows[-1][1] != int(ref["n_total"]) or any(rows[i][1] != rows[i + 1][0] for i in range(len(rows) - 1)):
         sys.exit(f"STOP: the task rows do not tile 0 ... {int(ref['n_total'])}: {rows[:3]} ...")
-    S = {k: sum(t[k] for t in T) for k in KEYS}
+    S = {k: sum(t[k] for t in T) for k in keys}
     ncell = int(round(S["n"].sum()))
     if ncell != int(ref["n_total"]):
         sys.exit(f"STOP: {ncell:,} cells binned, the snapshot has {int(ref['n_total']):,}")
@@ -172,7 +182,7 @@ def merge(a):
     names = [f"<{CLASS_EDGES[0]:g}"] + [f"{a_:g}-{b_:g}" for a_, b_ in zip(CLASS_EDGES[:-1], CLASS_EDGES[1:])] \
         + [f">{CLASS_EDGES[-1]:g}"]
     for name, b0, b1 in zip(names, cut[:-1], cut[1:]):
-        s = {k: S[k][b0:b1].sum() for k in KEYS}
+        s = {k: S[k][b0:b1].sum() for k in keys}
         mm = max(s["m"], 1e-300)
         r = dict(cls=name, mass_share=s["m"] / Mtot, vol_share=s["V"] / Vtot, x_HII=s["m_xHII"] / mm,
                  x_HeII=s["m_xHeII"] / mm, x_HeIII=s["m_xHeIII"] / mm, ne_nH=s["m_ne"] / mm, T=s["m_T"] / mm,
@@ -180,7 +190,7 @@ def merge(a):
         rows_out.append(r)
         print(f"  {r['cls']:>10s}  {r['mass_share']:.4f}  {r['vol_share']:.4f} | {r['x_HII']:.5f} {r['x_HeII']:.4f} "
               f"{r['x_HeIII']:.4f} {r['ne_nH']:.4f} {r['T']:9.4g} | {r['dTb_contrib']:+.4e}  {r['share']:.4f}")
-    sf = {k: S[k][I_SF] for k in KEYS}
+    sf = {k: S[k][I_SF] for k in keys}
     rows_out.append(dict(cls="star-forming", mass_share=sf["m"] / Mtot, vol_share=sf["V"] / Vtot, x_HII=0.0, x_HeII=0.0,
                          x_HeIII=0.0, ne_nH=0.0, T=sf["m_T"] / max(sf["m"], 1e-300), dTb_contrib=sf["V_tb"] / Vtot,
                          share=sf["V_tb"] / Vtot / mean))
@@ -202,39 +212,61 @@ def merge(a):
     with open(fine, "w", newline="") as f:
         wr = csv.writer(f)
         wr.writerow(["# z", z, "whole-box <dT_b^He> [uK]", mean, "cells", ncell])
-        wr.writerow(["bin", "log10_1pd_lo", "log10_1pd_hi"] + list(KEYS))
+        wr.writerow(["bin", "log10_1pd_lo", "log10_1pd_hi"] + list(keys))
         for b in range(NB + 1):
             name = "star-forming" if b == I_SF else str(b)
             l0 = "" if b == I_SF else lo[b]; h0 = "" if b == I_SF else hi[b]
-            wr.writerow([name, l0, h0] + [S[k][b] for k in KEYS])
+            wr.writerow([name, l0, h0] + [S[k][b] for k in keys])
     cls = os.path.join(a.out, f"dens_He_{a.snap:03d}_classes.csv")
     with open(cls, "w", newline="") as f:
         wr = csv.DictWriter(f, fieldnames=list(rows_out[0]))
         wr.writeheader(); wr.writerows(rows_out)
     print(f"\nwrote {fine} and {cls}")
+    if all(has_ly):
+        merge_ly(a, S, names, cut, Vtot, mean)
+    else:
+        print("\n(no J = 0 sums in these task files: written before 2026-11-27)")
     has_T = ["T3_m" in t for t in T]
     if any(has_T) and not all(has_T):
         sys.exit("STOP: some task files have the T-class sums and some do not (mixed runs in one directory)")
     if all(has_T):
-        merge_T(a, T, S, names, cut, lo, hi, z, Mtot, ncell)
+        merge_T(a, T, S, names, cut, lo, hi, z, Mtot, ncell, all(has_ly))
     else:
         print("\n(no T-class sums in these task files: written before 2026-11-27)")
 
 
-def merge_T(a, T, S, names, cut, lo, hi, z, Mtot, ncell):
+def merge_ly(a, S, names, cut, Vtot, mean):
+    """Lyman alpha share of the 3.46 cm signal: 1 - <dT_b(J = 0)> / <dT_b>, whole box and by 1+delta class"""
+    mean0 = S["V_tb0"].sum() / Vtot
+    print(f"\nLyman alpha share of the signal (dT_b with the He J vs with J = 0, every gas cell; not additive in x, as "
+          f"the 640^3 'Lya share' of the T_b maps):")
+    print(f"  WHOLE BOX: <dT_b> = {mean:.5e} uK, J = 0: {mean0:.5e} uK, Lya share 1 - ratio = {1.0 - mean0 / mean:.4f}")
+    print("  1+delta class: contribution J / J = 0 [uK] | Lya share of the class's signal | the class's part of the "
+          "whole-box Lya share")
+    for name, b0, b1 in zip(names, cut[:-1], cut[1:]):
+        v, v0 = S["V_tb"][b0:b1].sum(), S["V_tb0"][b0:b1].sum()
+        print(f"  {name:>10s}  {v / Vtot:+.4e} / {v0 / Vtot:+.4e} | {1.0 - v0 / v if v != 0 else np.nan:.4f} | "
+              f"{(v - v0) / Vtot / mean:.4f}")
+    v, v0 = S["V_tb"][I_SF], S["V_tb0"][I_SF]
+    print(f"  star-forming: {v / Vtot:+.3e} / {v0 / Vtot:+.3e} (He II = 0)")
+
+
+def merge_T(a, T, S, names, cut, lo, hi, z, Mtot, ncell, ly):
     """effective He II photoionization rate by 1+delta and T class (T3_ sums)"""
     import csv
+    keys_T = KEYS_T if ly else tuple(k for k in KEYS_T if k != KEY_NOLY)
     for t in T:
         if not np.allclose(t["t_edges"], T_EDGES):
             sys.exit("STOP: task files with other T classes")
-    S3 = {k: sum(t["T3_" + k] for t in T).reshape(NT, NB + 1) for k in KEYS_T}
+    S3 = {k: sum(t["T3_" + k] for t in T).reshape(NT, NB + 1) for k in keys_T}
     if int(round(S3["n"].sum())) != ncell or not np.allclose(S3["m"].sum(0), S["m"], rtol=1e-10, atol=0) \
-            or not np.allclose(S3["V_tb"].sum(0), S["V_tb"], rtol=1e-10, atol=1e-300):
+            or not np.allclose(S3["V_tb"].sum(0), S["V_tb"], rtol=1e-10, atol=1e-300) \
+            or (ly and not np.allclose(S3["V_tb0"].sum(0), S["V_tb0"], rtol=1e-10, atol=1e-300)):
         sys.exit("STOP: the T-class sums do not add up to the 1+delta sums")
     h, om, ol = 0.6766, 0.30964144, OMEGA_L_DEFAULT            # Lumina (Planck 2018; Omega_L as the T_b codes)
     tH = 1.0 / (100.0 * h * 1e5 / 3.0857e24 * np.sqrt(om * (1 + z)**3 + ol))
     def rates(sl, tc):
-        q = {k: S3[k][tc, sl].sum() for k in KEYS_T}
+        q = {k: S3[k][tc, sl].sum() for k in keys_T}
         g = (q["m_rec"] - q["m_coll"]) / q["m_xHeII"] if q["m_xHeII"] > 0 else np.nan
         trec = q["m_xHeIII"] / q["m_rec"] / tH if q["m_rec"] > 0 else np.nan
         coll = q["m_coll"] / q["m_rec"] if q["m_rec"] > 0 else np.nan
@@ -270,12 +302,12 @@ def merge_T(a, T, S, names, cut, lo, hi, z, Mtot, ncell):
     with open(out, "w", newline="") as f:
         wr = csv.writer(f)
         wr.writerow(["# z", z, "t_H [s]", tH, "T classes", ";".join(T_NAMES)])
-        wr.writerow(["T_class", "bin", "log10_1pd_lo", "log10_1pd_hi"] + list(KEYS_T))
+        wr.writerow(["T_class", "bin", "log10_1pd_lo", "log10_1pd_hi"] + list(keys_T))
         for tc, tn in enumerate(T_NAMES):
             for b in range(NB + 1):
                 name = "star-forming" if b == I_SF else str(b)
                 l0 = "" if b == I_SF else lo[b]; h0 = "" if b == I_SF else hi[b]
-                wr.writerow([tn, name, l0, h0] + [S3[k][tc, b] for k in KEYS_T])
+                wr.writerow([tn, name, l0, h0] + [S3[k][tc, b] for k in keys_T])
     cl = os.path.join(a.out, f"dens_He_{a.snap:03d}_T_classes.csv")
     with open(cl, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(rows[0])); w.writeheader(); w.writerows(rows)
